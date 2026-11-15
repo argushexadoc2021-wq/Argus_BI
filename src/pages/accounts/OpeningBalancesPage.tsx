@@ -612,7 +612,7 @@ export function OpeningBalancesPage() {
         <div role="status" className={`fixed bottom-20 right-5 z-[80] max-w-sm px-4 py-2.5 rounded-lg shadow-xl text-sm font-semibold ${toast.kind === 'ok' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'}`}>{toast.text}</div>
       )}
 
-      <Card className="p-2.5">
+      <Card className="head-bar p-2.5">
         <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap">
           <span className="text-xs font-semibold text-slate-500 px-1 shrink-0">{lookups?.company?.company_name ?? company.company_name}</span>
           <select aria-label="Financial year" className={`${sel} !w-auto shrink-0`} value={fyId} onChange={e => setFyId(e.target.value)}>

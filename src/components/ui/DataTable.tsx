@@ -168,7 +168,7 @@ export function DataTable<T extends Record<string, any>>({
   return (
     <div className="bg-white rounded-md border border-slate-200 shadow-sm overflow-hidden flex flex-col">
       {!hideToolbar && (
-        <div className="flex flex-wrap items-center gap-3 px-3 py-1.5 border-b border-slate-100 bg-white">
+        <div className="head-bar flex flex-wrap items-center gap-3 px-3 py-1.5 border-b">
           {title && <h3 className="text-sm font-bold text-slate-800 tracking-wider uppercase whitespace-nowrap">{title}</h3>}
           {toolbarLeft}
           <div className="relative flex-1 min-w-[180px]">

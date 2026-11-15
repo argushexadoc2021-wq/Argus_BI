@@ -65,7 +65,7 @@ function AppShell() {
   return (
     <div className="flex flex-col min-h-screen bg-slate-50">
       {/* Top Navigation Bar */}
-      <header className="sticky top-0 z-50 bg-[#293033] text-slate-300 shadow-md border-b border-[#333d48]">
+      <header className="no-glass head-bar sticky top-0 z-50 bg-[#293033] text-slate-300 shadow-md border-b border-[#333d48]">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="flex h-16 items-center justify-between">
             {/* Logo and Primary Nav */}

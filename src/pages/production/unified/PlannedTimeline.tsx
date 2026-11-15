@@ -505,7 +505,7 @@ export function PlannedTimeline() {
 
   return (
     <div className="space-y-4" data-testid="planned-timeline">
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="head-bar flex flex-wrap items-center gap-2 rounded-xl px-2.5 py-2">
         <div className="flex items-center bg-white rounded-lg border border-slate-200 shadow-2xs">
           <button aria-label="Previous" className="p-1.5 text-slate-600 hover:bg-slate-50 border-r border-slate-200" onClick={() => step(-1)}><ChevronLeft size={14} /></button>
           <div className="px-2.5 py-1 text-xs font-semibold text-slate-700 min-w-[155px] text-center">{title}</div>

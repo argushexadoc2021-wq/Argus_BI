@@ -504,3 +504,46 @@ html[data-dock-side="right"] .dock-cowork { left: auto !important; right: calc(1
   html[data-adviser-split] header.app-topbar .tb-title * { white-space: nowrap; }
   html[data-adviser-split] header.app-topbar .tb-actions { overflow: visible; }
 }
+
+/* Row action icons (view / edit / delete) in every list: own clear colours on a light chip, so they stay visible on the
+   coloured rows. Disabled ones (no permission) keep their faded look. */
+tbody button:not(:disabled):has(> svg:is(.lucide-eye, .lucide-square-pen, .lucide-pen, .lucide-pencil, .lucide-pen-line, .lucide-pencil-line, .lucide-pen-square, .lucide-trash2, .lucide-trash-2, .lucide-trash)) {
+  background-color: rgba(255, 255, 255, 0.85) !important;
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.08);
+  border-radius: 0.4rem;
+}
+tbody button:not(:disabled) > svg.lucide-eye { color: #0f766e !important; }
+tbody button:not(:disabled) > svg:is(.lucide-square-pen, .lucide-pen, .lucide-pencil, .lucide-pen-line, .lucide-pencil-line, .lucide-pen-square) { color: #2563eb !important; }
+tbody button:not(:disabled) > svg:is(.lucide-trash2, .lucide-trash-2, .lucide-trash) { color: #dc2626 !important; }
+tbody button:not(:disabled):has(> svg.lucide-eye):hover { background-color: #ccfbf1 !important; }
+tbody button:not(:disabled):has(> svg:is(.lucide-square-pen, .lucide-pen, .lucide-pencil, .lucide-pen-line, .lucide-pencil-line, .lucide-pen-square)):hover { background-color: #dbeafe !important; }
+tbody button:not(:disabled):has(> svg:is(.lucide-trash2, .lucide-trash-2, .lucide-trash)):hover { background-color: #fee2e2 !important; }
+
+/* Heading bars above lists (tabs, search, filters, actions): the same dark blue as the table headings (add `head-bar`).
+   Plain text and tabs turn white; search boxes / drop-downs stay white; buttons and chips with their own colour keep it. */
+.head-bar {
+  background-color: #111c33 !important;
+  background-image: none !important;
+  border-color: rgba(255, 255, 255, .08) !important;
+  color: #ffffff;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+.head-bar :is(span, p, h1, h2, h3, h4, h5, label, a, button, div, b, strong, small, svg, i):not(.head-tab-on):not([class^="bg-"]):not([class*=" bg-"]):not(.head-bar :is([class^="bg-"], [class*=" bg-"], .absolute, .fixed, [role="menu"], [role="listbox"], [role="dialog"], button[disabled]) *)  {
+  color: rgba(255, 255, 255, .92) !important;
+}
+.head-bar :is(button, a):not([class^="bg-"]):not([class*=" bg-"]):not(:disabled):hover {
+  color: #ffffff !important;
+  background-color: rgba(255, 255, 255, .1) !important;
+}
+.head-bar :is(button, a):disabled, .head-bar button:disabled * { opacity: .55; }
+.head-bar :is(input, select, textarea) {
+  color: #0f172a !important;
+  background-color: #ffffff !important;
+  border-color: rgba(255, 255, 255, .25) !important;
+}
+.head-bar :is(input, textarea)::placeholder { color: #94a3b8 !important; }
+/* a thin divider line inside the bar */
+.head-bar :is(span, div)[aria-hidden="true"]:is([class*="w-px"]) { background-color: rgba(255, 255, 255, .2) !important; }
+/* the selected underline tab */
+.head-bar .head-tab-on { color: #7dd3fc !important; border-color: #7dd3fc !important; }

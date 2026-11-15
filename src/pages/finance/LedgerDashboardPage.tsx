@@ -257,7 +257,7 @@ export function LedgerDashboardPage({ embedded = false }: { embedded?: boolean }
         {note && <div role="status" data-testid="ledger-note" className="rounded-xl border border-sky-200 bg-sky-50 text-sky-800 text-sm px-3.5 py-2">{note}</div>}
 
         <section className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-          <div className="px-3 py-2 border-b border-slate-100 bg-slate-50/70 flex flex-nowrap items-center gap-2 overflow-x-auto scrollbar-thin [&>*]:shrink-0">
+          <div className="head-bar px-3 py-2 border-b flex flex-nowrap items-center gap-2 overflow-x-auto scrollbar-thin [&>*]:shrink-0">
             <p className="text-xs text-slate-500 whitespace-nowrap shrink-0"><span className="font-semibold text-slate-700" data-testid="row-count">{sorted.length} rows</span></p>
             <button type="button" onClick={() => { setSearch(cur => (cur === 'Customer' ? '' : 'Customer')); setPage(1); }}
               title={`${recPay.customers} customer${recPay.customers === 1 ? '' : 's'} with a balance — click to filter`}

@@ -1862,11 +1862,11 @@ export function SettingsPage() {
   return (
     <div className="p-4 lg:p-6 bg-grid min-h-full">
       <PageHeader title="Company Settings" description="Set up the company details that are printed on each document: logo, address, GSTIN, contacts, bank and signature." />
-      <div role="tablist" aria-label="Settings" className="mb-4 flex flex-wrap gap-2 border-b border-slate-200 pb-2">
+      <div role="tablist" aria-label="Settings" className="head-bar mb-4 flex flex-wrap gap-2 rounded-xl px-3 py-2 shadow-sm">
         {tabs.map((t) => (
           <button key={t.id} type="button" role="tab" aria-selected={active.id === t.id} title={t.hint}
             onClick={() => setParams({ tab: t.id }, { replace: true })}
-            className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${active.id === t.id ? 'bg-orange-500 text-white shadow-sm' : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}>
+            className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${active.id === t.id ? 'bg-orange-500 text-white shadow-sm' : 'border border-white/15 text-white/90 hover:bg-white/10'}`}>
             {t.label}
           </button>
         ))}

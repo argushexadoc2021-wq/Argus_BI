@@ -57,7 +57,7 @@ function VaultHeader() {
   const filteredNavItems = navItems.filter((item) => item.show);
 
   return (
-    <header className="sticky top-0 z-40 bg-[#293033] text-slate-300 shadow-md border-b border-[#333d48]">
+    <header className="no-glass head-bar sticky top-0 z-40 bg-[#293033] text-slate-300 shadow-md border-b border-[#333d48]">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-14 items-center justify-between">
           <nav className="flex items-center gap-1 overflow-x-auto py-2 scrollbar-thin">

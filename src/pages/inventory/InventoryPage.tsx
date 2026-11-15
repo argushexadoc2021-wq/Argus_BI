@@ -1284,14 +1284,14 @@ Cancel = Manufactured in-house (like Finished Goods)`);
         {/* Main column: the table now uses the full page width */}
         <div className="w-full min-w-0 bg-white border border-slate-200 rounded-xl shadow-sm">
           {/* Tabs + filters share one line */}
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 px-3 py-1.5 border-b border-slate-200">
+          <div className="head-bar flex flex-wrap items-center gap-x-2 gap-y-1.5 px-3 py-1.5 border-b rounded-t-xl">
             {!filters && !filtersError && [0, 1, 2, 3].map(i => <div key={i} className="h-5 w-16 rounded bg-slate-100 animate-pulse" />)}
             {[...categories.map(c => ({ id: c.id, name: c.name })), { id: '', name: 'All Products' }].map(t => {
               if (!filters && t.id === '' && !filtersError) return null;
               const active = applied.categoryId === t.id;
               return (
                 <button key={t.id || 'all'} onClick={() => handleTab(t.id)}
-                  className={`py-1.5 text-xs whitespace-nowrap border-b-2 -mb-px transition-colors ${active ? 'border-blue-600 text-blue-600 font-semibold' : 'border-transparent text-slate-600 hover:text-slate-900'}`}>
+                  className={`py-1.5 text-xs whitespace-nowrap border-b-2 -mb-px transition-colors ${active ? 'head-tab-on border-sky-300 font-semibold' : 'border-transparent'}`}>
                   {t.name}
                 </button>
               );

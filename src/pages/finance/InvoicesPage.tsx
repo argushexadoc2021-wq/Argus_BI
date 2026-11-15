@@ -1391,7 +1391,7 @@ export function InvoicesPage({ onBack, onView, onEdit, onDelete }: { onBack?: ()
  
   return <div className="p-3 sm:p-4 lg:px-4 lg:pt-2 lg:pb-4 space-y-2.5 bg-slate-50 min-h-full">
     {/* Line 1: Back, Title, Tabs, and Export/Print buttons */}
-    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2">
+    <div className="head-bar flex flex-wrap items-center justify-between gap-2 rounded-xl px-3 py-2">
       <div className="flex items-center gap-3 min-w-0">
         {onBack && <Button variant="secondary" size="sm" icon={<ArrowLeft size={14}/>} onClick={onBack}>Back</Button>}
         <h1 className="text-lg font-bold text-slate-800 whitespace-nowrap">Invoices</h1>
