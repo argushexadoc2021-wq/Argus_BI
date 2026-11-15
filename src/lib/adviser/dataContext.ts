@@ -113,8 +113,8 @@ async function build(can: (m: string) => boolean): Promise<string> {
   // customer contacts (for e-mails the Adviser drafts)
   const cust = can('companies') || can('enquiries') ? await load('cnc_customers', 'name') : null;
   if (cust) {
-    const withMail = cust.filter((c) => /@/.test(str(c.email)));
-    out.push(`CUSTOMER CONTACTS (name — contact person — e-mail), ${withMail.length} with e-mail: ${withMail.slice(0, 200).map((c) => `${str(c.name)} — ${str(first(c, ['contact', 'contact_person'])) || '-'} — ${str(c.email)}`).join('; ')}`);
+    const reach = cust.filter((c) => /@/.test(str(c.email)) || /\d{6}/.test(str(c.phone).replace(/\D/g, '')));
+    out.push(`CUSTOMER CONTACTS (name — contact person — e-mail — phone / WhatsApp), ${reach.length} customers: ${reach.slice(0, 200).map((c) => `${str(c.name)} — ${str(first(c, ['contact', 'contact_person'])) || '-'} — ${str(c.email) || '-'} — ${str(c.phone) || '-'}`).join('; ')}`);
   }
   // month by month for the last 6 months (for graphs and trends)
   const last6 = Array.from({ length: 6 }, (_, i) => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - (5 - i)); return { ym: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`, name: d.toLocaleString('en-IN', { month: 'short', year: '2-digit' }) }; });

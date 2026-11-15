@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Search, X } from 'lucide-react';
-import { FilterChip, FunnelIcon } from './HeaderFilter';
+import { FilterChip, FunnelIcon, useMultiPick } from './HeaderFilter';
 import { ColumnFilterMenu } from './ColumnFilterMenu';
 import { headerSortDir, sortByHeader } from './TableAutoFilter';
 
@@ -39,6 +39,7 @@ export function CompanyFilterInput({
   const menuRef = useRef<HTMLDivElement>(null);
 
   const isAllSelected = !value || value === allLabel;
+  const { many, setMany } = useMultiPick(headBtn, !isAllSelected);
 
   // Filter options based on search text (multi-word: each word must appear in the name)
   const filteredOptions = useMemo(() => {
@@ -126,17 +127,21 @@ export function CompanyFilterInput({
             title="Filter by company"
             data-colfilter
           >
-            <FunnelIcon active={!isAllSelected} />
+            <FunnelIcon active={!isAllSelected || !!many} />
           </button>
-          {!isAllSelected && <FilterChip text={value} onClear={() => onChange(allLabel)} />}
+          {many ? <FilterChip text={`${many.length} selected`} title={many.join(', ')} onClear={() => setMany(null)} />
+            : !isAllSelected && <FilterChip text={value} onClear={() => onChange(allLabel)} />}
           {headRect && (
             <ColumnFilterMenu
               anchor={headRect}
               title="Company"
               values={options}
-              selected={isAllSelected ? null : new Set([value])}
-              multi={false}
-              onChange={(next) => onChange(next ? Array.from(next)[0] : allLabel)}
+              selected={many ? new Set(many) : isAllSelected ? null : new Set([value])}
+              onChange={(next) => {
+                const picked = next ? Array.from(next) : [];
+                if (picked.length >= 2) { setMany(picked); if (!isAllSelected) onChange(allLabel); }
+                else { setMany(null); onChange(picked[0] ?? allLabel); }
+              }}
               sortDir={headerSortDir(headBtn.current)}
               onSort={(d) => sortByHeader(headBtn.current, d)}
               onClose={() => setHeadRect(null)}

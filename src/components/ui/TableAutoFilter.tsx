@@ -9,7 +9,7 @@ import type { SortDirection } from './ColumnFilterMenu';
  * `sortByHeader` / `headerValues` below. Opt a table out with the class `no-autofilter`.
  */
 
-type TableState = { filters: Map<number, Set<string>>; sort: { col: number; dir: SortDirection } | null };
+type TableState = { filters: Map<number, Set<string>>; picks: Map<number, string[]>; sort: { col: number; dir: SortDirection } | null };
 
 const state = new WeakMap<HTMLTableElement, TableState>();
 const watched = new WeakSet<HTMLTableSectionElement>();
@@ -23,7 +23,7 @@ const FUNNEL_SVG =
 
 const st = (t: HTMLTableElement): TableState => {
   let s = state.get(t);
-  if (!s) { s = { filters: new Map(), sort: null }; state.set(t, s); }
+  if (!s) { s = { filters: new Map(), picks: new Map(), sort: null }; state.set(t, s); }
   return s;
 };
 
@@ -87,9 +87,16 @@ export function headerValues(th: Element | null): string[] {
 function apply(t: HTMLTableElement) {
   const s = st(t);
   const rows = dataRows(t);
+  // several values ticked in a page's own column filter: a value matches a cell exactly when some cell is exactly it,
+  // otherwise as a whole word inside the cell (badges, "Name - code" cells)
+  const picks = Array.from(s.picks).map(([c, vals]) => {
+    const cells = new Set(rows.map((r) => cellText(cellAt(r, c)).toLowerCase()));
+    return { c, tests: vals.map((v) => (cells.has(v) ? (x: string) => x === v : (x: string) => wordIn(x, v))) };
+  });
   for (const r of rows) {
     let show = true;
     for (const [c, vals] of s.filters) if (!vals.has(cellText(cellAt(r, c)))) { show = false; break; }
+    if (show) for (const p of picks) { const x = cellText(cellAt(r, p.c)).toLowerCase(); if (!p.tests.some((f) => f(x))) { show = false; break; } }
     if (show) { if (r.dataset.afHidden) { r.style.display = ''; delete r.dataset.afHidden; } }
     else if (!r.dataset.afHidden) { r.style.display = 'none'; r.dataset.afHidden = '1'; }
   }
@@ -111,6 +118,25 @@ function apply(t: HTMLTableElement) {
     b.classList.toggle('af-sorted', s.sort?.col === c);
   });
   observer?.takeRecords();   // our own row moves are not "new rows"
+}
+
+const esc = (v: string) => v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const wordIn = (cell: string, v: string) => new RegExp(`(^|[^a-z0-9])${esc(v)}($|[^a-z0-9])`).test(cell);
+
+/**
+ * Show only rows whose cell under this heading is one of these values (used when several values are ticked in a column
+ * filter the page owns: the page shows everything and this hides the rest). null / [] clears it.
+ */
+export function pickByHeader(el: Element | null, values: string[] | null) {
+  const th = el?.closest('th') as HTMLTableCellElement | null;
+  const t = th?.closest('table') as HTMLTableElement | null;
+  if (!th || !t) return;
+  const s = st(t);
+  const c = columnOf(th);
+  if (values && values.length) s.picks.set(c, values.map((v) => v.trim().toLowerCase()));
+  else if (!s.picks.delete(c)) return;
+  watch(t);
+  apply(t);
 }
 
 /** Sort a table by the column under this heading element (used by columns that keep their own filter). */
@@ -137,7 +163,7 @@ function watch(t: HTMLTableElement) {
     watched.add(b);
     new MutationObserver(() => {
       const s = state.get(t);
-      if (s && (s.filters.size || s.sort)) requestAnimationFrame(() => apply(t));
+      if (s && (s.filters.size || s.picks.size || s.sort)) requestAnimationFrame(() => apply(t));
     }).observe(b, { childList: true, subtree: true, characterData: true });
   }
 }

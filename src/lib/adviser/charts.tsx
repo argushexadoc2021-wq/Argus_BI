@@ -13,7 +13,8 @@ export interface ChartSpec {
   unit?: string;
 }
 export interface EmailBlock { to: string; cc: string; subject: string; body: string }
-export interface Blocks { visible: string; charts: ChartSpec[]; pdf: { title: string } | null; emails: EmailBlock[] }
+export interface WaBlock { to: string; name: string; text: string }
+export interface Blocks { visible: string; charts: ChartSpec[]; pdf: { title: string } | null; emails: EmailBlock[]; whatsapps: WaBlock[] }
 
 const COLORS = ['#2563eb', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4', '#ec4899', '#84cc16'];
 
@@ -24,12 +25,14 @@ export function parseBlocks(text: string): Blocks {
   const charts: ChartSpec[] = [];
   let pdf: Blocks['pdf'] = null;
   const emails: EmailBlock[] = [];
-  const re = /\[\[\s*(CHART|PDF|EMAIL)\s*(\{[\s\S]*?\})\s*\]\]/g;
+  const whatsapps: WaBlock[] = [];
+  const re = /\[\[\s*(CHART|PDF|EMAIL|WHATSAPP)\s*(\{[\s\S]*?\})\s*\]\]/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
     try {
       const j = JSON.parse(m[2]);
       if (m[1] === 'PDF') { pdf = { title: String(j.title || 'Report') }; continue; }
+      if (m[1] === 'WHATSAPP') { whatsapps.push({ to: String(j.to ?? ''), name: String(j.name ?? ''), text: String(j.text ?? '') }); continue; }
       if (m[1] === 'EMAIL') { emails.push({ to: String(j.to ?? ''), cc: String(j.cc ?? ''), subject: String(j.subject ?? ''), body: String(j.body ?? '') }); continue; }
       const labels = Array.isArray(j.labels) ? j.labels.map(String).slice(0, 24) : [];
       const series = (Array.isArray(j.series) ? j.series : []).slice(0, 6).map((s: { name?: unknown; values?: unknown[] }) => ({
@@ -41,7 +44,7 @@ export function parseBlocks(text: string): Blocks {
       charts.push({ title: String(j.title || 'Chart'), type, labels, series, unit: j.unit ? String(j.unit) : undefined });
     } catch { /* a broken block is skipped */ }
   }
-  return { visible, charts, pdf, emails };
+  return { visible, charts, pdf, emails, whatsapps };
 }
 
 /** The part of a streaming answer that may be read aloud (never the chart data). */

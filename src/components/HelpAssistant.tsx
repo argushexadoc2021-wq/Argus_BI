@@ -9,6 +9,7 @@ import { serverChat, serverSpeech, ServerAiError } from '@/lib/adviser/serverAi'
 import { businessData } from '@/lib/adviser/dataContext';
 import { ChartView, parseBlocks, saveReportPdf, speakablePart } from '@/lib/adviser/charts';
 import { EmailCard, MailConnect, useAdviserMail } from '@/lib/adviser/mail';
+import { WhatsAppCard } from '@/lib/adviser/whatsapp';
 import { deleteChat, groupByDay, loadChats, saveChat, type SavedChat } from '@/lib/adviser/chatHistory';
 import { boostAudio } from '@/lib/voiceBoost';
 import { supabase } from '@/lib/supabase';
@@ -612,6 +613,9 @@ type is "bar" (compare), "line" (trend over time) or "pie" (share of a whole, on
 E-MAILS: when the person asks you to write, draft or send an e-mail (payment reminder, quotation follow-up, delivery update, thank-you, anything), write one short line saying the draft is below for them to check, then at the VERY END add exactly one block per e-mail, on its own line (valid JSON; use \n for new lines in the body):
 [[EMAIL {"to":"customer@example.com","cc":"","subject":"...","body":"Dear ...,\n\n...\n\nRegards,\n<sender name>\n<company>"}]]
 Write a polite, clear, professional e-mail in the language they ask for (English by default), with the real figures, invoice / order numbers and dates from COMPANY DATA. Take the receiver's address from CUSTOMER CONTACTS; if it is not there, leave "to" empty and say they must type it. Sign it with the SENDER's name and company. Never say the e-mail was sent: the person checks it and presses Send.
+WHATSAPP: when the person asks to send / write a WhatsApp message (or just "message" / "msg" / "text" a customer), write one short line saying the message is below for them to check, then at the VERY END add exactly one block per message, on its own line (valid JSON; use \n for new lines):
+[[WHATSAPP {"to":"9876543210","name":"<customer / contact name>","text":"Hello ...,\n\n...\n\n- <sender name>, <company>"}]]
+Keep it short and friendly like a WhatsApp chat (no subject line), in the language they ask for (English by default), with the real figures, invoice / order numbers and dates from COMPANY DATA. Take the number from the phone in CUSTOMER CONTACTS; if it is not there, leave "to" empty and say they can type it or pick the chat in WhatsApp. If they ask for both an e-mail and a WhatsApp message, give both blocks. Never say the message was sent: the person presses Send in WhatsApp.
 ${data}` : ''}`;
 }
 
@@ -748,7 +752,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
   // ------------------------------------------------ the answer: stream it, show it, and speak each sentence as it completes
   const ask = useCallback(async (question: string) => {
     const q = question.trim();
-    const wantsChart = /graph|chart|plot|diagram|pie|bar|trend|pdf|report|download|print|mail|e-mail|letter|மெயில்|கடிதம்|வரைபட|அறிக்கை|ரிப்போர்ட்|கிராப்/i.test(q);
+    const wantsChart = /graph|chart|plot|diagram|pie|bar|trend|pdf|report|download|print|mail|e-mail|letter|whatsapp|whats app|msg|message|வாட்ஸ்|மெசேஜ்|மெயில்|கடிதம்|வரைபட|அறிக்கை|ரிப்போர்ட்|கிராப்/i.test(q);
     if (!q || busyRef.current) return;
     busyRef.current = true;
     const aid = ++chatSeq;
@@ -1309,10 +1313,12 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
                     return (
                       <>
                         {b.visible}
-                        {m.pending && m.text.includes('[[') && <span className="mt-1 flex items-center gap-1 text-[11px] text-slate-400"><Loader2 size={12} className="animate-spin" />Drawing the graphs…</span>}
+                        {m.pending && /\[\[\s*(CHART|PDF)/.test(m.text) && <span className="mt-1 flex items-center gap-1 text-[11px] text-slate-400"><Loader2 size={12} className="animate-spin" />Drawing the graphs…</span>}
                         {b.charts.map((c, i) => <ChartView key={i} chart={c} />)}
                         {m.pending && /\[\[\s*EMAIL/.test(m.text) && <span className="mt-1 flex items-center gap-1 text-[11px] text-slate-400"><Loader2 size={12} className="animate-spin" />Writing the e-mail…</span>}
                         {!m.pending && b.emails.map((e, i) => <EmailCard key={i} draft={e} onConnect={() => setMailOpen(true)} />)}
+                        {m.pending && /\[\[\s*WHATSAPP/.test(m.text) && <span className="mt-1 flex items-center gap-1 text-[11px] text-slate-400"><Loader2 size={12} className="animate-spin" />Writing the WhatsApp message…</span>}
+                        {!m.pending && b.whatsapps.map((w, i) => <WhatsAppCard key={`wa${i}`} draft={w} />)}
                         {!m.pending && (b.charts.length > 0 || b.pdf) && (
                           <button type="button" onClick={() => void saveReportPdf(b.pdf?.title || b.charts[0]?.title || 'Adviser report', b.visible, b.charts, company?.company_name ?? '')}
                             className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700">
