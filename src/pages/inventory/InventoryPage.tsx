@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { ColumnFilterMenu } from '@/components/ui/ColumnFilterMenu';
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -398,6 +399,14 @@ Cancel = Manufactured in-house (like Finished Goods)`);
     setPage(1);
   }, [q]);
 
+  // ---- Several values ticked in a column menu (Excel style) --------------------------------------
+  // One value uses the normal filter (the database filters it). Two or more are filtered here on the screen, and the
+  // list then loads up to 500 items at once so nothing is missed.
+  type PickCol = 'category' | 'warehouse' | 'unit' | 'status' | 'qty';
+  const [picks, setPicks] = useState<Partial<Record<PickCol, string[]>>>({});
+  const multiOn = (c: PickCol) => (picks[c]?.length ?? 0) >= 2;
+  const serverMulti = multiOn('category') || multiOn('warehouse') || multiOn('status');
+
   // ---- Items (server-paginated) ------------------------------------------------------------
   useEffect(() => {
     if (!companyId || !ready) return;
@@ -411,7 +420,7 @@ Cancel = Manufactured in-house (like Finished Goods)`);
       supplierId: applied.supplierId || null,
       status: applied.status || null,
       warehouseId: applied.warehouseId || null,
-      page, pageSize,
+      page: serverMulti ? 1 : page, pageSize: serverMulti ? 500 : pageSize,
     })
       .then(res => {
         if (id !== itemsReq.current) return;
@@ -421,7 +430,7 @@ Cancel = Manufactured in-house (like Finished Goods)`);
       })
       .catch(e => { if (id === itemsReq.current) setItemsError(errText(e)); })
       .finally(() => { if (id === itemsReq.current) setItemsLoading(false); });
-  }, [companyId, ready, applied, page, pageSize, refreshKey]);
+  }, [companyId, ready, applied, page, pageSize, refreshKey, serverMulti]);
 
   // ---- Summary + recent transactions -----------------------------------------------------------
   useEffect(() => {
@@ -488,6 +497,44 @@ Cancel = Manufactured in-house (like Finished Goods)`);
     return Array.from(set);
   }, [items?.rows]);
 
+  const QTY_OPTS = [{ id: 'in_stock', label: 'In Stock (> 0)' }, { id: 'low_stock', label: 'Low Stock (< Reorder)' }, { id: 'out_of_stock', label: 'Out of Stock (= 0)' }];
+  const STATUS_OPTS = ['In Stock', 'Low Stock', 'Out of Stock'].map(x => ({ id: x, label: x }));
+  const ALL_LABEL: Record<PickCol, string> = { category: 'All Categories', warehouse: 'All Warehouses', unit: 'All Units', status: 'All Statuses', qty: 'All Quantities' };
+  const pickOptions = (c: PickCol): { id: string; label: string }[] =>
+    c === 'category' ? categories.map(x => ({ id: x.id, label: x.name }))
+      : c === 'warehouse' ? (filters?.warehouses ?? []).map(w => ({ id: w.id, label: w.name }))
+        : c === 'unit' ? distinctUnits.map(u => ({ id: u, label: u }))
+          : c === 'status' ? STATUS_OPTS : QTY_OPTS;
+  /** The one value set through the normal filter ('' = none). */
+  const singleOf = (c: PickCol): string =>
+    c === 'category' ? applied.categoryId : c === 'warehouse' ? applied.warehouseId : c === 'status' ? (applied.status || '')
+      : c === 'unit' ? (unitFilter === 'All' ? '' : unitFilter) : (qtyFilter === 'All' ? '' : qtyFilter);
+  const setSingle = (c: PickCol, id: string) => {
+    if (c === 'category') handleTab(id);
+    else if (c === 'warehouse') { setDraft(d => ({ ...d, warehouseId: id })); applyFilters({ ...applied, warehouseId: id }); }
+    else if (c === 'status') { setDraft(d => ({ ...d, status: id as any })); applyFilters({ ...applied, status: id as any }); }
+    else if (c === 'unit') setUnitFilter(id || 'All');
+    else setQtyFilter((id || 'All') as any);
+  };
+  const pickedIds = (c: PickCol): string[] => (multiOn(c) ? picks[c]! : singleOf(c) ? [singleOf(c)] : []);
+  const setPicked = (c: PickCol, ids: string[]) => {
+    if (ids.length >= 2) { if (singleOf(c)) setSingle(c, ''); setPicks(p => ({ ...p, [c]: ids })); setPage(1); }
+    else { setPicks(p => ({ ...p, [c]: [] })); if (singleOf(c) !== (ids[0] ?? '')) setSingle(c, ids[0] ?? ''); }
+  };
+  const pickSummary = (c: PickCol): string | null => {
+    const ids = pickedIds(c);
+    if (!ids.length) return null;
+    if (ids.length >= 2) return `${ids.length} selected`;
+    if (c === 'qty') return ({ in_stock: '> 0', out_of_stock: '= 0', low_stock: 'Low' } as Record<string, string>)[ids[0]] ?? ids[0];
+    return pickOptions(c).find(x => x.id.toLowerCase() === ids[0].toLowerCase())?.label ?? ids[0];
+  };
+  // a category tab / stock tile set one value from elsewhere: drop the several-values ticks for that column
+  useEffect(() => { if (applied.categoryId) setPicks(p => (p.category?.length ? { ...p, category: [] } : p)); }, [applied.categoryId]);
+  useEffect(() => { if (applied.warehouseId) setPicks(p => (p.warehouse?.length ? { ...p, warehouse: [] } : p)); }, [applied.warehouseId]);
+  useEffect(() => { if (applied.status) setPicks(p => (p.status?.length ? { ...p, status: [] } : p)); }, [applied.status]);
+  const qtyMatch = (q: string, stock: number, min: number) =>
+    q === 'in_stock' ? stock > 0 : q === 'out_of_stock' ? stock <= 0 : q === 'low_stock' ? stock > 0 && stock <= min : true;
+
   const toggleSort = (col: string) => {
     if (sortKey === col) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
     else { setSortKey(col); setSortDir('asc'); }
@@ -520,6 +567,13 @@ Cancel = Manufactured in-house (like Finished Goods)`);
     } else if (qtyFilter === 'low_stock') {
       list = list.filter(r => Number(r.current_stock || 0) > 0 && Number(r.current_stock || 0) <= Number(r.min_stock || 0));
     }
+    const pk = (c: PickCol) => ((picks[c]?.length ?? 0) >= 2 ? picks[c]! : null);
+    const pc = pk('category'), pw = pk('warehouse'), ps = pk('status'), pu = pk('unit'), pq = pk('qty');
+    if (pc) list = list.filter(r => pc.includes(r.category_id ?? ''));
+    if (pw) list = list.filter(r => pw.includes(r.warehouse_id ?? ''));
+    if (ps) list = list.filter(r => ps.includes(r.status));
+    if (pu) { const u = pu.map(x => x.toLowerCase()); list = list.filter(r => u.includes((r.unit || 'Nos').toLowerCase())); }
+    if (pq) list = list.filter(r => pq.some(q => qtyMatch(q, Number(r.current_stock || 0), Number(r.min_stock || 0))));
     if (!sortKey) return list;
     if (sortKey === 'idx') return sortDir === 'asc' ? list : [...list].reverse();
     const getVal = (r: InventoryItemRow): string | number => {
@@ -544,7 +598,7 @@ Cancel = Manufactured in-house (like Finished Goods)`);
       const c = String(av).localeCompare(String(bv), undefined, { numeric: true });
       return sortDir === 'asc' ? c : -c;
     });
-  }, [items?.rows, sortKey, sortDir, lastMovement, unitFilter, qtyFilter]);
+  }, [items?.rows, sortKey, sortDir, lastMovement, unitFilter, qtyFilter, picks]);
 
   const sortedFgVisible = useMemo(() => {
     if (!fgVisible.length) return [];
@@ -557,6 +611,8 @@ Cancel = Manufactured in-house (like Finished Goods)`);
     } else if (qtyFilter === 'out_of_stock') {
       list = list.filter(r => Number(r.available || 0) <= 0);
     }
+    if ((picks.unit?.length ?? 0) >= 2 && !picks.unit!.some(u => u.toLowerCase() === 'nos')) list = [];
+    if ((picks.qty?.length ?? 0) >= 2) list = list.filter(r => picks.qty!.some(q => qtyMatch(q, Number(r.available || 0), 0)));
     if (!sortKey) return list;
     if (sortKey === 'idx') return sortDir === 'asc' ? list : [...list].reverse();
     const getVal = (r: any): string | number => {
@@ -580,7 +636,7 @@ Cancel = Manufactured in-house (like Finished Goods)`);
       const c = String(av).localeCompare(String(bv), undefined, { numeric: true });
       return sortDir === 'asc' ? c : -c;
     });
-  }, [fgVisible, sortKey, sortDir, fg, unitFilter, qtyFilter]);
+  }, [fgVisible, sortKey, sortDir, fg, unitFilter, qtyFilter, picks]);
 
   // ---- Open work orders (WIP proxy — real count, never hardcoded) ---------------------------
   useEffect(() => {
@@ -648,6 +704,7 @@ Cancel = Manufactured in-house (like Finished Goods)`);
     applyFilters(next);
     setUnitFilter('All');
     setQtyFilter('All');
+    setPicks({});
     if (q !== null) setParams(prev => { const p = new URLSearchParams(prev); p.delete('q'); return p; }, { replace: true });
   };
   const handleTab = (categoryId: string) => {
@@ -1339,9 +1396,9 @@ Cancel = Manufactured in-house (like Finished Goods)`);
                     <ColumnHeaderFilter
                       label="Category"
                       col="category"
-                      isFiltered={Boolean(applied.categoryId)}
-                      filterSummary={categories.find(c => c.id === applied.categoryId)?.name || null}
-                      onClearFilter={() => handleTab('')}
+                      isFiltered={pickedIds('category').length > 0}
+                      filterSummary={pickSummary('category')}
+                      onClearFilter={() => setPicked('category', [])}
                       sortKey={sortKey}
                       sortDir={sortDir}
                       onClick={(e) => setActiveColMenu({ col: 'category', label: 'Category', rect: e.currentTarget.getBoundingClientRect() })}
@@ -1351,12 +1408,9 @@ Cancel = Manufactured in-house (like Finished Goods)`);
                     <ColumnHeaderFilter
                       label="Warehouse"
                       col="warehouse"
-                      isFiltered={Boolean(applied.warehouseId)}
-                      filterSummary={filters?.warehouses.find(w => w.id === applied.warehouseId)?.name || null}
-                      onClearFilter={() => {
-                        setDraft(d => ({ ...d, warehouseId: '' }));
-                        applyFilters({ ...applied, warehouseId: '' });
-                      }}
+                      isFiltered={pickedIds('warehouse').length > 0}
+                      filterSummary={pickSummary('warehouse')}
+                      onClearFilter={() => setPicked('warehouse', [])}
                       sortKey={sortKey}
                       sortDir={sortDir}
                       onClick={(e) => setActiveColMenu({ col: 'warehouse', label: 'Warehouse', rect: e.currentTarget.getBoundingClientRect() })}
@@ -1366,9 +1420,9 @@ Cancel = Manufactured in-house (like Finished Goods)`);
                     <ColumnHeaderFilter
                       label="Unit"
                       col="unit"
-                      isFiltered={unitFilter !== 'All'}
-                      filterSummary={unitFilter !== 'All' ? unitFilter : null}
-                      onClearFilter={() => setUnitFilter('All')}
+                      isFiltered={pickedIds('unit').length > 0}
+                      filterSummary={pickSummary('unit')}
+                      onClearFilter={() => setPicked('unit', [])}
                       sortKey={sortKey}
                       sortDir={sortDir}
                       onClick={(e) => setActiveColMenu({ col: 'unit', label: 'Unit', rect: e.currentTarget.getBoundingClientRect() })}
@@ -1390,9 +1444,9 @@ Cancel = Manufactured in-house (like Finished Goods)`);
                       label={fgTab ? 'Available Qty (Opened Stock)' : 'Available Qty'}
                       col="qty"
                       align="right"
-                      isFiltered={qtyFilter !== 'All'}
-                      filterSummary={qtyFilter !== 'All' ? (qtyFilter === 'in_stock' ? '> 0' : qtyFilter === 'out_of_stock' ? '= 0' : 'Low') : null}
-                      onClearFilter={() => setQtyFilter('All')}
+                      isFiltered={pickedIds('qty').length > 0}
+                      filterSummary={pickSummary('qty')}
+                      onClearFilter={() => setPicked('qty', [])}
                       sortKey={sortKey}
                       sortDir={sortDir}
                       onClick={(e) => setActiveColMenu({ col: 'qty', label: 'Available Qty', rect: e.currentTarget.getBoundingClientRect() })}
@@ -1426,12 +1480,9 @@ Cancel = Manufactured in-house (like Finished Goods)`);
                     <ColumnHeaderFilter
                       label="Stock Status"
                       col="status"
-                      isFiltered={Boolean(applied.status)}
-                      filterSummary={applied.status || null}
-                      onClearFilter={() => {
-                        setDraft(d => ({ ...d, status: '' }));
-                        applyFilters({ ...applied, status: '' });
-                      }}
+                      isFiltered={pickedIds('status').length > 0}
+                      filterSummary={pickSummary('status')}
+                      onClearFilter={() => setPicked('status', [])}
                       sortKey={sortKey}
                       sortDir={sortDir}
                       onClick={(e) => setActiveColMenu({ col: 'status', label: 'Stock Status', rect: e.currentTarget.getBoundingClientRect() })}
@@ -1680,7 +1731,7 @@ Cancel = Manufactured in-house (like Finished Goods)`);
 
           {/* Footer / pagination */}
           <div className="px-4 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3 text-sm text-slate-600">
-            <span>{items ? ((items.total === 0 ? (fgVisible.length ? '' : 'Showing 0 products') : `Showing ${firstShown} to ${lastShown} of ${formatQty(items.total)} products`) + (fgVisible.length ? `${items.total ? ' · ' : ''}${fgVisible.length} finished good${fgVisible.length === 1 ? '' : 's'} ready for delivery` : '')) : ' '}</span>
+            <span>{items ? ((items.total === 0 ? (fgVisible.length ? '' : 'Showing 0 products') : Object.values(picks).some(v => (v?.length ?? 0) >= 2) ? `Showing ${formatQty(sortedItemsRows.length)} matching products` : `Showing ${firstShown} to ${lastShown} of ${formatQty(items.total)} products`) + (fgVisible.length ? `${items.total ? ' · ' : ''}${fgVisible.length} finished good${fgVisible.length === 1 ? '' : 's'} ready for delivery` : '')) : ' '}</span>
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-1">
                 <button aria-label="Previous page" disabled={page <= 1 || !items} onClick={() => setPage(p => Math.max(1, p - 1))}
@@ -1705,7 +1756,26 @@ Cancel = Manufactured in-house (like Finished Goods)`);
       </div>
 
       {/* Column Header Filter & Sort Popover */}
-      {activeColMenu && (
+      {activeColMenu && activeColMenu.col !== 'name' && (() => {
+        const c = activeColMenu.col as PickCol;
+        const opts = pickOptions(c);
+        const ids = pickedIds(c).map(x => x.toLowerCase());
+        const sel = opts.filter(o => ids.includes(o.id.toLowerCase())).map(o => o.label);
+        return (
+          <ColumnFilterMenu
+            anchor={activeColMenu.rect}
+            title={activeColMenu.label}
+            values={opts.map(o => o.label)}
+            selected={sel.length ? new Set(sel) : null}
+            allLabel={ALL_LABEL[c]}
+            onChange={(next) => setPicked(c, next ? opts.filter(o => next.has(o.label)).map(o => o.id) : [])}
+            sortDir={sortKey === c ? sortDir : null}
+            onSort={(d) => setSort(c, d)}
+            onClose={() => setActiveColMenu(null)}
+          />
+        );
+      })()}
+      {activeColMenu && activeColMenu.col === 'name' && (
         <HeaderFilterMenuPopover target={activeColMenu.rect} onClose={() => setActiveColMenu(null)}>
           <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-slate-100 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
             <span>{activeColMenu.label}</span>
@@ -1758,213 +1828,6 @@ Cancel = Manufactured in-house (like Finished Goods)`);
                   Apply
                 </button>
               </div>
-            </div>
-          )}
-
-          {/* Category Filter */}
-          {activeColMenu.col === 'category' && (
-            <div className="py-1">
-              {categories.length > 5 && (
-                <div className="mb-1.5 px-0.5">
-                  <input
-                    type="text"
-                    value={menuSearchQuery}
-                    onChange={e => setMenuSearchQuery(e.target.value)}
-                    placeholder="Search categories..."
-                    className="w-full text-xs px-2 py-1 border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  />
-                </div>
-              )}
-              <div className="max-h-56 overflow-y-auto space-y-0.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    handleTab('');
-                    setActiveColMenu(null);
-                  }}
-                  className={`w-full text-left px-2.5 py-1.5 text-xs rounded-md flex items-center justify-between hover:bg-slate-50 transition-colors ${
-                    !applied.categoryId ? 'font-bold text-blue-600 bg-blue-50/70' : 'text-slate-700'
-                  }`}
-                >
-                  <span>All Categories</span>
-                  {!applied.categoryId && <Check size={12} className="text-blue-600 shrink-0" />}
-                </button>
-                {categories
-                  .filter(c => !menuSearchQuery || c.name.toLowerCase().includes(menuSearchQuery.toLowerCase()))
-                  .map(c => {
-                    const isSel = applied.categoryId === c.id;
-                    return (
-                      <button
-                        key={c.id}
-                        type="button"
-                        onClick={() => {
-                          handleTab(c.id);
-                          setActiveColMenu(null);
-                        }}
-                        className={`w-full text-left px-2.5 py-1.5 text-xs rounded-md flex items-center justify-between hover:bg-slate-50 transition-colors ${
-                          isSel ? 'font-bold text-blue-600 bg-blue-50/70' : 'text-slate-700'
-                        }`}
-                      >
-                        <span className="truncate">{c.name}</span>
-                        {isSel && <Check size={12} className="text-blue-600 shrink-0 ml-2" />}
-                      </button>
-                    );
-                  })}
-              </div>
-            </div>
-          )}
-
-          {/* Warehouse Filter */}
-          {activeColMenu.col === 'warehouse' && (
-            <div className="py-1">
-              {(filters?.warehouses ?? []).length > 5 && (
-                <div className="mb-1.5 px-0.5">
-                  <input
-                    type="text"
-                    value={menuSearchQuery}
-                    onChange={e => setMenuSearchQuery(e.target.value)}
-                    placeholder="Search warehouses..."
-                    className="w-full text-xs px-2 py-1 border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  />
-                </div>
-              )}
-              <div className="max-h-56 overflow-y-auto space-y-0.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setDraft(d => ({ ...d, warehouseId: '' }));
-                    applyFilters({ ...applied, warehouseId: '' });
-                    setActiveColMenu(null);
-                  }}
-                  className={`w-full text-left px-2.5 py-1.5 text-xs rounded-md flex items-center justify-between hover:bg-slate-50 transition-colors ${
-                    !applied.warehouseId ? 'font-bold text-blue-600 bg-blue-50/70' : 'text-slate-700'
-                  }`}
-                >
-                  <span>All Warehouses</span>
-                  {!applied.warehouseId && <Check size={12} className="text-blue-600 shrink-0" />}
-                </button>
-                {(filters?.warehouses ?? [])
-                  .filter(w => !menuSearchQuery || w.name.toLowerCase().includes(menuSearchQuery.toLowerCase()))
-                  .map(w => {
-                    const isSel = applied.warehouseId === w.id;
-                    return (
-                      <button
-                        key={w.id}
-                        type="button"
-                        onClick={() => {
-                          setDraft(d => ({ ...d, warehouseId: w.id }));
-                          applyFilters({ ...applied, warehouseId: w.id });
-                          setActiveColMenu(null);
-                        }}
-                        className={`w-full text-left px-2.5 py-1.5 text-xs rounded-md flex items-center justify-between hover:bg-slate-50 transition-colors ${
-                          isSel ? 'font-bold text-blue-600 bg-blue-50/70' : 'text-slate-700'
-                        }`}
-                      >
-                        <span className="truncate">{w.name}</span>
-                        {isSel && <Check size={12} className="text-blue-600 shrink-0 ml-2" />}
-                      </button>
-                    );
-                  })}
-              </div>
-            </div>
-          )}
-
-          {/* Unit Filter */}
-          {activeColMenu.col === 'unit' && (
-            <div className="py-1 max-h-56 overflow-y-auto space-y-0.5">
-              <button
-                type="button"
-                onClick={() => {
-                  setUnitFilter('All');
-                  setActiveColMenu(null);
-                }}
-                className={`w-full text-left px-2.5 py-1.5 text-xs rounded-md flex items-center justify-between hover:bg-slate-50 transition-colors ${
-                  unitFilter === 'All' ? 'font-bold text-blue-600 bg-blue-50/70' : 'text-slate-700'
-                }`}
-              >
-                <span>All Units</span>
-                {unitFilter === 'All' && <Check size={12} className="text-blue-600 shrink-0" />}
-              </button>
-              {distinctUnits.map(u => {
-                const isSel = unitFilter.toLowerCase() === u.toLowerCase();
-                return (
-                  <button
-                    key={u}
-                    type="button"
-                    onClick={() => {
-                      setUnitFilter(u);
-                      setActiveColMenu(null);
-                    }}
-                    className={`w-full text-left px-2.5 py-1.5 text-xs rounded-md flex items-center justify-between hover:bg-slate-50 transition-colors ${
-                      isSel ? 'font-bold text-blue-600 bg-blue-50/70' : 'text-slate-700'
-                    }`}
-                  >
-                    <span>{u}</span>
-                    {isSel && <Check size={12} className="text-blue-600 shrink-0" />}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Stock Status Filter */}
-          {activeColMenu.col === 'status' && (
-            <div className="py-1 space-y-0.5">
-              {[
-                { id: '', label: 'All Statuses' },
-                { id: 'In Stock', label: 'In Stock' },
-                { id: 'Low Stock', label: 'Low Stock' },
-                { id: 'Out of Stock', label: 'Out of Stock' },
-              ].map(s => {
-                const isSel = (applied.status || '') === s.id;
-                return (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => {
-                      setDraft(d => ({ ...d, status: s.id as any }));
-                      applyFilters({ ...applied, status: s.id as any });
-                      setActiveColMenu(null);
-                    }}
-                    className={`w-full text-left px-2.5 py-1.5 text-xs rounded-md flex items-center justify-between hover:bg-slate-50 transition-colors ${
-                      isSel ? 'font-bold text-blue-600 bg-blue-50/70' : 'text-slate-700'
-                    }`}
-                  >
-                    <span>{s.label}</span>
-                    {isSel && <Check size={12} className="text-blue-600 shrink-0" />}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Quantity Filter */}
-          {activeColMenu.col === 'qty' && (
-            <div className="py-1 space-y-0.5">
-              {[
-                { id: 'All', label: 'All Quantities' },
-                { id: 'in_stock', label: 'In Stock (> 0)' },
-                { id: 'low_stock', label: 'Low Stock (< Reorder)' },
-                { id: 'out_of_stock', label: 'Out of Stock (= 0)' },
-              ].map(q => {
-                const isSel = qtyFilter === q.id;
-                return (
-                  <button
-                    key={q.id}
-                    type="button"
-                    onClick={() => {
-                      setQtyFilter(q.id as any);
-                      setActiveColMenu(null);
-                    }}
-                    className={`w-full text-left px-2.5 py-1.5 text-xs rounded-md flex items-center justify-between hover:bg-slate-50 transition-colors ${
-                      isSel ? 'font-bold text-blue-600 bg-blue-50/70' : 'text-slate-700'
-                    }`}
-                  >
-                    <span>{q.label}</span>
-                    {isSel && <Check size={12} className="text-blue-600 shrink-0" />}
-                  </button>
-                );
-              })}
             </div>
           )}
 
