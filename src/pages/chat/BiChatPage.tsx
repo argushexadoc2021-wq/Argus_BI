@@ -434,7 +434,13 @@ function BiChatInner() {
 
   const handleEndCall = async (
     durationSeconds: number,
-    status: 'connected' | 'missed' | 'rejected'
+    status: 'connected' | 'missed' | 'rejected',
+    auditData?: {
+      recordingUrl?: string | null;
+      recordingType?: string;
+      transcriptText?: string;
+      dialogue?: any[];
+    }
   ) => {
     if (!activeCall) return;
 
@@ -454,9 +460,15 @@ function BiChatInner() {
         conversationId: activeCall.conversation_id || '',
         callerId: activeCall.caller_id,
         callerName: activeCall.caller_name || '',
+        recipientId: activeCall.recipient_id,
+        recipientName: activeCall.recipient_name,
         callType: activeCall.type,
         status,
         durationSeconds,
+        recordingUrl: auditData?.recordingUrl,
+        recordingType: auditData?.recordingType,
+        transcriptText: auditData?.transcriptText,
+        dialogue: auditData?.dialogue,
       });
 
       // Reload messages in active conversation to reflect call log
@@ -848,6 +860,7 @@ function BiChatInner() {
         <CallOverlay
           call={activeCall}
           currentUserId={currentUserId}
+          currentUserName={currentUserName}
           onEndCall={handleEndCall}
         />
       )}

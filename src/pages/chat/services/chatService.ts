@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase';
-import type { UserColleague, Conversation, ChatMessage, ChatAttachment, Meeting, CallSession } from '../types';
+import type { UserColleague, Conversation, ChatMessage, ChatAttachment, Meeting, CallSession, CallAuditItem } from '../types';
 
 const STORAGE_KEY_PREFIX = 'argus_bi_chat_';
 
@@ -1346,6 +1346,12 @@ export const chatService = {
     callType: 'voice' | 'video';
     status: 'connected' | 'missed' | 'rejected';
     durationSeconds: number;
+    recipientId?: string;
+    recipientName?: string;
+    recordingUrl?: string | null;
+    recordingType?: string;
+    transcriptText?: string;
+    dialogue?: any[];
   }) {
     const text =
       params.status === 'missed'
@@ -1365,6 +1371,16 @@ export const chatService = {
         duration_seconds: params.durationSeconds,
         started_at: new Date(Date.now() - params.durationSeconds * 1000).toISOString(),
         ended_at: new Date().toISOString(),
+        participants: {
+          caller_id: params.callerId,
+          caller_name: params.callerName,
+          recipient_id: params.recipientId,
+          recipient_name: params.recipientName,
+          recording_url: params.recordingUrl || null,
+          recording_type: params.recordingType || (params.callType === 'video' ? 'video/webm' : 'audio/webm'),
+          transcript: params.transcriptText || '',
+          dialogue: params.dialogue || [],
+        },
       });
     } catch (e) {
       console.warn('Could not record call in bi_chat_calls:', e);
@@ -1381,8 +1397,53 @@ export const chatService = {
         call_type: params.callType,
         call_duration: params.durationSeconds,
         call_status: params.status,
+        recording_url: params.recordingUrl || null,
+        transcript: params.transcriptText || '',
+        dialogue: params.dialogue || [],
       },
     });
+  },
+
+  /**
+   * Fetches communications audit logs for all calls made within a company.
+   */
+  async getCallAuditLogs(companyId: string): Promise<CallAuditItem[]> {
+    if (!companyId) return [];
+    try {
+      const { data, error } = await supabase
+        .from('bi_chat_calls')
+        .select('*')
+        .eq('company_id', companyId)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      if (!data) return [];
+
+      return data.map((row: any) => {
+        const parts = row.participants || {};
+        return {
+          id: row.id,
+          company_id: row.company_id,
+          conversation_id: row.conversation_id,
+          caller_id: row.caller_id,
+          type: row.type || 'voice',
+          status: row.status,
+          started_at: row.started_at,
+          ended_at: row.ended_at,
+          duration_seconds: row.duration_seconds || 0,
+          created_at: row.created_at,
+          caller_name: parts.caller_name || 'Caller',
+          recipient_name: parts.recipient_name || 'Recipient',
+          recording_url: parts.recording_url || null,
+          recording_type: parts.recording_type || (row.type === 'video' ? 'video/webm' : 'audio/webm'),
+          transcript: parts.transcript || '',
+          dialogue: parts.dialogue || [],
+        };
+      });
+    } catch (err) {
+      console.warn('[AuditLogs] getCallAuditLogs failed:', err);
+      return [];
+    }
   },
 };
 

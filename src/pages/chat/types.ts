@@ -109,6 +109,25 @@ export interface MeetingParticipant {
   responded_at?: string;
 }
 
+export interface CallAuditItem {
+  id: string;
+  company_id: string;
+  conversation_id: string;
+  caller_id: string;
+  type: 'voice' | 'video';
+  status: string;
+  started_at: string;
+  ended_at?: string;
+  duration_seconds: number;
+  created_at: string;
+  caller_name?: string;
+  recipient_name?: string;
+  recording_url?: string | null;
+  recording_type?: string;
+  transcript?: string;
+  dialogue?: Array<{ speaker_name?: string; speaker?: string; text: string; time?: string; time_offset?: string }>;
+}
+
 export interface CallSession {
   id: string;
   company_id: string;

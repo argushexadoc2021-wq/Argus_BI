@@ -340,6 +340,14 @@ export class WebRtcCallManager {
    * Allows external caller (e.g. CallOverlay reacting to user_events accept_call)
    * to mark accepted and initiate SDP offer.
    */
+  getLocalStream(): MediaStream | null {
+    return this.localStream;
+  }
+
+  getRemoteStream(): MediaStream | null {
+    return this.remoteStream;
+  }
+
   handleRemoteAccepted() {
     if (this.isCleanedUp) return;
     this.isAccepted = true;

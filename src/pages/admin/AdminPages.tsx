@@ -1875,7 +1875,7 @@ export function SettingsPage() {
     </div>
   );
 }
-export function AuditLogsPage() { return <AdminStub title="Audit Logs" description="System-wide activity monitoring" icon={FileText} />; }
+export { AuditLogsPage } from './AuditLogsPage';
 
 // ======================================================================================
 // Company & Access Management: All Companies → Company → Users → User Permissions
