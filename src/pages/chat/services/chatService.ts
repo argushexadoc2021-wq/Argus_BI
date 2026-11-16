@@ -177,11 +177,24 @@ export const chatService = {
    */
   async getConversations(companyId: string, currentUserId: string): Promise<Conversation[]> {
     try {
-      // 1. Query conversations from Supabase
+      if (!currentUserId) return [];
+
+      // 1. Find conversation IDs that currentUserId is actually a participant of
+      const { data: userParts, error: partErr } = await supabase
+        .from('bi_chat_participants')
+        .select('conversation_id')
+        .eq('user_id', currentUserId);
+
+      if (partErr) throw partErr;
+      const myConvIds = (userParts || []).map((p: any) => p.conversation_id);
+      if (myConvIds.length === 0) return [];
+
+      // 2. Query only conversations that currentUserId belongs to!
       const { data: convs, error } = await supabase
         .from('bi_chat_conversations')
         .select('*')
         .eq('company_id', companyId)
+        .in('id', myConvIds)
         .order('last_message_at', { ascending: false });
 
       if (error) throw error;
@@ -301,18 +314,17 @@ export const chatService = {
       const convIds = (myConvs || []).map((c: any) => c.conversation_id);
 
       if (convIds.length > 0) {
-        const { data: match } = await supabase
+        const { data: matches } = await supabase
           .from('bi_chat_participants')
           .select('conversation_id, bi_chat_conversations!inner(id, type, company_id)')
           .in('conversation_id', convIds)
           .eq('user_id', colleagueId)
           .eq('bi_chat_conversations.type', 'direct')
-          .eq('bi_chat_conversations.company_id', companyId)
-          .maybeSingle();
+          .eq('bi_chat_conversations.company_id', companyId);
 
-        if (match && match.conversation_id) {
+        if (matches && matches.length > 0) {
           const list = await this.getConversations(companyId, currentUserId);
-          const found = list.find((c) => c.id === match.conversation_id);
+          const found = list.find((c) => c.id === matches[0].conversation_id);
           if (found) return found;
         }
       }
@@ -1175,10 +1187,17 @@ export const chatService = {
       locationOrLink: params.locationOrLink || `https://meet.argus-cnc.internal/${meetingId}`,
       status: 'scheduled',
       reminder_minutes: reminderMinutes,
-      participants: params.participantUserIds.map((uid) => ({
-        user_id: uid,
-        status: uid === params.organizerId ? 'accepted' : 'pending',
-      })),
+      participants: (() => {
+        const cachedColleagues = getCache<UserColleague[]>(`colleagues_${params.companyId}`, []);
+        return params.participantUserIds.map((uid) => {
+          const found = cachedColleagues.find((c) => c.id === uid);
+          return {
+            user_id: uid,
+            full_name: uid === params.organizerId ? params.organizerName : (found?.full_name || 'Colleague'),
+            status: uid === params.organizerId ? 'accepted' : 'pending',
+          };
+        });
+      })(),
       created_at: new Date().toISOString(),
     };
 

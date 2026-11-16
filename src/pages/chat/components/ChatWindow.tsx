@@ -244,9 +244,17 @@ export function ChatWindow({
             type="button"
             onClick={() => onStartCall('video')}
             title="Start Video Call"
-            className="p-2 rounded-lg text-slate-600 hover:text-brand-600 hover:bg-orange-50 border border-slate-200 transition-colors"
+            className="p-2 rounded-lg text-slate-600 hover:text-brand-600 hover:bg-orange-50 border border-slate-200 transition-colors cursor-pointer"
           >
             <Video size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={onOpenScheduleMeeting}
+            title="Schedule Meeting / Share Google Meet"
+            className="p-2 rounded-lg text-slate-600 hover:text-orange-600 hover:bg-orange-50 border border-slate-200 transition-colors cursor-pointer"
+          >
+            <Calendar size={15} />
           </button>
           <button
             type="button"

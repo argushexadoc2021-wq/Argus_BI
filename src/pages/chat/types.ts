@@ -93,7 +93,7 @@ export interface Meeting {
   description?: string;
   start_time: string;
   end_time: string;
-  meeting_type: 'video' | 'voice' | 'in_person';
+  meeting_type: 'video' | 'voice' | 'in_person' | 'google_meet';
   location_or_link?: string;
   status: 'scheduled' | 'in_progress' | 'completed' | 'cancelled';
   reminder_minutes: number[];

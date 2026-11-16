@@ -549,6 +549,12 @@ function BiChatInner() {
   };
 
   const handleJoinMeeting = (meeting: Meeting) => {
+    const link = meeting.location_or_link || '';
+    if (link.startsWith('http://') || link.startsWith('https://')) {
+      window.open(link, '_blank');
+      return;
+    }
+
     if (meeting.meeting_type === 'video' || meeting.meeting_type === 'voice') {
       const session: CallSession = {
         id: `mtg_call_${meeting.id}`,
@@ -560,8 +566,6 @@ function BiChatInner() {
         created_at: new Date().toISOString(),
       };
       setActiveCall(session);
-    } else if (meeting.location_or_link?.startsWith('http')) {
-      window.open(meeting.location_or_link, '_blank');
     }
   };
 

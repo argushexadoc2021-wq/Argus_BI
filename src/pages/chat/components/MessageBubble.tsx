@@ -19,6 +19,48 @@ import {
 import type { ChatMessage, Meeting } from '../types';
 import { MeetingCard } from './MeetingCard';
 
+function renderContentWithLinks(content: string, isOwn: boolean) {
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  const parts = content.split(urlRegex);
+
+  return parts.map((part, index) => {
+    if (part.match(urlRegex)) {
+      const isMeet = part.toLowerCase().includes('meet.google.com');
+      if (isMeet) {
+        return (
+          <a
+            key={index}
+            href={part}
+            target="_blank"
+            rel="noreferrer"
+            className={`inline-flex items-center gap-1 my-0.5 px-2 py-0.5 rounded-md font-bold text-xs underline decoration-emerald-400 ${
+              isOwn
+                ? 'bg-black/20 text-emerald-200 hover:text-white'
+                : 'bg-emerald-50 text-emerald-700 hover:text-emerald-900 border border-emerald-200'
+            }`}
+          >
+            <span>🎥 Google Meet</span>
+            <span className="font-mono text-[11px] font-normal">{part}</span>
+            <span>↗</span>
+          </a>
+        );
+      }
+      return (
+        <a
+          key={index}
+          href={part}
+          target="_blank"
+          rel="noreferrer"
+          className={`underline font-medium hover:opacity-85 ${isOwn ? 'text-white' : 'text-orange-600'}`}
+        >
+          {part}
+        </a>
+      );
+    }
+    return part;
+  });
+}
+
 export function MessageBubble({
   message,
   isOwn,
@@ -200,7 +242,7 @@ export function MessageBubble({
           {/* Text Content */}
           {message.content && (
             <p className="text-[13px] leading-relaxed whitespace-pre-wrap break-words select-text font-normal">
-              {message.content}
+              {renderContentWithLinks(message.content, isOwn)}
             </p>
           )}
 
