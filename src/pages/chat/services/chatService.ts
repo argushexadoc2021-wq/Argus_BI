@@ -783,24 +783,129 @@ export const chatService = {
   /**
    * Realtime subscription for company-level events (incoming calls, global message alerts).
    */
+  /**
+   * Broadcasts an incoming call to the recipient across Supabase Realtime,
+   * local cross-tab BroadcastChannel, and window CustomEvent.
+   */
+  async broadcastIncomingCall(companyId: string, call: CallSession): Promise<void> {
+    if (!companyId || !call) return;
+
+    // 1. Local window event
+    window.dispatchEvent(
+      new CustomEvent('argus:chat-company-event', {
+        detail: { type: 'INCOMING_CALL', call },
+      })
+    );
+
+    // 2. Cross-tab BroadcastChannel (same browser)
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        const bc = new BroadcastChannel(`company_events_${companyId}`);
+        bc.postMessage({ type: 'incoming_call', payload: call });
+        setTimeout(() => bc.close(), 1000);
+      } catch {}
+    }
+
+    // 3. Supabase Realtime (cross-device over Internet)
+    try {
+      const channel = supabase.channel(`company_events_${companyId}`);
+      await channel.send({
+        type: 'broadcast',
+        event: 'incoming_call',
+        payload: call,
+      });
+    } catch (e) {
+      console.warn('Supabase incoming_call broadcast error:', e);
+    }
+  },
+
+  /**
+   * Broadcasts a call cancellation (e.g. caller hung up before answer).
+   */
+  async broadcastCancelCall(companyId: string, callId: string, recipientId?: string): Promise<void> {
+    if (!companyId || !callId) return;
+
+    const payload = { callId, recipient_id: recipientId };
+
+    // 1. Local window event
+    window.dispatchEvent(
+      new CustomEvent('argus:chat-company-event', {
+        detail: { type: 'CANCEL_CALL', callId },
+      })
+    );
+
+    // 2. Cross-tab BroadcastChannel
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        const bc = new BroadcastChannel(`company_events_${companyId}`);
+        bc.postMessage({ type: 'cancel_call', payload });
+        setTimeout(() => bc.close(), 1000);
+      } catch {}
+    }
+
+    // 3. Supabase Realtime
+    try {
+      const channel = supabase.channel(`company_events_${companyId}`);
+      await channel.send({
+        type: 'broadcast',
+        event: 'cancel_call',
+        payload,
+      });
+    } catch (e) {
+      console.warn('Supabase cancel_call broadcast error:', e);
+    }
+  },
+
+  /**
+   * Realtime subscription for company-level events (incoming calls, cancellations, global message alerts).
+   */
   subscribeToCompanyEvents(
     companyId: string,
     currentUserId: string,
     onEvent: (event: {
-      type: 'INCOMING_CALL' | 'NEW_MESSAGE';
+      type: 'INCOMING_CALL' | 'CANCEL_CALL' | 'NEW_MESSAGE';
       call?: CallSession;
+      callId?: string;
       message?: ChatMessage;
     }) => void
   ): () => void {
     if (!companyId) return () => {};
 
     try {
+      const handledEvents = new Set<string>();
+
+      const handleCall = (payload: any) => {
+        if (!payload || !payload.id) return;
+        const key = `call_${payload.id}_${payload.status}`;
+        if (handledEvents.has(key)) return;
+        handledEvents.add(key);
+        setTimeout(() => handledEvents.delete(key), 5000);
+
+        if (payload.recipient_id === currentUserId || payload.recipient_id === 'all') {
+          onEvent({ type: 'INCOMING_CALL', call: payload });
+        }
+      };
+
+      const handleCancel = (payload: any) => {
+        if (!payload || !payload.callId) return;
+        const key = `cancel_${payload.callId}`;
+        if (handledEvents.has(key)) return;
+        handledEvents.add(key);
+        setTimeout(() => handledEvents.delete(key), 5000);
+
+        if (!payload.recipient_id || payload.recipient_id === currentUserId || payload.recipient_id === 'all') {
+          onEvent({ type: 'CANCEL_CALL', callId: payload.callId });
+        }
+      };
+
+      // 1. Supabase Realtime
       const channel = supabase
         .channel(`company_events_${companyId}`)
         .on('broadcast', { event: 'incoming_call' }, ({ payload }: any) => {
-          if (payload && (payload.recipient_id === currentUserId || payload.recipient_id === 'all')) {
-            onEvent({ type: 'INCOMING_CALL', call: payload });
-          }
+          handleCall(payload);
+        })
+        .on('broadcast', { event: 'cancel_call' }, ({ payload }: any) => {
+          handleCancel(payload);
         })
         .on('broadcast', { event: 'new_message' }, ({ payload }: any) => {
           if (payload && payload.sender_id !== currentUserId) {
@@ -809,9 +914,32 @@ export const chatService = {
         })
         .subscribe();
 
+      // 2. Cross-tab BroadcastChannel
+      let bc: BroadcastChannel | null = null;
+      if (typeof BroadcastChannel !== 'undefined') {
+        try {
+          bc = new BroadcastChannel(`company_events_${companyId}`);
+          bc.onmessage = (ev) => {
+            const data = ev.data;
+            if (data?.type === 'incoming_call') {
+              handleCall(data.payload);
+            } else if (data?.type === 'cancel_call') {
+              handleCancel(data.payload);
+            }
+          };
+        } catch {}
+      }
+
+      // 3. Local CustomEvent
       const localHandler = (e: Event) => {
         const d = (e as CustomEvent).detail;
-        if (d) onEvent(d);
+        if (d?.type === 'INCOMING_CALL' && d.call) {
+          handleCall(d.call);
+        } else if (d?.type === 'CANCEL_CALL' && d.callId) {
+          handleCancel({ callId: d.callId });
+        } else if (d) {
+          onEvent(d);
+        }
       };
       window.addEventListener('argus:chat-company-event', localHandler);
 
@@ -819,6 +947,9 @@ export const chatService = {
         try {
           void supabase.removeChannel(channel);
         } catch {}
+        if (bc) {
+          try { bc.close(); } catch {}
+        }
         window.removeEventListener('argus:chat-company-event', localHandler);
       };
     } catch {
@@ -1038,6 +1169,22 @@ export const chatService = {
         : params.status === 'rejected'
         ? `Declined ${params.callType} call`
         : `${params.callType === 'video' ? 'Video' : 'Voice'} call ended (${formatDuration(params.durationSeconds)})`;
+
+    // Persist to bi_chat_calls database table
+    try {
+      await supabase.from('bi_chat_calls').insert({
+        company_id: params.companyId,
+        conversation_id: params.conversationId,
+        caller_id: params.callerId,
+        type: params.callType,
+        status: params.status === 'connected' ? 'ended' : params.status,
+        duration_seconds: params.durationSeconds,
+        started_at: new Date(Date.now() - params.durationSeconds * 1000).toISOString(),
+        ended_at: new Date().toISOString(),
+      });
+    } catch (e) {
+      console.warn('Could not record call in bi_chat_calls:', e);
+    }
 
     await this.sendMessage({
       conversationId: params.conversationId,

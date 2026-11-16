@@ -116,6 +116,9 @@ export interface CallSession {
   caller_id: string;
   caller_name?: string;
   caller_avatar?: string;
+  recipient_id?: string;
+  recipient_name?: string;
+  recipient_avatar?: string;
   type: 'voice' | 'video';
   status: 'ringing' | 'connected' | 'ended' | 'rejected' | 'missed';
   started_at: string;

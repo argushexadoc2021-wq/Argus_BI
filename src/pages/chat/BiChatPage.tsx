@@ -24,7 +24,7 @@ import type {
 } from './types';
 import { chatService } from './services/chatService';
 import { meetingReminderService } from './services/meetingReminderService';
-import { playChime, playRingtone } from './services/soundService';
+import { playChime, playRingtone, stopRingtone, playEndCallTone } from './services/soundService';
 import { ConversationList } from './components/ConversationList';
 import { ChatWindow } from './components/ChatWindow';
 import { InfoPanel } from './components/InfoPanel';
@@ -257,6 +257,10 @@ function BiChatInner() {
         if (event.type === 'INCOMING_CALL' && event.call) {
           playRingtone();
           setActiveCall(event.call);
+        } else if (event.type === 'CANCEL_CALL') {
+          stopRingtone();
+          setActiveCall((prev) => (prev && prev.id === event.callId ? null : prev));
+          playEndCallTone();
         } else if (event.type === 'NEW_MESSAGE' && event.message) {
           // If message is for another conversation, increment its unread count and play chime
           if (event.message.conversation_id !== activeConversation?.id) {
@@ -373,12 +377,12 @@ function BiChatInner() {
   };
 
   // Start Voice or Video Call
-  const handleStartCall = (type: 'voice' | 'video') => {
+  const handleStartCall = async (type: 'voice' | 'video') => {
     if (!activeConversation) return;
 
-    // Recipient id: for direct chat, find other participant; for group, first colleague
+    // Recipient id: for direct chat, find other participant; for group, 'all'
     let recipientId = '';
-    let recipientName = activeConversation.title;
+    let recipientName = activeConversation.title || 'Colleague';
 
     if (activeConversation.type === 'direct') {
       const otherPart = activeConversation.participants.find(
@@ -388,10 +392,13 @@ function BiChatInner() {
         recipientId = otherPart.user_id;
         recipientName = otherPart.user?.full_name || recipientName;
       }
+    } else {
+      recipientId = 'all';
     }
 
     const session: CallSession = {
       id: `call_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      company_id: companyId,
       conversation_id: activeConversation.id,
       caller_id: currentUserId,
       caller_name: currentUserName,
@@ -399,10 +406,15 @@ function BiChatInner() {
       recipient_name: recipientName,
       type,
       status: 'ringing',
-      created_at: new Date().toISOString(),
+      started_at: new Date().toISOString(),
+      duration_seconds: 0,
+      participants: recipientId && recipientId !== 'all' ? [currentUserId, recipientId] : [currentUserId],
     };
 
     setActiveCall(session);
+
+    // CRITICAL: Broadcast incoming call so recipient immediately receives ringing modal and ringtone
+    await chatService.broadcastIncomingCall(companyId, session);
   };
 
   const handleEndCall = async (
@@ -412,11 +424,16 @@ function BiChatInner() {
     if (!activeCall) return;
 
     try {
+      // If caller hung up before connection, broadcast cancellation to dismiss recipient ringing popup
+      if (activeCall.caller_id === currentUserId && status !== 'connected') {
+        await chatService.broadcastCancelCall(companyId, activeCall.id, activeCall.recipient_id);
+      }
+
       await chatService.logCall({
         companyId,
-        conversationId: activeCall.conversation_id,
+        conversationId: activeCall.conversation_id || '',
         callerId: activeCall.caller_id,
-        callerName: activeCall.caller_name,
+        callerName: activeCall.caller_name || '',
         callType: activeCall.type,
         status,
         durationSeconds,

@@ -54,6 +54,55 @@ export function playRingtone() {
   ringInterval = window.setInterval(playBurst, 3500);
 }
 
+
+let ringbackInterval: number | null = null;
+
+/**
+ * Plays a periodic ringback tone for the caller while waiting for the recipient to answer.
+ */
+export function playRingbackTone() {
+  stopRingbackTone();
+  const ctx = getAudioContext();
+
+  const playPulse = () => {
+    try {
+      const now = ctx.currentTime;
+      const osc1 = ctx.createOscillator();
+      const osc2 = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc1.type = 'sine';
+      osc2.type = 'sine';
+      osc1.frequency.setValueAtTime(440, now);
+      osc2.frequency.setValueAtTime(480, now);
+
+      gain.gain.setValueAtTime(0.08, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
+
+      osc1.connect(gain);
+      osc2.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc1.start(now);
+      osc2.start(now);
+      osc1.stop(now + 1.2);
+      osc2.stop(now + 1.2);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  playPulse();
+  ringbackInterval = window.setInterval(playPulse, 3200);
+}
+
+export function stopRingbackTone() {
+  if (ringbackInterval !== null) {
+    clearInterval(ringbackInterval);
+    ringbackInterval = null;
+  }
+}
+
 export function stopRingtone() {
   if (ringInterval !== null) {
     clearInterval(ringInterval);
