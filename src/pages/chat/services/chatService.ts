@@ -759,6 +759,24 @@ export const chatService = {
             }
           }
         )
+        .on('broadcast', { event: 'incoming_call' }, ({ payload }: any) => {
+          if (payload && payload.id) {
+            window.dispatchEvent(
+              new CustomEvent('argus:chat-company-event', {
+                detail: { type: 'INCOMING_CALL', call: payload },
+              })
+            );
+          }
+        })
+        .on('broadcast', { event: 'cancel_call' }, ({ payload }: any) => {
+          if (payload && payload.callId) {
+            window.dispatchEvent(
+              new CustomEvent('argus:chat-company-event', {
+                detail: { type: 'CANCEL_CALL', callId: payload.callId },
+              })
+            );
+          }
+        })
         .subscribe();
 
       const localHandler = (e: Event) => {
@@ -784,80 +802,135 @@ export const chatService = {
    * Realtime subscription for company-level events (incoming calls, global message alerts).
    */
   /**
-   * Broadcasts an incoming call to the recipient across Supabase Realtime,
-   * local cross-tab BroadcastChannel, and window CustomEvent.
+   * Broadcasts an incoming call across direct callee user channel, active conversation channel,
+   * company channel, cross-tab BroadcastChannel, and window CustomEvent.
    */
   async broadcastIncomingCall(companyId: string, call: CallSession): Promise<void> {
-    if (!companyId || !call) return;
+    if (!call) return;
 
-    // 1. Local window event
+    const effCoId = companyId || call.company_id || '0255839c-a9b1-49a8-a9f6-e776fd7bdd00';
+
+    // 1. Direct Callee User Channel (DIRECT to recipient, guarantees receipt regardless of company ID!)
+    if (call.recipient_id && call.recipient_id !== 'all') {
+      try {
+        const userCh = supabase.channel(`user_events_${call.recipient_id}`);
+        await userCh.send({
+          type: 'broadcast',
+          event: 'incoming_call',
+          payload: call,
+        });
+      } catch (e) {
+        console.warn('User-level incoming_call broadcast error:', e);
+      }
+    }
+
+    // 2. Active Conversation Channel (reaches peer if currently in the conversation)
+    if (call.conversation_id) {
+      try {
+        const convCh = supabase.channel(`chat_conv_${call.conversation_id}`);
+        await convCh.send({
+          type: 'broadcast',
+          event: 'incoming_call',
+          payload: call,
+        });
+      } catch (e) {
+        console.warn('Conversation-level incoming_call broadcast error:', e);
+      }
+    }
+
+    // 3. Company-Level Broadcast
+    if (effCoId) {
+      try {
+        const compCh = supabase.channel(`company_events_${effCoId}`);
+        await compCh.send({
+          type: 'broadcast',
+          event: 'incoming_call',
+          payload: call,
+        });
+      } catch (e) {
+        console.warn('Company incoming_call broadcast error:', e);
+      }
+    }
+
+    // 4. Cross-tab BroadcastChannel (instant zero-latency on same browser)
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        if (call.recipient_id) {
+          const bcUser = new BroadcastChannel(`user_events_${call.recipient_id}`);
+          bcUser.postMessage({ type: 'incoming_call', payload: call });
+          setTimeout(() => bcUser.close(), 1000);
+        }
+        if (effCoId) {
+          const bcCo = new BroadcastChannel(`company_events_${effCoId}`);
+          bcCo.postMessage({ type: 'incoming_call', payload: call });
+          setTimeout(() => bcCo.close(), 1000);
+        }
+      } catch {}
+    }
+
+    // 5. Local Window Event (same tab)
     window.dispatchEvent(
       new CustomEvent('argus:chat-company-event', {
         detail: { type: 'INCOMING_CALL', call },
       })
     );
-
-    // 2. Cross-tab BroadcastChannel (same browser)
-    if (typeof BroadcastChannel !== 'undefined') {
-      try {
-        const bc = new BroadcastChannel(`company_events_${companyId}`);
-        bc.postMessage({ type: 'incoming_call', payload: call });
-        setTimeout(() => bc.close(), 1000);
-      } catch {}
-    }
-
-    // 3. Supabase Realtime (cross-device over Internet)
-    try {
-      const channel = supabase.channel(`company_events_${companyId}`);
-      await channel.send({
-        type: 'broadcast',
-        event: 'incoming_call',
-        payload: call,
-      });
-    } catch (e) {
-      console.warn('Supabase incoming_call broadcast error:', e);
-    }
   },
 
   /**
    * Broadcasts a call cancellation (e.g. caller hung up before answer).
    */
   async broadcastCancelCall(companyId: string, callId: string, recipientId?: string): Promise<void> {
-    if (!companyId || !callId) return;
+    if (!callId) return;
 
     const payload = { callId, recipient_id: recipientId };
+    const effCoId = companyId || '0255839c-a9b1-49a8-a9f6-e776fd7bdd00';
 
-    // 1. Local window event
+    // 1. Direct Callee User Channel
+    if (recipientId && recipientId !== 'all') {
+      try {
+        const userCh = supabase.channel(`user_events_${recipientId}`);
+        await userCh.send({
+          type: 'broadcast',
+          event: 'cancel_call',
+          payload,
+        });
+      } catch {}
+    }
+
+    // 2. Company Channel
+    if (effCoId) {
+      try {
+        const compCh = supabase.channel(`company_events_${effCoId}`);
+        await compCh.send({
+          type: 'broadcast',
+          event: 'cancel_call',
+          payload,
+        });
+      } catch {}
+    }
+
+    // 3. Cross-tab BroadcastChannel
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        if (recipientId) {
+          const bc = new BroadcastChannel(`user_events_${recipientId}`);
+          bc.postMessage({ type: 'cancel_call', payload });
+          setTimeout(() => bc.close(), 1000);
+        }
+      } catch {}
+    }
+
+    // 4. Local Window Event
     window.dispatchEvent(
       new CustomEvent('argus:chat-company-event', {
         detail: { type: 'CANCEL_CALL', callId },
       })
     );
-
-    // 2. Cross-tab BroadcastChannel
-    if (typeof BroadcastChannel !== 'undefined') {
-      try {
-        const bc = new BroadcastChannel(`company_events_${companyId}`);
-        bc.postMessage({ type: 'cancel_call', payload });
-        setTimeout(() => bc.close(), 1000);
-      } catch {}
-    }
-
-    // 3. Supabase Realtime
-    try {
-      const channel = supabase.channel(`company_events_${companyId}`);
-      await channel.send({
-        type: 'broadcast',
-        event: 'cancel_call',
-        payload,
-      });
-    } catch (e) {
-      console.warn('Supabase cancel_call broadcast error:', e);
-    }
   },
 
   /**
-   * Realtime subscription for company-level events (incoming calls, cancellations, global message alerts).
+   * Realtime subscription for company-level events and personal direct incoming calls.
+   * Runs independently of companyId to guarantee Super Admins and Staff always receive calls.
    */
   subscribeToCompanyEvents(
     companyId: string,
@@ -869,7 +942,9 @@ export const chatService = {
       message?: ChatMessage;
     }) => void
   ): () => void {
-    if (!companyId) return () => {};
+    if (!currentUserId) return () => {};
+
+    const effCoId = companyId || '0255839c-a9b1-49a8-a9f6-e776fd7bdd00';
 
     try {
       const handledEvents = new Set<string>();
@@ -879,9 +954,9 @@ export const chatService = {
         const key = `call_${payload.id}_${payload.status}`;
         if (handledEvents.has(key)) return;
         handledEvents.add(key);
-        setTimeout(() => handledEvents.delete(key), 5000);
+        setTimeout(() => handledEvents.delete(key), 8000);
 
-        if (payload.recipient_id === currentUserId || payload.recipient_id === 'all') {
+        if (!payload.recipient_id || payload.recipient_id === currentUserId || payload.recipient_id === 'all') {
           onEvent({ type: 'INCOMING_CALL', call: payload });
         }
       };
@@ -891,16 +966,27 @@ export const chatService = {
         const key = `cancel_${payload.callId}`;
         if (handledEvents.has(key)) return;
         handledEvents.add(key);
-        setTimeout(() => handledEvents.delete(key), 5000);
+        setTimeout(() => handledEvents.delete(key), 8000);
 
         if (!payload.recipient_id || payload.recipient_id === currentUserId || payload.recipient_id === 'all') {
           onEvent({ type: 'CANCEL_CALL', callId: payload.callId });
         }
       };
 
-      // 1. Supabase Realtime
-      const channel = supabase
-        .channel(`company_events_${companyId}`)
+      // 1. Direct Personal User Channel (listens for calls targeted specifically to currentUserId)
+      const userChannel = supabase
+        .channel(`user_events_${currentUserId}`)
+        .on('broadcast', { event: 'incoming_call' }, ({ payload }: any) => {
+          handleCall(payload);
+        })
+        .on('broadcast', { event: 'cancel_call' }, ({ payload }: any) => {
+          handleCancel(payload);
+        })
+        .subscribe();
+
+      // 2. Company-Level Realtime Channel
+      const compChannel = supabase
+        .channel(`company_events_${effCoId}`)
         .on('broadcast', { event: 'incoming_call' }, ({ payload }: any) => {
           handleCall(payload);
         })
@@ -914,23 +1000,28 @@ export const chatService = {
         })
         .subscribe();
 
-      // 2. Cross-tab BroadcastChannel
-      let bc: BroadcastChannel | null = null;
+      // 3. Cross-tab BroadcastChannels (same browser)
+      let bcUser: BroadcastChannel | null = null;
+      let bcCo: BroadcastChannel | null = null;
       if (typeof BroadcastChannel !== 'undefined') {
         try {
-          bc = new BroadcastChannel(`company_events_${companyId}`);
-          bc.onmessage = (ev) => {
+          bcUser = new BroadcastChannel(`user_events_${currentUserId}`);
+          bcUser.onmessage = (ev) => {
             const data = ev.data;
-            if (data?.type === 'incoming_call') {
-              handleCall(data.payload);
-            } else if (data?.type === 'cancel_call') {
-              handleCancel(data.payload);
-            }
+            if (data?.type === 'incoming_call') handleCall(data.payload);
+            else if (data?.type === 'cancel_call') handleCancel(data.payload);
+          };
+
+          bcCo = new BroadcastChannel(`company_events_${effCoId}`);
+          bcCo.onmessage = (ev) => {
+            const data = ev.data;
+            if (data?.type === 'incoming_call') handleCall(data.payload);
+            else if (data?.type === 'cancel_call') handleCancel(data.payload);
           };
         } catch {}
       }
 
-      // 3. Local CustomEvent
+      // 4. Local CustomEvent (same window)
       const localHandler = (e: Event) => {
         const d = (e as CustomEvent).detail;
         if (d?.type === 'INCOMING_CALL' && d.call) {
@@ -944,12 +1035,10 @@ export const chatService = {
       window.addEventListener('argus:chat-company-event', localHandler);
 
       return () => {
-        try {
-          void supabase.removeChannel(channel);
-        } catch {}
-        if (bc) {
-          try { bc.close(); } catch {}
-        }
+        try { void supabase.removeChannel(userChannel); } catch {}
+        try { void supabase.removeChannel(compChannel); } catch {}
+        try { bcUser?.close(); } catch {}
+        try { bcCo?.close(); } catch {}
         window.removeEventListener('argus:chat-company-event', localHandler);
       };
     } catch {

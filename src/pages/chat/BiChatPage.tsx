@@ -87,7 +87,7 @@ export default function BiChatPage() {
 }
 
 function BiChatInner() {
-  const { user, profile, company } = useAuth();
+  const { user, profile, company, companies } = useAuth();
 
   const currentUserId = profile?.id || user?.id || '';
   const currentUserName =
@@ -95,8 +95,15 @@ function BiChatInner() {
     user?.user_metadata?.full_name ||
     user?.email?.split('@')[0] ||
     'Argus User';
-  const companyId = company?.id || profile?.company_id || (user as any)?.company_id || '';
-  const companyName = company?.company_name || (user as any)?.company_name || 'Argus CNC ERP';
+  const companyId =
+    company?.id ||
+    profile?.company_id ||
+    profile?.active_company_id ||
+    (user as any)?.company_id ||
+    activeConversation?.company_id ||
+    companies?.[0]?.id ||
+    '0255839c-a9b1-49a8-a9f6-e776fd7bdd00';
+  const companyName = company?.company_name || (user as any)?.company_name || 'Argus Technologies';
 
   // State
   const [colleagues, setColleagues] = useState<UserColleague[]>([]);
@@ -246,9 +253,9 @@ function BiChatInner() {
     };
   }, [activeConversation?.id, currentUserId]);
 
-  // 4. Company-Level Broadcast (Incoming Calls, Global New Messages)
+  // 4. Company-Level Broadcast & User Signaling (Incoming Calls, Global New Messages)
   useEffect(() => {
-    if (!companyId || !currentUserId) return;
+    if (!currentUserId) return;
 
     const unsubEvents = chatService.subscribeToCompanyEvents(
       companyId,
@@ -383,6 +390,7 @@ function BiChatInner() {
     // Recipient id: for direct chat, find other participant; for group, 'all'
     let recipientId = '';
     let recipientName = activeConversation.title || 'Colleague';
+    let recipientAvatar = activeConversation.avatar_url;
 
     if (activeConversation.type === 'direct') {
       const otherPart = activeConversation.participants.find(
@@ -396,14 +404,21 @@ function BiChatInner() {
       recipientId = 'all';
     }
 
+    const effCompanyId =
+      activeConversation.company_id ||
+      companyId ||
+      '0255839c-a9b1-49a8-a9f6-e776fd7bdd00';
+
     const session: CallSession = {
       id: `call_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-      company_id: companyId,
+      company_id: effCompanyId,
       conversation_id: activeConversation.id,
       caller_id: currentUserId,
       caller_name: currentUserName,
+      caller_avatar: profile?.avatar_url || (user as any)?.user_metadata?.avatar_url,
       recipient_id: recipientId,
       recipient_name: recipientName,
+      recipient_avatar: recipientAvatar,
       type,
       status: 'ringing',
       started_at: new Date().toISOString(),
@@ -414,7 +429,7 @@ function BiChatInner() {
     setActiveCall(session);
 
     // CRITICAL: Broadcast incoming call so recipient immediately receives ringing modal and ringtone
-    await chatService.broadcastIncomingCall(companyId, session);
+    await chatService.broadcastIncomingCall(effCompanyId, session);
   };
 
   const handleEndCall = async (
@@ -424,13 +439,18 @@ function BiChatInner() {
     if (!activeCall) return;
 
     try {
+      const effCompanyId =
+        activeCall.company_id ||
+        companyId ||
+        '0255839c-a9b1-49a8-a9f6-e776fd7bdd00';
+
       // If caller hung up before connection, broadcast cancellation to dismiss recipient ringing popup
       if (activeCall.caller_id === currentUserId && status !== 'connected') {
-        await chatService.broadcastCancelCall(companyId, activeCall.id, activeCall.recipient_id);
+        await chatService.broadcastCancelCall(effCompanyId, activeCall.id, activeCall.recipient_id);
       }
 
       await chatService.logCall({
-        companyId,
+        companyId: effCompanyId,
         conversationId: activeCall.conversation_id || '',
         callerId: activeCall.caller_id,
         callerName: activeCall.caller_name || '',
