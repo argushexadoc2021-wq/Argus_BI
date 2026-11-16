@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, Component, type ErrorInfo, type ReactNode } from 'react';
 import {
   MessageSquare,
   Users,
@@ -34,7 +34,59 @@ import { ScheduleMeetingModal } from './components/ScheduleMeetingModal';
 import { MediaPreviewModal } from './components/MediaPreviewModal';
 import { CallOverlay } from './components/CallOverlay';
 
+class ChatErrorBoundary extends Component<
+  { children: ReactNode },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('BI Chat caught error:', error, info);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex flex-col items-center justify-center h-[calc(100vh-4.25rem)] bg-[#090f1e] text-white p-6 select-none">
+          <div className="w-16 h-16 rounded-2xl bg-brand-500/20 text-brand-400 border border-brand-500/30 flex items-center justify-center mb-4 shadow-lg shadow-brand-500/10">
+            <MessageSquare size={32} />
+          </div>
+          <h2 className="text-lg font-bold text-white mb-1">BI Chat · Initializing</h2>
+          <p className="text-xs text-slate-400 max-w-sm text-center mb-4 leading-relaxed">
+            {this.state.error?.message || 'Chat module encountered an unexpected issue while loading.'}
+          </p>
+          <button
+            onClick={() => {
+              this.setState({ hasError: false, error: null });
+              window.location.reload();
+            }}
+            className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-brand-600/30 cursor-pointer"
+          >
+            Reload Chat
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function BiChatPage() {
+  return (
+    <ChatErrorBoundary>
+      <BiChatInner />
+    </ChatErrorBoundary>
+  );
+}
+
+function BiChatInner() {
   const { user, profile, company } = useAuth();
 
   const currentUserId = profile?.id || user?.id || '';

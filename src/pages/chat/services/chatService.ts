@@ -570,7 +570,10 @@ export const chatService = {
   /**
    * Edits a message content.
    */
-  async editMessage(messageId: string, conversationId: string, newContent: string): Promise<boolean> {
+  /**
+   * Edits an existing message.
+   */
+  async editMessage(messageId: string, currentUserIdOrConvId: string, newContent: string): Promise<boolean> {
     try {
       await supabase
         .from('bi_chat_messages')
@@ -580,16 +583,19 @@ export const chatService = {
       /* ignore */
     }
 
-    const cached = getCache<ChatMessage[]>(`messages_${conversationId}`, []);
-    const updated = cached.map((m) => (m.id === messageId ? { ...m, content: newContent, is_edited: true } : m));
-    setCache(`messages_${conversationId}`, updated);
+    // Update in local event bus
+    window.dispatchEvent(
+      new CustomEvent('argus:chat-company-event', {
+        detail: { type: 'MESSAGE_EDITED', messageId, newContent },
+      })
+    );
     return true;
   },
 
   /**
    * Deletes a message (soft delete).
    */
-  async deleteMessage(messageId: string, conversationId: string): Promise<boolean> {
+  async deleteMessage(messageId: string, currentUserIdOrConvId?: string): Promise<boolean> {
     try {
       await supabase
         .from('bi_chat_messages')
@@ -599,17 +605,24 @@ export const chatService = {
       /* ignore */
     }
 
-    const cached = getCache<ChatMessage[]>(`messages_${conversationId}`, []);
-    const updated = cached.map((m) => (m.id === messageId ? { ...m, is_deleted: true, content: 'This message was deleted' } : m));
-    setCache(`messages_${conversationId}`, updated);
+    // Update in local event bus
+    window.dispatchEvent(
+      new CustomEvent('argus:chat-company-event', {
+        detail: { type: 'MESSAGE_DELETED', messageId },
+      })
+    );
     return true;
   },
 
   /**
    * Toggles pinned status for a message.
    */
-  async togglePinMessage(messageId: string, conversationId: string, currentPin: boolean): Promise<boolean> {
+  async togglePinMessage(first: string, second: string, third?: boolean): Promise<boolean> {
+    // Can be called as (convId, msgId, currentPin) or (msgId, convId, currentPin)
+    const messageId = second && typeof third === 'boolean' ? second : first;
+    const currentPin = typeof third === 'boolean' ? third : typeof second === 'boolean' ? second : false;
     const nextPin = !currentPin;
+
     try {
       await supabase
         .from('bi_chat_messages')
@@ -619,10 +632,131 @@ export const chatService = {
       /* ignore */
     }
 
-    const cached = getCache<ChatMessage[]>(`messages_${conversationId}`, []);
-    const updated = cached.map((m) => (m.id === messageId ? { ...m, is_pinned: nextPin } : m));
-    setCache(`messages_${conversationId}`, updated);
     return nextPin;
+  },
+
+  /**
+   * Marks a conversation as read for the given user.
+   */
+  async markConversationAsRead(conversationId: string, userId: string) {
+    if (!conversationId || !userId) return;
+    try {
+      await supabase
+        .from('bi_chat_participants')
+        .update({ last_read_at: new Date().toISOString() })
+        .eq('conversation_id', conversationId)
+        .eq('user_id', userId);
+    } catch {
+      /* ignore */
+    }
+  },
+
+  /**
+   * Realtime subscription for messages in a conversation.
+   */
+  subscribeToConversation(
+    conversationId: string,
+    onMessage: (msg: ChatMessage) => void,
+    onUpdate?: (msg: ChatMessage) => void
+  ): () => void {
+    if (!conversationId) return () => {};
+
+    try {
+      const channel = supabase
+        .channel(`chat_conv_${conversationId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'bi_chat_messages',
+            filter: `conversation_id=eq.${conversationId}`,
+          },
+          (payload: any) => {
+            if (payload?.new) {
+              onMessage(payload.new as ChatMessage);
+            }
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'bi_chat_messages',
+            filter: `conversation_id=eq.${conversationId}`,
+          },
+          (payload: any) => {
+            if (payload?.new && onUpdate) {
+              onUpdate(payload.new as ChatMessage);
+            }
+          }
+        )
+        .subscribe();
+
+      const localHandler = (e: Event) => {
+        const d = (e as CustomEvent).detail;
+        if (d && d.conversationId === conversationId && d.message) {
+          onMessage(d.message);
+        }
+      };
+      window.addEventListener('argus:chat-local-msg', localHandler);
+
+      return () => {
+        try {
+          void supabase.removeChannel(channel);
+        } catch {}
+        window.removeEventListener('argus:chat-local-msg', localHandler);
+      };
+    } catch {
+      return () => {};
+    }
+  },
+
+  /**
+   * Realtime subscription for company-level events (incoming calls, global message alerts).
+   */
+  subscribeToCompanyEvents(
+    companyId: string,
+    currentUserId: string,
+    onEvent: (event: {
+      type: 'INCOMING_CALL' | 'NEW_MESSAGE';
+      call?: CallSession;
+      message?: ChatMessage;
+    }) => void
+  ): () => void {
+    if (!companyId) return () => {};
+
+    try {
+      const channel = supabase
+        .channel(`company_events_${companyId}`)
+        .on('broadcast', { event: 'incoming_call' }, ({ payload }: any) => {
+          if (payload && (payload.recipient_id === currentUserId || payload.recipient_id === 'all')) {
+            onEvent({ type: 'INCOMING_CALL', call: payload });
+          }
+        })
+        .on('broadcast', { event: 'new_message' }, ({ payload }: any) => {
+          if (payload && payload.sender_id !== currentUserId) {
+            onEvent({ type: 'NEW_MESSAGE', message: payload });
+          }
+        })
+        .subscribe();
+
+      const localHandler = (e: Event) => {
+        const d = (e as CustomEvent).detail;
+        if (d) onEvent(d);
+      };
+      window.addEventListener('argus:chat-company-event', localHandler);
+
+      return () => {
+        try {
+          void supabase.removeChannel(channel);
+        } catch {}
+        window.removeEventListener('argus:chat-company-event', localHandler);
+      };
+    } catch {
+      return () => {};
+    }
   },
 
   /**
@@ -720,7 +854,7 @@ export const chatService = {
   /**
    * Responds to a meeting invitation (accept / decline).
    */
-  async respondToMeeting(meetingId: string, userId: string, status: 'accepted' | 'declined', companyId: string) {
+  async respondToMeeting(meetingId: string, userId: string, status: 'accepted' | 'declined', companyId?: string) {
     try {
       await supabase
         .from('bi_chat_meeting_participants')
@@ -731,32 +865,36 @@ export const chatService = {
       /* ignore */
     }
 
-    const cached = getCache<Meeting[]>(`meetings_${companyId}`, []);
-    const updated = cached.map((m) => {
-      if (m.id !== meetingId) return m;
-      return {
-        ...m,
-        participants: m.participants.map((p) => (p.user_id === userId ? { ...p, status } : p)),
-      };
-    });
-    setCache(`meetings_${companyId}`, updated);
+    if (companyId) {
+      const cached = getCache<Meeting[]>(`meetings_${companyId}`, []);
+      const updated = cached.map((m) => {
+        if (m.id !== meetingId) return m;
+        return {
+          ...m,
+          participants: m.participants.map((p) => (p.user_id === userId ? { ...p, status } : p)),
+        };
+      });
+      setCache(`meetings_${companyId}`, updated);
+    }
   },
 
   /**
    * Cancels a scheduled meeting.
    */
-  async cancelMeeting(meetingId: string, companyId: string, conversationId?: string, cancelerName?: string) {
+  async cancelMeeting(meetingId: string, companyId?: string, conversationId?: string, cancelerName?: string) {
     try {
       await supabase.from('bi_chat_meetings').update({ status: 'cancelled' }).eq('id', meetingId);
     } catch {
       /* ignore */
     }
 
-    const cached = getCache<Meeting[]>(`meetings_${companyId}`, []);
-    const updated = cached.map((m) => (m.id === meetingId ? { ...m, status: 'cancelled' as const } : m));
-    setCache(`meetings_${companyId}`, updated);
+    if (companyId) {
+      const cached = getCache<Meeting[]>(`meetings_${companyId}`, []);
+      const updated = cached.map((m) => (m.id === meetingId ? { ...m, status: 'cancelled' as const } : m));
+      setCache(`meetings_${companyId}`, updated);
+    }
 
-    if (conversationId && cancelerName) {
+    if (conversationId && cancelerName && companyId) {
       await this.sendMessage({
         conversationId,
         companyId,
