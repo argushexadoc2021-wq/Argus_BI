@@ -33,11 +33,15 @@ export class WebRtcCallManager {
   private peerConnection: RTCPeerConnection | null = null;
   private localStream: MediaStream | null = null;
   private remoteStream: MediaStream | null = null;
+  private nativeAudioPlayer: HTMLAudioElement | null = null;
   private currentFacingMode: 'user' | 'environment' = 'user';
   private isCleanedUp = false;
   private isAccepted = false;
+  private isChannelSubscribed = false;
   private pendingCandidates: RTCIceCandidateInit[] = [];
-  private acceptRetryTimer: number | null = null;
+  private readyRetryTimer: number | null = null;
+  private offerRetryTimer: number | null = null;
+  private answerRetryTimer: number | null = null;
   private localSignalHandler: ((e: Event) => void) | null = null;
 
   constructor(
@@ -53,6 +57,13 @@ export class WebRtcCallManager {
     this.callbacks = callbacks;
     this.callerId = options?.callerId;
     this.recipientId = options?.recipientId;
+
+    // Direct standalone HTMLAudioElement for guaranteed background audio output
+    try {
+      this.nativeAudioPlayer = new Audio();
+      this.nativeAudioPlayer.autoplay = true;
+      (this.nativeAudioPlayer as any).playsInline = true;
+    } catch {}
   }
 
   /**
@@ -75,28 +86,61 @@ export class WebRtcCallManager {
         }
       }
     } catch (e) {
-      console.warn('Silent audio fallback error:', e);
+      console.warn('[WebRTC] Silent audio fallback error:', e);
     }
     return new MediaStream();
   }
 
   /**
+   * Waits briefly for local ICE candidates to gather into the SDP description (Vanilla ICE).
+   */
+  private async waitForIceGathering(maxWaitMs = 500): Promise<void> {
+    if (!this.peerConnection) return;
+    if (this.peerConnection.iceGatheringState === 'complete') return;
+
+    await new Promise<void>((resolve) => {
+      let timer: number | null = null;
+      const checkState = () => {
+        if (this.peerConnection?.iceGatheringState === 'complete') {
+          if (timer) clearTimeout(timer);
+          this.peerConnection?.removeEventListener('icegatheringstatechange', checkState);
+          resolve();
+        }
+      };
+
+      timer = window.setTimeout(() => {
+        this.peerConnection?.removeEventListener('icegatheringstatechange', checkState);
+        resolve();
+      }, maxWaitMs);
+
+      this.peerConnection?.addEventListener('icegatheringstatechange', checkState);
+    });
+  }
+
+  /**
    * Initializes media tracks, sets up dual signaling channels (Supabase Realtime + local BroadcastChannel),
-   * and negotiates peer connection. Never aborts early on media errors so signaling is preserved.
+   * and negotiates peer connection.
    */
   async start() {
     this.isCleanedUp = false;
     this.isAccepted = false;
+    this.isChannelSubscribed = false;
     this.pendingCandidates = [];
 
-    // 1. Acquire local media (with graceful fallback to audio-only if camera is unavailable)
+    console.log(`[WebRTC] Starting manager. Role: ${this.isCaller ? 'CALLER' : 'CALLEE'}, CallId: ${this.callId}`);
+
+    // 1. Acquire local media (with progressive fallbacks)
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error('Media devices are not supported in this browser or context.');
       }
 
       const constraints: MediaStreamConstraints = {
-        audio: true,
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
         video:
           this.callType === 'video'
             ? { facingMode: this.currentFacingMode, width: { ideal: 1280 }, height: { ideal: 720 } }
@@ -106,13 +150,21 @@ export class WebRtcCallManager {
       try {
         this.localStream = await navigator.mediaDevices.getUserMedia(constraints);
       } catch (err: any) {
-        console.warn('Initial getUserMedia failed, attempting audio-only fallback:', err);
-        this.localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        console.warn('[WebRTC] Initial constraints failed, trying basic audio-only:', err);
+        try {
+          this.localStream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+            video: this.callType === 'video',
+          });
+        } catch {
+          this.localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        }
       }
 
       this.callbacks.onLocalStream?.(this.localStream);
+      console.log('[WebRTC] Local media acquired successfully. Tracks:', this.localStream.getTracks().map(t => `${t.kind}:${t.enabled}`));
     } catch (err2: any) {
-      console.warn('getUserMedia failed, continuing in receive-only mode:', err2);
+      console.warn('[WebRTC] getUserMedia failed completely, continuing in receive-only mode:', err2);
       this.callbacks.onError?.(
         new Error(
           err2.name === 'NotAllowedError'
@@ -120,16 +172,14 @@ export class WebRtcCallManager {
             : 'Could not access microphone or camera on this device.'
         )
       );
-      // Fall back to silent stream so PeerConnection setup and channel signaling are NEVER interrupted
       this.localStream = this.createSilentAudioStream();
     }
 
     // 2. Set up PeerConnection
     this.peerConnection = new RTCPeerConnection(ICE_SERVERS);
     this.remoteStream = new MediaStream();
-    this.callbacks.onRemoteStream?.(this.remoteStream);
 
-    // Add local tracks to peer connection if available
+    // Add local tracks to peer connection
     let hasLocalTrack = false;
     if (this.localStream && this.localStream.getTracks().length > 0) {
       this.localStream.getTracks().forEach((track) => {
@@ -137,47 +187,63 @@ export class WebRtcCallManager {
           try {
             this.peerConnection.addTrack(track, this.localStream);
             hasLocalTrack = true;
-          } catch {}
+            console.log('[WebRTC] Added local track to PeerConnection:', track.kind);
+          } catch (e) {
+            console.warn('[WebRTC] addTrack error:', e);
+          }
         }
       });
     }
 
-    // If no active local tracks, add receive-only transceivers so remote stream can be received
+    // If no active local tracks, add receive-only transceivers so remote audio/video will stream
     if (!hasLocalTrack) {
       try {
         this.peerConnection.addTransceiver('audio', { direction: 'recvonly' });
         if (this.callType === 'video') {
           this.peerConnection.addTransceiver('video', { direction: 'recvonly' });
         }
+        console.log('[WebRTC] Configured recvonly transceivers for receive-only operation');
       } catch (tcErr) {
-        console.warn('Could not add receive-only transceiver:', tcErr);
+        console.warn('[WebRTC] addTransceiver error:', tcErr);
       }
     }
 
     // Handle incoming remote tracks
     this.peerConnection.ontrack = (event) => {
-      if (event.streams && event.streams[0]) {
-        event.streams[0].getTracks().forEach((track) => {
-          if (!this.remoteStream?.getTracks().includes(track)) {
-            this.remoteStream?.addTrack(track);
-          }
-        });
-        this.callbacks.onRemoteStream?.(this.remoteStream);
-      } else if (event.track) {
-        if (!this.remoteStream?.getTracks().includes(event.track)) {
-          this.remoteStream?.addTrack(event.track);
+      console.log('[WebRTC] Remote track received:', event.track.kind, 'ReadyState:', event.track.readyState);
+      const stream = event.streams && event.streams[0] ? event.streams[0] : new MediaStream([event.track]);
+      this.remoteStream = stream;
+
+      // Direct native audio playback for immediate sound output
+      if (this.nativeAudioPlayer && event.track.kind === 'audio') {
+        try {
+          this.nativeAudioPlayer.srcObject = stream;
+          void this.nativeAudioPlayer.play().catch((err) => {
+            console.warn('[WebRTC] Native audio autoplay caught:', err);
+          });
+        } catch (e) {
+          console.warn('[WebRTC] Audio assignment error:', e);
         }
-        this.callbacks.onRemoteStream?.(this.remoteStream);
       }
+
+      this.callbacks.onRemoteStream?.(stream);
     };
 
     // Monitor connection state
     this.peerConnection.onconnectionstatechange = () => {
       const state = this.peerConnection?.connectionState;
+      console.log('[WebRTC] Connection state changed:', state);
       if (state === 'connected') {
         this.isAccepted = true;
+        this.stopAllRetries();
         this.callbacks.onCallAccepted?.();
+      } else if (state === 'failed' || state === 'closed') {
+        console.warn('[WebRTC] Connection failed or closed');
       }
+    };
+
+    this.peerConnection.oniceconnectionstatechange = () => {
+      console.log('[WebRTC] ICE connection state:', this.peerConnection?.iceConnectionState);
     };
 
     // Handle ICE candidates generated locally
@@ -198,33 +264,42 @@ export class WebRtcCallManager {
           }
         };
       } catch (bcErr) {
-        console.warn('BroadcastChannel initialization error:', bcErr);
+        console.warn('[WebRTC] BroadcastChannel initialization error:', bcErr);
       }
     }
 
-    // 4. Connect Supabase Realtime signaling channel (cross-device signaling over Internet)
+    // 4. Connect Supabase Realtime signaling channel
     const channelName = `bi-call-${this.callId}`;
     this.channel = supabase.channel(channelName);
 
     this.channel
       .on('broadcast', { event: 'accept_call' }, (e) => void this.handleIncomingSignal('accept_call', e.payload))
+      .on('broadcast', { event: 'ready_for_offer' }, (e) => void this.handleIncomingSignal('ready_for_offer', e.payload))
       .on('broadcast', { event: 'reject_call' }, (e) => void this.handleIncomingSignal('reject_call', e.payload))
       .on('broadcast', { event: 'end_call' }, (e) => void this.handleIncomingSignal('end_call', e.payload))
       .on('broadcast', { event: 'sdp_offer' }, (e) => void this.handleIncomingSignal('sdp_offer', e.payload))
       .on('broadcast', { event: 'sdp_answer' }, (e) => void this.handleIncomingSignal('sdp_answer', e.payload))
       .on('broadcast', { event: 'ice_candidate' }, (e) => void this.handleIncomingSignal('ice_candidate', e.payload))
       .subscribe((status) => {
-        if (status === 'SUBSCRIBED' && !this.isCaller) {
-          // Callee sends accept signal once channel is ready, with retry until offer is received
-          this.sendAcceptSignalWithRetry();
+        console.log(`[WebRTC] Channel ${channelName} status:`, status);
+        if (status === 'SUBSCRIBED') {
+          this.isChannelSubscribed = true;
+
+          // If Callee: immediately inform Caller that we are ready to receive the SDP offer
+          if (!this.isCaller) {
+            this.sendReadySignalWithRetry();
+          } else if (this.isAccepted) {
+            // If Caller and already accepted, ensure offer is sent
+            void this.createAndSendOffer();
+          }
         }
       });
 
-    // 5. Redundant WebRTC signal listener from window events (relayed by user channel)
+    // 5. Window event signaling listener (relayed from user_events)
     this.localSignalHandler = (e: Event) => {
       const d = (e as CustomEvent).detail;
-      if (d && d.payload && (d.payload.callId === this.callId || !d.payload.callId)) {
-        void this.handleIncomingSignal(d.event, d.payload);
+      if (d && (d.payload?.callId === this.callId || d.callId === this.callId || !d.payload?.callId)) {
+        void this.handleIncomingSignal(d.event || 'accept_call', d.payload || d);
       }
     };
     window.addEventListener('argus:chat-webrtc-signal', this.localSignalHandler);
@@ -232,11 +307,12 @@ export class WebRtcCallManager {
     // Also trigger accept signal immediately via local BroadcastChannel for same-device cross-tab calls
     if (!this.isCaller) {
       this.sendSignal('accept_call', { callId: this.callId });
+      this.sendSignal('ready_for_offer', { callId: this.callId });
     }
   }
 
   /**
-   * Helper to send a signaling packet through Supabase Realtime, direct user channel, and BroadcastChannel.
+   * Helper to send a signaling packet through Supabase Realtime, and BroadcastChannel.
    */
   private sendSignal(event: string, payload: any) {
     if (this.isCleanedUp) return;
@@ -252,20 +328,7 @@ export class WebRtcCallManager {
       });
     }
 
-    // Direct User Channel redundancy (guarantees cross-device delivery to recipient/caller)
-    const targetUserId = this.isCaller ? this.recipientId : this.callerId;
-    if (targetUserId && targetUserId !== 'all') {
-      try {
-        const userCh = supabase.channel(`user_events_${targetUserId}`);
-        void userCh.send({
-          type: 'broadcast',
-          event: event === 'accept_call' ? 'accept_call' : `webrtc_${event}`,
-          payload: fullPayload,
-        });
-      } catch {}
-    }
-
-    // Native BroadcastChannel (instant same-device cross-tab communication)
+    // Native BroadcastChannel
     if (this.broadcastChannel) {
       try {
         this.broadcastChannel.postMessage({ event, payload: fullPayload });
@@ -274,14 +337,14 @@ export class WebRtcCallManager {
   }
 
   /**
-   * Allows external callers (e.g. CallOverlay reacting to user_events accept_call)
-   * to immediately transition to connected state and trigger the SDP offer.
+   * Allows external caller (e.g. CallOverlay reacting to user_events accept_call)
+   * to mark accepted and initiate SDP offer.
    */
   handleRemoteAccepted() {
     if (this.isCleanedUp) return;
-    if (this.isCaller && !this.isAccepted) {
-      this.isAccepted = true;
-      this.callbacks.onCallAccepted?.();
+    this.isAccepted = true;
+    this.callbacks.onCallAccepted?.();
+    if (this.isCaller) {
       void this.createAndSendOffer();
     }
   }
@@ -328,7 +391,7 @@ export class WebRtcCallManager {
       }
       return true;
     } catch (err: any) {
-      console.warn('Retry getUserMedia failed:', err);
+      console.warn('[WebRTC] Retry getUserMedia failed:', err);
       return false;
     }
   }
@@ -340,8 +403,10 @@ export class WebRtcCallManager {
     if (this.isCleanedUp) return;
 
     switch (event) {
-      case 'accept_call': {
-        if (this.isCaller && !this.isAccepted) {
+      case 'accept_call':
+      case 'ready_for_offer': {
+        if (this.isCaller) {
+          console.log(`[WebRTC] Caller received ${event} from Callee!`);
           this.isAccepted = true;
           this.callbacks.onCallAccepted?.();
           await this.createAndSendOffer();
@@ -350,12 +415,14 @@ export class WebRtcCallManager {
       }
 
       case 'reject_call': {
+        console.log('[WebRTC] Call rejected by remote peer');
         this.callbacks.onCallRejected?.();
         this.cleanup();
         break;
       }
 
       case 'end_call': {
+        console.log('[WebRTC] Call ended by remote peer');
         this.callbacks.onCallEnded?.();
         this.cleanup();
         break;
@@ -364,22 +431,33 @@ export class WebRtcCallManager {
       case 'sdp_offer': {
         if (this.isCaller || !this.peerConnection || !payload?.sdp) return;
         try {
-          if (this.acceptRetryTimer) {
-            clearInterval(this.acceptRetryTimer);
-            this.acceptRetryTimer = null;
+          console.log('[WebRTC] Callee received sdp_offer! Setting remote description...');
+          if (this.readyRetryTimer) {
+            clearInterval(this.readyRetryTimer);
+            this.readyRetryTimer = null;
           }
 
-          await this.peerConnection.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+          const desc = new RTCSessionDescription(payload.sdp);
+          await this.peerConnection.setRemoteDescription(desc);
           await this.flushPendingCandidates();
 
+          // Create answer with Vanilla ICE gathering
           const answer = await this.peerConnection.createAnswer();
           await this.peerConnection.setLocalDescription(answer);
 
-          this.sendSignal('sdp_answer', { sdp: answer });
+          // Wait up to 400ms for ICE gathering
+          await this.waitForIceGathering(400);
+
+          const finalAnswer = this.peerConnection.localDescription || answer;
+          console.log('[WebRTC] Callee sending sdp_answer...');
+          this.sendSignal('sdp_answer', { sdp: finalAnswer });
           this.isAccepted = true;
           this.callbacks.onCallAccepted?.();
+
+          // Repeat answer briefly until connected to overcome potential packet loss
+          this.startAnswerRetry();
         } catch (e: any) {
-          console.error('Error handling sdp_offer:', e);
+          console.error('[WebRTC] Error handling sdp_offer:', e);
         }
         break;
       }
@@ -387,14 +465,22 @@ export class WebRtcCallManager {
       case 'sdp_answer': {
         if (!this.isCaller || !this.peerConnection || !payload?.sdp) return;
         try {
+          console.log('[WebRTC] Caller received sdp_answer! SignalingState:', this.peerConnection.signalingState);
+          if (this.offerRetryTimer) {
+            clearInterval(this.offerRetryTimer);
+            this.offerRetryTimer = null;
+          }
+
           if (this.peerConnection.signalingState === 'have-local-offer') {
-            await this.peerConnection.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+            const desc = new RTCSessionDescription(payload.sdp);
+            await this.peerConnection.setRemoteDescription(desc);
             await this.flushPendingCandidates();
             this.isAccepted = true;
             this.callbacks.onCallAccepted?.();
+            console.log('[WebRTC] Caller successfully set remote description for answer!');
           }
         } catch (e: any) {
-          console.error('Error handling sdp_answer:', e);
+          console.error('[WebRTC] Error handling sdp_answer:', e);
         }
         break;
       }
@@ -409,7 +495,7 @@ export class WebRtcCallManager {
             await this.peerConnection.addIceCandidate(new RTCIceCandidate(cand));
           }
         } catch (e: any) {
-          console.error('Error adding ICE candidate:', e);
+          console.warn('[WebRTC] Error adding ICE candidate:', e);
         }
         break;
       }
@@ -427,51 +513,132 @@ export class WebRtcCallManager {
         try {
           await this.peerConnection.addIceCandidate(new RTCIceCandidate(cand));
         } catch (e) {
-          console.warn('Error flushing candidate:', e);
+          console.warn('[WebRTC] Error flushing candidate:', e);
         }
       }
     }
   }
 
   /**
-   * Callee sends accept signal with retries to avoid packet loss.
+   * Callee sends ready_for_offer signal with retries until SDP offer is received.
    */
-  private sendAcceptSignalWithRetry() {
+  private sendReadySignalWithRetry() {
+    if (this.readyRetryTimer) return;
     let count = 0;
+    this.sendSignal('ready_for_offer', { callId: this.callId });
     this.sendSignal('accept_call', { callId: this.callId });
 
-    this.acceptRetryTimer = window.setInterval(() => {
+    this.readyRetryTimer = window.setInterval(() => {
       if (
         this.isCleanedUp ||
         (this.peerConnection && this.peerConnection.remoteDescription) ||
-        count >= 8
+        count >= 10
       ) {
-        if (this.acceptRetryTimer) {
-          clearInterval(this.acceptRetryTimer);
-          this.acceptRetryTimer = null;
+        if (this.readyRetryTimer) {
+          clearInterval(this.readyRetryTimer);
+          this.readyRetryTimer = null;
         }
         return;
       }
-      this.sendSignal('accept_call', { callId: this.callId });
+      this.sendSignal('ready_for_offer', { callId: this.callId });
       count++;
-    }, 600);
+    }, 700);
   }
 
   /**
-   * Creates and sends an SDP offer to the callee.
+   * Creates and sends an SDP offer to the callee, with retry until answer is received.
    */
   private async createAndSendOffer() {
-    if (!this.peerConnection) return;
+    if (!this.peerConnection || this.isCleanedUp) return;
     try {
+      // If localDescription already exists, just resend it
+      if (this.peerConnection.localDescription && this.peerConnection.signalingState === 'have-local-offer') {
+        console.log('[WebRTC] Resending existing local SDP offer...');
+        this.sendSignal('sdp_offer', { sdp: this.peerConnection.localDescription });
+        return;
+      }
+
+      console.log('[WebRTC] Creating SDP offer...');
       const offer = await this.peerConnection.createOffer({
         offerToReceiveAudio: true,
         offerToReceiveVideo: this.callType === 'video',
       });
       await this.peerConnection.setLocalDescription(offer);
-      this.sendSignal('sdp_offer', { sdp: offer });
+
+      // Wait up to 400ms for ICE gathering
+      await this.waitForIceGathering(400);
+
+      const finalOffer = this.peerConnection.localDescription || offer;
+      console.log('[WebRTC] Caller sending sdp_offer to Callee...');
+      this.sendSignal('sdp_offer', { sdp: finalOffer });
+
+      // Retry sending offer every 800ms until answer is received
+      if (!this.offerRetryTimer) {
+        let attempts = 0;
+        this.offerRetryTimer = window.setInterval(() => {
+          if (
+            this.isCleanedUp ||
+            !this.peerConnection ||
+            this.peerConnection.remoteDescription ||
+            this.peerConnection.connectionState === 'connected' ||
+            attempts >= 8
+          ) {
+            if (this.offerRetryTimer) {
+              clearInterval(this.offerRetryTimer);
+              this.offerRetryTimer = null;
+            }
+            return;
+          }
+          const curOffer = this.peerConnection.localDescription || finalOffer;
+          console.log(`[WebRTC] Retrying sdp_offer (attempt ${attempts + 1})...`);
+          this.sendSignal('sdp_offer', { sdp: curOffer });
+          attempts++;
+        }, 800);
+      }
     } catch (err: any) {
-      console.error('Error creating offer:', err);
+      console.error('[WebRTC] Error creating offer:', err);
       this.callbacks.onError?.(err);
+    }
+  }
+
+  /**
+   * Callee retries sending SDP answer until connected.
+   */
+  private startAnswerRetry() {
+    if (this.answerRetryTimer || !this.peerConnection) return;
+    let attempts = 0;
+    this.answerRetryTimer = window.setInterval(() => {
+      if (
+        this.isCleanedUp ||
+        !this.peerConnection ||
+        this.peerConnection.connectionState === 'connected' ||
+        attempts >= 6
+      ) {
+        if (this.answerRetryTimer) {
+          clearInterval(this.answerRetryTimer);
+          this.answerRetryTimer = null;
+        }
+        return;
+      }
+      if (this.peerConnection.localDescription) {
+        this.sendSignal('sdp_answer', { sdp: this.peerConnection.localDescription });
+      }
+      attempts++;
+    }, 900);
+  }
+
+  private stopAllRetries() {
+    if (this.readyRetryTimer) {
+      clearInterval(this.readyRetryTimer);
+      this.readyRetryTimer = null;
+    }
+    if (this.offerRetryTimer) {
+      clearInterval(this.offerRetryTimer);
+      this.offerRetryTimer = null;
+    }
+    if (this.answerRetryTimer) {
+      clearInterval(this.answerRetryTimer);
+      this.answerRetryTimer = null;
     }
   }
 
@@ -483,6 +650,7 @@ export class WebRtcCallManager {
     const track = this.localStream.getAudioTracks()[0];
     if (!track) return false;
     track.enabled = enabled !== undefined ? enabled : !track.enabled;
+    console.log('[WebRTC] toggleAudio ->', track.enabled);
     return track.enabled;
   }
 
@@ -523,7 +691,7 @@ export class WebRtcCallManager {
         return true;
       }
     } catch (e) {
-      console.warn('Could not switch camera:', e);
+      console.warn('[WebRTC] Could not switch camera:', e);
     }
     return false;
   }
@@ -547,11 +715,9 @@ export class WebRtcCallManager {
   cleanup() {
     if (this.isCleanedUp) return;
     this.isCleanedUp = true;
+    console.log('[WebRTC] Cleaning up call manager...');
 
-    if (this.acceptRetryTimer) {
-      clearInterval(this.acceptRetryTimer);
-      this.acceptRetryTimer = null;
-    }
+    this.stopAllRetries();
 
     if (this.localSignalHandler) {
       window.removeEventListener('argus:chat-webrtc-signal', this.localSignalHandler);
@@ -565,6 +731,13 @@ export class WebRtcCallManager {
     if (this.remoteStream) {
       this.remoteStream.getTracks().forEach((track) => track.stop());
       this.remoteStream = null;
+    }
+    if (this.nativeAudioPlayer) {
+      try {
+        this.nativeAudioPlayer.pause();
+        this.nativeAudioPlayer.srcObject = null;
+      } catch {}
+      this.nativeAudioPlayer = null;
     }
     if (this.peerConnection) {
       this.peerConnection.close();

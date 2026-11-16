@@ -144,13 +144,18 @@ export function CallOverlay({
           }
         },
         onRemoteStream: (stream) => {
+          console.log('[CallOverlay] Remote stream received with tracks:', stream.getTracks().map(t => `${t.kind}:${t.enabled}`));
           if (remoteVideoRef.current) {
             remoteVideoRef.current.srcObject = stream;
             void remoteVideoRef.current.play().catch(() => {});
           }
           if (remoteAudioRef.current) {
             remoteAudioRef.current.srcObject = stream;
-            void remoteAudioRef.current.play().catch(() => {});
+            remoteAudioRef.current.muted = false;
+            remoteAudioRef.current.volume = 1.0;
+            void remoteAudioRef.current.play().catch((err) => {
+              console.warn('[CallOverlay] Audio play failed:', err);
+            });
           }
         },
         onCallAccepted: () => {
@@ -234,10 +239,18 @@ export function CallOverlay({
     return `${m}:${sec < 10 ? '0' : ''}${sec}`;
   };
 
-  // 1. INCOMING CALL MODAL (Ringing on Callee screen)
-  if (isIncoming && !connected) {
-    return (
-      <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/80 backdrop-blur-xs p-4 animate-fade-in select-none">
+  // 1. Render both modes with an unconditional native audio element (always in DOM, non-hidden)
+  return (
+    <>
+      <audio
+        ref={remoteAudioRef}
+        autoPlay
+        playsInline
+        style={{ position: 'fixed', opacity: 0, pointerEvents: 'none', width: '1px', height: '1px', bottom: 0 }}
+      />
+
+      {isIncoming && !connected ? (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/80 backdrop-blur-xs p-4 animate-fade-in select-none">
         <div className="bg-gradient-to-b from-navy-950 via-slate-900 to-slate-950 border border-slate-700/60 rounded-3xl p-6 max-w-sm w-full text-center shadow-2xl flex flex-col items-center">
           {/* Avatar with pulse ring */}
           <div className="relative my-4">
@@ -281,20 +294,15 @@ export function CallOverlay({
           </div>
         </div>
       </div>
-    );
-  }
-
-  // 2. ACTIVE CALL WINDOW / OVERLAY
-  return (
-    <div
-      className={`fixed z-[110] transition-all duration-300 flex flex-col bg-slate-950 text-white overflow-hidden shadow-2xl border border-slate-800 ${
-        fullScreen
-          ? 'inset-0 rounded-none'
-          : 'bottom-4 right-4 w-[92vw] sm:w-[480px] h-[360px] sm:h-[420px] rounded-2xl'
-      }`}
-    >
-      {/* Hidden native audio element for voice audio streaming */}
-      <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />
+      ) : (
+      /* 2. ACTIVE CALL WINDOW / OVERLAY */
+      <div
+        className={`fixed z-[110] transition-all duration-300 flex flex-col bg-slate-950 text-white overflow-hidden shadow-2xl border border-slate-800 ${
+          fullScreen
+            ? 'inset-0 rounded-none'
+            : 'bottom-4 right-4 w-[92vw] sm:w-[480px] h-[360px] sm:h-[420px] rounded-2xl'
+        }`}
+      >
 
       {/* Top Header bar */}
       <div className="flex items-center justify-between px-4 py-2.5 bg-slate-900/90 border-b border-slate-800 z-10 shrink-0">
@@ -467,5 +475,7 @@ export function CallOverlay({
         </button>
       </div>
     </div>
+    )}
+    </>
   );
 }
