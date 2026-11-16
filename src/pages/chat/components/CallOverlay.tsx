@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import type { CallSession } from '../types';
 import { WebRtcCallManager } from '../services/webrtcService';
+import { chatService } from '../services/chatService';
 import {
   playRingtone,
   stopRingtone,
@@ -83,6 +84,22 @@ export function CallOverlay({
       }
     };
   }, [isIncoming, connected]);
+
+  // Redundant listener for call acceptance across direct user channels and Supabase Realtime
+  useEffect(() => {
+    const handleAcceptEv = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail && detail.callId === call.id) {
+        stopRingbackTone();
+        setConnected(true);
+        managerRef.current?.handleRemoteAccepted();
+      }
+    };
+    window.addEventListener('argus:chat-call-accepted', handleAcceptEv);
+    return () => {
+      window.removeEventListener('argus:chat-call-accepted', handleAcceptEv);
+    };
+  }, [call.id]);
 
   // Duration timer when connected
   useEffect(() => {
@@ -154,6 +171,10 @@ export function CallOverlay({
           console.error('WebRTC Call error:', err);
           setCallError(err.message || 'Call connection error');
         },
+      },
+      {
+        callerId: call.caller_id,
+        recipientId: call.recipient_id,
       }
     );
 
@@ -164,6 +185,12 @@ export function CallOverlay({
   const handleAccept = () => {
     stopRingtone();
     setConnected(true);
+    void chatService.broadcastAcceptCall(
+      call.caller_id,
+      call.id,
+      call.company_id,
+      call.conversation_id
+    );
     initCall();
   };
 
@@ -295,17 +322,33 @@ export function CallOverlay({
 
       {/* Error notification if microphone/camera failed */}
       {callError && (
-        <div className="bg-amber-500/20 border-b border-amber-500/30 px-3 py-1.5 flex items-center justify-between text-xs text-amber-200 z-20">
-          <div className="flex items-center gap-1.5 truncate">
-            <AlertCircle size={14} className="text-amber-400 shrink-0" />
-            <span className="truncate">{callError}</span>
+        <div className="bg-amber-950/95 border-b border-amber-500/40 px-3.5 py-2 flex items-center justify-between text-xs text-amber-200 z-20 shadow-md">
+          <div className="flex items-center gap-2 truncate pr-2">
+            <AlertCircle size={16} className="text-amber-400 shrink-0" />
+            <div className="truncate flex flex-col">
+              <span className="font-semibold text-amber-300 truncate">{callError}</span>
+              <span className="text-[10px] text-amber-400/80 truncate">
+                Click 🔒 in the browser address bar &gt; set Microphone to "Allow"
+              </span>
+            </div>
           </div>
-          <button
-            onClick={() => setCallError(null)}
-            className="text-[10px] font-bold text-amber-300 hover:text-white ml-2 shrink-0 cursor-pointer"
-          >
-            Dismiss
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={async () => {
+                const ok = await managerRef.current?.requestMediaAccess();
+                if (ok) setCallError(null);
+              }}
+              className="px-2.5 py-1 rounded bg-amber-600 hover:bg-amber-500 text-white font-bold text-[11px] cursor-pointer transition-colors shadow"
+            >
+              Retry Mic
+            </button>
+            <button
+              onClick={() => setCallError(null)}
+              className="text-[10px] text-amber-400 hover:text-white cursor-pointer px-1"
+            >
+              Dismiss
+            </button>
+          </div>
         </div>
       )}
 

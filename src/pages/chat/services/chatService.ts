@@ -777,6 +777,15 @@ export const chatService = {
             );
           }
         })
+        .on('broadcast', { event: 'accept_call' }, ({ payload }: any) => {
+          if (payload && payload.callId) {
+            window.dispatchEvent(
+              new CustomEvent('argus:chat-call-accepted', {
+                detail: payload,
+              })
+            );
+          }
+        })
         .subscribe();
 
       const localHandler = (e: Event) => {
@@ -929,6 +938,70 @@ export const chatService = {
   },
 
   /**
+   * Broadcasts call acceptance when callee answers.
+   */
+  async broadcastAcceptCall(callerId: string, callId: string, companyId?: string, conversationId?: string): Promise<void> {
+    if (!callId) return;
+
+    const payload = { callId, callerId };
+    const effCoId = companyId || '0255839c-a9b1-49a8-a9f6-e776fd7bdd00';
+
+    // 1. Direct Caller User Channel
+    if (callerId) {
+      try {
+        const userCh = supabase.channel(`user_events_${callerId}`);
+        await userCh.send({
+          type: 'broadcast',
+          event: 'accept_call',
+          payload,
+        });
+      } catch {}
+    }
+
+    // 2. Active Conversation Channel
+    if (conversationId) {
+      try {
+        const convCh = supabase.channel(`chat_conv_${conversationId}`);
+        await convCh.send({
+          type: 'broadcast',
+          event: 'accept_call',
+          payload,
+        });
+      } catch {}
+    }
+
+    // 3. Company Channel
+    if (effCoId) {
+      try {
+        const compCh = supabase.channel(`company_events_${effCoId}`);
+        await compCh.send({
+          type: 'broadcast',
+          event: 'accept_call',
+          payload,
+        });
+      } catch {}
+    }
+
+    // 4. Cross-tab BroadcastChannel
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        if (callerId) {
+          const bc = new BroadcastChannel(`user_events_${callerId}`);
+          bc.postMessage({ type: 'accept_call', payload });
+          setTimeout(() => bc.close(), 1000);
+        }
+      } catch {}
+    }
+
+    // 5. Local Window Event
+    window.dispatchEvent(
+      new CustomEvent('argus:chat-call-accepted', {
+        detail: payload,
+      })
+    );
+  },
+
+  /**
    * Realtime subscription for company-level events and personal direct incoming calls.
    * Runs independently of companyId to guarantee Super Admins and Staff always receive calls.
    */
@@ -982,6 +1055,20 @@ export const chatService = {
         .on('broadcast', { event: 'cancel_call' }, ({ payload }: any) => {
           handleCancel(payload);
         })
+        .on('broadcast', { event: 'accept_call' }, ({ payload }: any) => {
+          if (payload && payload.callId) {
+            window.dispatchEvent(new CustomEvent('argus:chat-call-accepted', { detail: payload }));
+          }
+        })
+        .on('broadcast', { event: 'webrtc_sdp_offer' }, ({ payload }: any) => {
+          window.dispatchEvent(new CustomEvent('argus:chat-webrtc-signal', { detail: { event: 'sdp_offer', payload } }));
+        })
+        .on('broadcast', { event: 'webrtc_sdp_answer' }, ({ payload }: any) => {
+          window.dispatchEvent(new CustomEvent('argus:chat-webrtc-signal', { detail: { event: 'sdp_answer', payload } }));
+        })
+        .on('broadcast', { event: 'webrtc_ice_candidate' }, ({ payload }: any) => {
+          window.dispatchEvent(new CustomEvent('argus:chat-webrtc-signal', { detail: { event: 'ice_candidate', payload } }));
+        })
         .subscribe();
 
       // 2. Company-Level Realtime Channel
@@ -992,6 +1079,11 @@ export const chatService = {
         })
         .on('broadcast', { event: 'cancel_call' }, ({ payload }: any) => {
           handleCancel(payload);
+        })
+        .on('broadcast', { event: 'accept_call' }, ({ payload }: any) => {
+          if (payload && payload.callId) {
+            window.dispatchEvent(new CustomEvent('argus:chat-call-accepted', { detail: payload }));
+          }
         })
         .on('broadcast', { event: 'new_message' }, ({ payload }: any) => {
           if (payload && payload.sender_id !== currentUserId) {
@@ -1010,6 +1102,9 @@ export const chatService = {
             const data = ev.data;
             if (data?.type === 'incoming_call') handleCall(data.payload);
             else if (data?.type === 'cancel_call') handleCancel(data.payload);
+            else if (data?.type === 'accept_call' && data.payload?.callId) {
+              window.dispatchEvent(new CustomEvent('argus:chat-call-accepted', { detail: data.payload }));
+            }
           };
 
           bcCo = new BroadcastChannel(`company_events_${effCoId}`);
