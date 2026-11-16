@@ -10,6 +10,7 @@ import {
   CalendarDays,
   PanelsTopLeft,
   Sparkles,
+  MessageSquare,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useHeaderKpis } from '@/contexts/HeaderKpiContext';
@@ -171,6 +172,20 @@ export function Topbar({
         {/* Display size (50% – 145%) for every page; the Sales Pipeline shows the same control in its own toolbar */}
         {!/sales\/(pipeline|in-house)/.test(currentPage) && <DisplaySizeControl />}
 
+        {/* Quick shortcut to BI Chat */}
+        <button
+          onClick={() => onNavigate('bi-chat')}
+          title="Open BI Chat"
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md transition-colors border shadow-sm text-xs font-semibold shrink-0 cursor-pointer ${
+            currentPage === 'bi-chat'
+              ? 'bg-brand-600 text-white border-brand-500 shadow-brand-500/30'
+              : 'bg-white hover:bg-slate-100 text-slate-700 hover:text-brand-600 border-slate-200'
+          }`}
+        >
+          <MessageSquare size={14} className={currentPage === 'bi-chat' ? 'text-white' : 'text-amber-500'} />
+          <span className="hidden sm:inline">BI Chat</span>
+        </button>
+
         {/* Date + profile box */}
         <div className="relative shrink-0" ref={profileRef}>
         <button
@@ -235,6 +250,7 @@ export function Topbar({
               )}
             </div>
             <div className="p-2">
+              <button onClick={() => { setShowProfile(false); onNavigate('/bi-chat'); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100 rounded-lg transition-colors text-left cursor-pointer"><MessageSquare size={15} className="text-amber-500" /> BI Chat</button>
               <button onClick={() => { setShowProfile(false); onNavigate('/updates'); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100 rounded-lg transition-colors text-left cursor-pointer"><Sparkles size={15} className="text-orange-500" /> App Updates & Versions</button>
               <button onClick={() => { setShowProfile(false); onNavigate('/admin/settings'); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100 rounded-lg transition-colors text-left cursor-pointer"><Settings size={15} className="text-slate-400" /> Settings</button>
               <button onClick={() => { setShowProfile(false); setShowDateFilter(false); setShowMenuPosition(true); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100 rounded-lg transition-colors text-left cursor-pointer"><PanelsTopLeft size={15} className="text-slate-400" /> Menu Position</button>
