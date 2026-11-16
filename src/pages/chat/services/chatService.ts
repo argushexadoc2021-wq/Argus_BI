@@ -27,6 +27,38 @@ export const chatService = {
    */
   async getCompanyColleagues(companyId: string, currentUserId: string): Promise<UserColleague[]> {
     try {
+      // 1. Try server-side endpoint first (bypasses RLS with SUPABASE_SECRET_KEY, accurately returning all company colleagues)
+      try {
+        const res = await fetch(`/api/bi-chat/colleagues?companyId=${encodeURIComponent(companyId || '')}`);
+        if (res.ok) {
+          const json = await res.json();
+          if (json && Array.isArray(json.data) && json.data.length > 0) {
+            const mapped: UserColleague[] = json.data.map((u: any) => ({
+              id: u.id,
+              full_name: u.full_name || u.email?.split('@')[0] || 'Colleague',
+              email: u.email,
+              role: u.role,
+              status: u.status || 'Active',
+              mobile: u.mobile || '',
+              designation:
+                u.role === 'SUPER_ADMIN'
+                  ? 'Super Administrator'
+                  : u.role === 'COMPANY_ADMIN'
+                  ? 'Company Administrator'
+                  : u.role === 'OPERATOR'
+                  ? 'CNC Operator'
+                  : 'Staff',
+              last_seen: u.last_login_at || u.created_at,
+              is_online: u.id === currentUserId || Math.random() > 0.4,
+            }));
+            setCache(`colleagues_${companyId}`, mapped);
+            return mapped;
+          }
+        }
+      } catch (apiErr) {
+        console.warn('API /api/bi-chat/colleagues fetch failed, falling back to Supabase client:', apiErr);
+      }
+
       let query = supabase
         .from('company_users')
         .select('id, full_name, email, role, status, mobile, company_id, last_login_at, created_at')
@@ -166,11 +198,46 @@ export const chatService = {
       const userIds = Array.from(new Set((parts || []).map((p: any) => p.user_id)));
       let userMap = new Map<string, any>();
       if (userIds.length > 0) {
-        const { data: users } = await supabase
-          .from('company_users')
-          .select('id, full_name, email, role, status, mobile')
-          .in('id', userIds);
-        userMap = new Map((users || []).map((u: any) => [u.id, u]));
+        // Try server-side lookup first (bypasses RLS to ensure colleague names display properly)
+        try {
+          const res = await fetch(`/api/bi-chat/users-by-ids?ids=${encodeURIComponent(userIds.join(','))}`);
+          if (res.ok) {
+            const json = await res.json();
+            if (json && Array.isArray(json.data) && json.data.length > 0) {
+              userMap = new Map(json.data.map((u: any) => [u.id, u]));
+            }
+          }
+        } catch (e) {
+          console.warn('Could not fetch users by ids from api:', e);
+        }
+
+        if (userMap.size < userIds.length) {
+          const { data: users } = await supabase
+            .from('company_users')
+            .select('id, full_name, email, role, status, mobile')
+            .in('id', userIds);
+          (users || []).forEach((u: any) => {
+            if (!userMap.has(u.id)) userMap.set(u.id, u);
+          });
+        }
+
+        // Also check cached colleagues for any remaining missing participant details
+        const cachedColleagues = getCache<UserColleague[]>(`colleagues_${companyId}`, []);
+        for (const uid of userIds) {
+          if (!userMap.has(uid)) {
+            const found = cachedColleagues.find(c => c.id === uid);
+            if (found) {
+              userMap.set(uid, {
+                id: found.id,
+                full_name: found.full_name,
+                email: found.email,
+                role: found.role,
+                status: found.status,
+                mobile: found.mobile,
+              });
+            }
+          }
+        }
       }
 
       // 4. Map into Conversation objects

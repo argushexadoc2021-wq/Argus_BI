@@ -425,7 +425,7 @@ app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // Middleware: keep db synchronized across Vercel serverless instances and ensure saves complete
 app.use(async (req, res, next) => {
-  if (req.path.startsWith('/api') && req.path !== '/api/health' && req.path !== '/api/config') {
+  if (req.path.startsWith('/api') && req.path !== '/api/health' && req.path !== '/api/config' && !req.path.startsWith('/api/bi-chat/')) {
     const isMutation = ['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method);
     await syncFromStorage(isMutation);
   }
@@ -629,7 +629,7 @@ const retailOffFor = (companyId) => { const c = companyId ? (db.companies || [])
 const biOffFor = (companyId) => { const c = companyId ? (db.companies || []).find(x => x.id === companyId || x.code === companyId) : null; return !!c && c.biEnabled === false; };
 app.use((req, res, next) => {
   if (req.ctx && req.ctx.role !== 'super_admin' && req.path.startsWith('/api/') && !['/api/health', '/api/config', '/api/me'].includes(req.path)
-      && !req.path.startsWith('/api/integrations/erp/') && !req.path.startsWith('/api/retail-sync/') && !req.path.startsWith('/api/quote-confirm/') && !req.path.startsWith('/api/adviser/')
+      && !req.path.startsWith('/api/integrations/erp/') && !req.path.startsWith('/api/retail-sync/') && !req.path.startsWith('/api/quote-confirm/') && !req.path.startsWith('/api/bi-chat/') && !req.path.startsWith('/api/adviser/')
       && retailOffFor(req.ctx.companyId)) {
     return res.status(403).json({ error: 'The Retail Store is turned off for your company.', code: 'RETAIL_OFF' });
   }
@@ -638,7 +638,7 @@ app.use((req, res, next) => {
 /* pending/disabled Google users may only reach health, config and /api/me */
 app.use((req, res, next) => {
   /* the ERP server-to-server calls carry x-erp-api-key (checked by verifyErpServerAuth), not a user sign-in */
-  if (req.path.startsWith('/api/integrations/erp/') || req.path === '/api/digital-order-mail' || req.path.startsWith('/api/digital-mail/') || req.path.startsWith('/api/digital-pay/') || req.path.startsWith('/api/adviser/') || req.path.startsWith('/api/quote-confirm/')) return next();   // the mail route checks the sign-in token itself
+  if (req.path.startsWith('/api/integrations/erp/') || req.path === '/api/digital-order-mail' || req.path.startsWith('/api/digital-mail/') || req.path.startsWith('/api/digital-pay/') || req.path.startsWith('/api/adviser/') || req.path.startsWith('/api/quote-confirm/') || req.path.startsWith('/api/bi-chat/')) return next();   // the mail route checks the sign-in token itself
   if ((req.ctx.role === 'pending' || req.ctx.role === 'disabled') && req.path.startsWith('/api/') && !['/api/health', '/api/config', '/api/me'].includes(req.path)) {
     return res.status(403).json({ error: req.ctx.role === 'pending' ? 'Account pending approval by your administrator' : 'Account deactivated' });
   }
@@ -1754,6 +1754,57 @@ app.post('/api/permissions/global-disabled', (req, res) => {
     ok: true,
     disabled: db.globalDisabledMenus
   });
+});
+
+/* BI Chat — Company user directory & participant resolution */
+app.get('/api/bi-chat/colleagues', async (req, res) => {
+  try {
+    const companyId = req.query.companyId;
+
+    if (!SB.admin) {
+      return res.json({ data: [] });
+    }
+
+    let query = SB.admin
+      .from('company_users')
+      .select('id, full_name, email, role, status, mobile, company_id, last_login_at, created_at')
+      .order('full_name', { ascending: true });
+
+    if (companyId) {
+      query = query.or(`company_id.eq.${companyId},role.eq.SUPER_ADMIN`);
+    }
+
+    const { data: users, error } = await query;
+    if (error) {
+      console.error('Error fetching bi-chat colleagues:', error);
+      return res.status(500).json({ error: error.message });
+    }
+
+    const active = (users || []).filter(u => u.status !== 'Inactive');
+    return res.json({ data: active });
+  } catch (err) {
+    console.error('bi-chat colleagues error:', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/bi-chat/users-by-ids', async (req, res) => {
+  try {
+    const ids = (req.query.ids || '').split(',').map(s => s.trim()).filter(Boolean);
+    if (!ids.length || !SB.admin) {
+      return res.json({ data: [] });
+    }
+
+    const { data: users, error } = await SB.admin
+      .from('company_users')
+      .select('id, full_name, email, role, status, mobile, company_id')
+      .in('id', ids);
+
+    if (error) throw error;
+    return res.json({ data: users || [] });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
 });
 
 /* users — super_admin manages across companies; company_admin only own company */

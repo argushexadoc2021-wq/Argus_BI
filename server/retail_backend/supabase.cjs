@@ -1,7 +1,11 @@
 /* Supabase Auth bridge (Google OAuth). Secret key stays server-side only.
    Frontend receives only url + publishable key via /api/config. */
 /* dotenv is only for local runs (it is not a dependency of the project): on Vercel the settings come from the environment */
-try { require('dotenv').config({ path: require('path').join(__dirname, '.env') }); } catch (_e) { /* not installed: use the process environment */ }
+try {
+  const rootEnv = require('path').join(__dirname, '..', '..', '.env.local');
+  if (require('fs').existsSync(rootEnv)) require('dotenv').config({ path: rootEnv });
+  require('dotenv').config({ path: require('path').join(__dirname, '.env') });
+} catch (_e) { /* not installed: use the process environment */ }
 const { createClient } = require('@supabase/supabase-js');
 
 /* also accept the names the Business Intelligence side uses, so one set of Vercel variables is enough */
