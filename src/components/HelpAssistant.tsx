@@ -987,10 +987,29 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
     return () => { window.removeEventListener('keydown', down, true); window.removeEventListener('keyup', up, true); };
   }, []);
   useEffect(() => {
+    const onToggle = () => setMenu((m) => !m);
+    const onClose = () => setMenu(false);
+    window.addEventListener('argus:toggle-ai-menu', onToggle);
+    window.addEventListener('argus:close-ai-menu', onClose);
+    return () => {
+      window.removeEventListener('argus:toggle-ai-menu', onToggle);
+      window.removeEventListener('argus:close-ai-menu', onClose);
+    };
+  }, []);
+  useEffect(() => {
     if (!menu) return;
-    const out = (e: MouseEvent) => { if (!rootRef.current?.contains(e.target as Node)) setMenu(false); };
+    const out = (e: MouseEvent) => {
+      const target = e.target as Element | null;
+      if (target?.closest?.('[data-dock-handle]')) return;
+      if (!rootRef.current?.contains(e.target as Node)) setMenu(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenu(false); };
     document.addEventListener('mousedown', out);
-    return () => document.removeEventListener('mousedown', out);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', out);
+      window.removeEventListener('keydown', onKey);
+    };
   }, [menu]);
 
   const begin = () => {
@@ -1095,8 +1114,13 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
   }, [active, splitW]);
   useEffect(() => () => { document.documentElement.removeAttribute('data-adviser-split'); }, []);
   const anyOn = active || modes.teaching || modes.coworker;
+  // Sync menu open state and assistant indicators to the arrow dock tab
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('argus:ai-menu-state', { detail: { open: menu, anyOn, cw } }));
+    document.documentElement.setAttribute('data-dock', menu ? 'open' : 'collapsed');
+  }, [menu, anyOn, cw]);
   const status = phase === 'greeting' ? '…' : phase === 'listening' ? (overMode ? 'Listening… பேசுங்கள். முடிந்ததும் "over" சொல்லுங்கள் / say "over" when you finish' : 'Listening… பேசுங்கள் / speak now') : phase === 'thinking' ? 'Thinking…' : phase === 'speaking' ? 'Speaking… tap the mic to stop it and talk' : '';
-  const rightSide = document.documentElement.getAttribute('data-dock-side') === 'right' || (!!drag.pos && drag.pos.x > window.innerWidth / 2 && !document.documentElement.hasAttribute('data-dock-side'));
+  const rightSide = document.documentElement.getAttribute('data-dock-side') === 'right';
   const kind: 'ta' | 'en' = lang === 'ta' ? 'ta' : 'en';
   const choices = voiceList(kind);
   const chosen = voiceFor(kind === 'ta' ? 'ta அ' : 'en')?.name ?? '';
@@ -1112,28 +1136,10 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
     <>
     <TamilVoiceNotice lang={lang} />
     <div ref={rootRef} data-voice-ignore
-      className={`dock-help fixed bottom-5 max-lg:bottom-[4.75rem] left-[5.5rem] z-[60] flex items-end gap-2 font-sans ${rightSide ? 'flex-row-reverse' : ''}`}>
-      <button type="button" data-assistant-launcher
-        onMouseDown={(e) => e.preventDefault()}
-        {...dockDrag.bind}
-        onClick={() => { if (dockDrag.wasDragged() || drag.wasDragged()) return; setMenu((m) => !m); }}
-        aria-label="AI assistant" aria-expanded={menu} title="AI assistant: Teaching, Co-worker, Adviser · ask anything"
-        className={`relative flex h-12 touch-none cursor-grab select-none items-center gap-2 rounded-full pl-4 pr-5 text-white shadow-lg active:cursor-grabbing ${anyOn ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}>
-        {active && phase === 'listening' && <span className="absolute inset-0 animate-ping rounded-full bg-red-500/30" />}
-        {allowed.coworker && (cw === 'listening' || cw === 'start' || cw === 'error') && (
-          <span className="absolute -right-0.5 -top-0.5 flex h-3.5 w-3.5" title={cw === 'listening' ? 'Co-worker is listening: say "Hi Raaju"' : 'Co-worker: open the menu and click Co-worker to start the mic'}>
-            {cw === 'listening' && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-300 opacity-75" />}
-            <span className={`relative inline-flex h-3.5 w-3.5 rounded-full border-2 border-white ${cw === 'listening' ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-          </span>
-        )}
-        <span className="relative">
-          {active && phase === 'listening' ? <Mic size={20} /> : active && phase === 'thinking' ? <Loader2 size={20} className="animate-spin" /> : active && phase === 'speaking' ? <Volume2 size={20} /> : <Sparkles size={20} />}
-        </span>
-        <span className="relative text-sm font-semibold">{modes.teaching ? 'Teaching' : modes.coworker ? 'Co-worker' : active ? 'Adviser' : 'AI · உதவி'}</span>
-      </button>
+      className={`dock-help fixed z-[60] flex flex-col gap-2 font-sans pointer-events-none ${rightSide ? 'items-end' : 'items-start'}`}>
       {menu && (
         <div role="menu" aria-label="AI modes" data-voice-ignore onMouseDown={(e) => e.stopPropagation()}
-          className={`absolute bottom-14 ${rightSide ? 'right-0' : 'left-0'} w-64 max-h-[calc(100vh-6rem)] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-2xl`}>
+          className="pointer-events-auto w-64 max-h-[calc(100vh-6rem)] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-2xl">
           {/* Teaching: two kinds */}
           {allowed.teaching && <div className={`mb-1 rounded-xl border px-2 py-1.5 ${modes.teaching ? 'border-red-300 bg-red-50' : 'border-transparent'}`}>
             <div className="flex items-center gap-2">
@@ -1181,7 +1187,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
 
       {/* a short message when no chat is open (for example the microphone was blocked) */}
       {!active && note && (
-        <div role="status" className="max-w-[20rem] rounded-xl border border-slate-200 bg-white/95 px-3 py-2 text-xs text-slate-500 shadow-lg backdrop-blur">{note}</div>
+        <div role="status" className="pointer-events-auto max-w-[20rem] rounded-xl border border-slate-200 bg-white/95 px-3 py-2 text-xs text-slate-500 shadow-lg backdrop-blur">{note}</div>
       )}
 
       {/* Adviser chat: split screen (this chat docked on the left, the page on the right) */}

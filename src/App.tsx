@@ -19,6 +19,7 @@ import { BottomNav } from './components/layout/BottomNav';
 import { NavPositionProvider, useNavPosition } from './contexts/NavPositionContext';
 import { HeaderKpiProvider } from './contexts/HeaderKpiContext';
 import { Dashboard } from './pages/Dashboard';
+import BiChatPage from './pages/chat/BiChatPage';
 
 import {
   PartsPage,
@@ -225,6 +226,7 @@ function MainLayout() {
           <Routes>
             <Route path="/" element={<HomeRedirect />} />
             <Route path="/dashboard" element={<Dashboard onNavigate={handleNavigate} />} />
+            <Route path="/bi-chat" element={<BiChatPage />} />
             
             {/* Sales */}
             <Route path="/sales/pipeline" element={<SalesPipelinePage />} />

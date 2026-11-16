@@ -1,0 +1,774 @@
+import { supabase } from '@/lib/supabase';
+import type { UserColleague, Conversation, ChatMessage, ChatAttachment, Meeting, CallSession } from '../types';
+
+const STORAGE_KEY_PREFIX = 'argus_bi_chat_';
+
+// Safe localStorage cache helper
+function getCache<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_PREFIX + key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function setCache<T>(key: string, data: T) {
+  try {
+    localStorage.setItem(STORAGE_KEY_PREFIX + key, JSON.stringify(data));
+  } catch {
+    /* ignore storage quota */
+  }
+}
+
+export const chatService = {
+  /**
+   * Fetches all colleagues belonging to the given company from public.company_users.
+   */
+  async getCompanyColleagues(companyId: string, currentUserId: string): Promise<UserColleague[]> {
+    try {
+      let query = supabase
+        .from('company_users')
+        .select('id, full_name, email, role, status, mobile, last_login_at, created_at')
+        .eq('status', 'Active')
+        .order('full_name', { ascending: true });
+
+      if (companyId) {
+        query = query.eq('company_id', companyId);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+
+      return (data || []).map((u: any) => ({
+        id: u.id,
+        full_name: u.full_name || u.email.split('@')[0],
+        email: u.email,
+        role: u.role,
+        status: u.status,
+        mobile: u.mobile || '',
+        designation: u.role === 'SUPER_ADMIN' ? 'Super Administrator' : u.role === 'COMPANY_ADMIN' ? 'Company Administrator' : 'CNC Operations',
+        last_seen: u.last_login_at || u.created_at,
+        is_online: false, // updated via Realtime presence
+      }));
+    } catch (err) {
+      console.warn('Could not query company_users (using cache fallback):', err);
+      return getCache<UserColleague[]>(`colleagues_${companyId}`, []);
+    }
+  },
+
+  /**
+   * Fetches all conversations for the user in the company.
+   */
+  async getConversations(companyId: string, currentUserId: string): Promise<Conversation[]> {
+    try {
+      // 1. Query conversations from Supabase
+      const { data: convs, error } = await supabase
+        .from('bi_chat_conversations')
+        .select('*')
+        .eq('company_id', companyId)
+        .order('last_message_at', { ascending: false });
+
+      if (error) throw error;
+      if (!convs || convs.length === 0) return [];
+
+      // 2. Fetch participants for these conversations
+      const convIds = convs.map((c: any) => c.id);
+      const { data: parts } = await supabase
+        .from('bi_chat_participants')
+        .select('id, conversation_id, user_id, role, last_read_at, is_muted')
+        .in('conversation_id', convIds);
+
+      // 3. User details map
+      const userIds = Array.from(new Set((parts || []).map((p: any) => p.user_id)));
+      let userMap = new Map<string, any>();
+      if (userIds.length > 0) {
+        const { data: users } = await supabase
+          .from('company_users')
+          .select('id, full_name, email, role, status, mobile')
+          .in('id', userIds);
+        userMap = new Map((users || []).map((u: any) => [u.id, u]));
+      }
+
+      // 4. Map into Conversation objects
+      const result: Conversation[] = convs.map((c: any) => {
+        const convParts = (parts || [])
+          .filter((p: any) => p.conversation_id === c.id)
+          .map((p: any) => {
+            const u = userMap.get(p.user_id);
+            return {
+              id: p.id,
+              conversation_id: p.conversation_id,
+              user_id: p.user_id,
+              role: p.role,
+              last_read_at: p.last_read_at,
+              is_muted: !!p.is_muted,
+              user: u ? {
+                id: u.id,
+                full_name: u.full_name || u.email.split('@')[0],
+                email: u.email,
+                role: u.role,
+                status: u.status,
+                mobile: u.mobile,
+              } : undefined,
+            };
+          });
+
+        return {
+          id: c.id,
+          company_id: c.company_id,
+          type: c.type,
+          title: c.title,
+          description: c.description,
+          avatar_url: c.avatar_url,
+          created_by: c.created_by,
+          last_message_at: c.last_message_at,
+          last_message_preview: c.last_message_preview,
+          pinned_by: Array.isArray(c.pinned_by) ? c.pinned_by : [],
+          participants: convParts,
+        };
+      });
+
+      setCache(`conversations_${companyId}_${currentUserId}`, result);
+      return result;
+    } catch (err) {
+      console.warn('Falling back to cached conversations:', err);
+      return getCache<Conversation[]>(`conversations_${companyId}_${currentUserId}`, []);
+    }
+  },
+
+  /**
+   * Starts or finds an existing direct conversation between two company colleagues.
+   */
+  async getOrCreateDirectConversation(companyId: string, currentUserId: string, colleagueId: string): Promise<Conversation> {
+    try {
+      // Find existing direct conversation with colleague
+      const { data: myConvs } = await supabase
+        .from('bi_chat_participants')
+        .select('conversation_id')
+        .eq('user_id', currentUserId);
+
+      const convIds = (myConvs || []).map((c: any) => c.conversation_id);
+
+      if (convIds.length > 0) {
+        const { data: match } = await supabase
+          .from('bi_chat_participants')
+          .select('conversation_id, bi_chat_conversations!inner(id, type, company_id)')
+          .in('conversation_id', convIds)
+          .eq('user_id', colleagueId)
+          .eq('bi_chat_conversations.type', 'direct')
+          .eq('bi_chat_conversations.company_id', companyId)
+          .maybeSingle();
+
+        if (match && match.conversation_id) {
+          const list = await this.getConversations(companyId, currentUserId);
+          const found = list.find((c) => c.id === match.conversation_id);
+          if (found) return found;
+        }
+      }
+
+      // Create new direct conversation
+      const { data: newConv, error: convErr } = await supabase
+        .from('bi_chat_conversations')
+        .insert({
+          company_id: companyId,
+          type: 'direct',
+          created_by: currentUserId,
+          last_message_preview: 'Conversation started',
+        })
+        .select()
+        .single();
+
+      if (convErr) throw convErr;
+
+      // Add both participants
+      await supabase.from('bi_chat_participants').insert([
+        { conversation_id: newConv.id, user_id: currentUserId, role: 'admin' },
+        { conversation_id: newConv.id, user_id: colleagueId, role: 'member' },
+      ]);
+
+      const list = await this.getConversations(companyId, currentUserId);
+      return list.find((c) => c.id === newConv.id) || {
+        id: newConv.id,
+        company_id: companyId,
+        type: 'direct',
+        last_message_at: new Date().toISOString(),
+        last_message_preview: 'Conversation started',
+        pinned_by: [],
+        participants: [],
+      };
+    } catch (err) {
+      console.warn('Using local fallback for direct conversation:', err);
+      const existing = getCache<Conversation[]>(`conversations_${companyId}_${currentUserId}`, []);
+      const match = existing.find((c) => c.type === 'direct' && c.participants.some((p) => p.user_id === colleagueId));
+      if (match) return match;
+
+      const newConv: Conversation = {
+        id: 'conv-' + Date.now(),
+        company_id: companyId,
+        type: 'direct',
+        last_message_at: new Date().toISOString(),
+        last_message_preview: 'Conversation started',
+        pinned_by: [],
+        participants: [
+          { id: 'p1', conversation_id: 'conv-' + Date.now(), user_id: currentUserId, role: 'admin', last_read_at: new Date().toISOString(), is_muted: false },
+          { id: 'p2', conversation_id: 'conv-' + Date.now(), user_id: colleagueId, role: 'member', last_read_at: new Date().toISOString(), is_muted: false },
+        ],
+      };
+      setCache(`conversations_${companyId}_${currentUserId}`, [newConv, ...existing]);
+      return newConv;
+    }
+  },
+
+  /**
+   * Creates a new group conversation with multiple company employees.
+   */
+  async createGroupConversation(
+    companyId: string,
+    currentUserId: string,
+    title: string,
+    description: string,
+    memberUserIds: string[],
+    avatarUrl?: string
+  ): Promise<Conversation> {
+    const allMembers = Array.from(new Set([currentUserId, ...memberUserIds]));
+
+    try {
+      const { data: newConv, error: convErr } = await supabase
+        .from('bi_chat_conversations')
+        .insert({
+          company_id: companyId,
+          type: 'group',
+          title,
+          description: description || null,
+          avatar_url: avatarUrl || null,
+          created_by: currentUserId,
+          last_message_preview: 'Group created',
+        })
+        .select()
+        .single();
+
+      if (convErr) throw convErr;
+
+      const participantRows = allMembers.map((uid) => ({
+        conversation_id: newConv.id,
+        user_id: uid,
+        role: uid === currentUserId ? 'admin' : 'member',
+      }));
+
+      await supabase.from('bi_chat_participants').insert(participantRows);
+
+      const list = await this.getConversations(companyId, currentUserId);
+      return list.find((c) => c.id === newConv.id) || {
+        id: newConv.id,
+        company_id: companyId,
+        type: 'group',
+        title,
+        description,
+        avatar_url: avatarUrl,
+        created_by: currentUserId,
+        last_message_at: new Date().toISOString(),
+        last_message_preview: 'Group created',
+        pinned_by: [],
+        participants: [],
+      };
+    } catch (err) {
+      console.warn('Using local fallback for group creation:', err);
+      const existing = getCache<Conversation[]>(`conversations_${companyId}_${currentUserId}`, []);
+      const localGroup: Conversation = {
+        id: 'group-' + Date.now(),
+        company_id: companyId,
+        type: 'group',
+        title,
+        description,
+        avatar_url: avatarUrl,
+        created_by: currentUserId,
+        last_message_at: new Date().toISOString(),
+        last_message_preview: 'Group created',
+        pinned_by: [],
+        participants: allMembers.map((uid) => ({
+          id: 'gp-' + uid,
+          conversation_id: 'group-' + Date.now(),
+          user_id: uid,
+          role: uid === currentUserId ? 'admin' : 'member',
+          last_read_at: new Date().toISOString(),
+          is_muted: false,
+        })),
+      };
+      setCache(`conversations_${companyId}_${currentUserId}`, [localGroup, ...existing]);
+      return localGroup;
+    }
+  },
+
+  /**
+   * Fetches messages for a conversation.
+   */
+  async getMessages(conversationId: string): Promise<ChatMessage[]> {
+    try {
+      const { data, error } = await supabase
+        .from('bi_chat_messages')
+        .select(`
+          *,
+          attachments:bi_chat_attachments(*)
+        `)
+        .eq('conversation_id', conversationId)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+
+      const msgs: ChatMessage[] = (data || []).map((m: any) => ({
+        id: m.id,
+        conversation_id: m.conversation_id,
+        company_id: m.company_id,
+        sender_id: m.sender_id,
+        sender_name: m.metadata?.sender_name || '',
+        content: m.content,
+        type: m.type,
+        reply_to_id: m.reply_to_id,
+        reply_to: m.metadata?.reply_to,
+        is_pinned: !!m.is_pinned,
+        is_edited: !!m.is_edited,
+        is_deleted: !!m.is_deleted,
+        metadata: m.metadata || {},
+        attachments: m.attachments || [],
+        created_at: m.created_at,
+        status: 'read',
+      }));
+
+      setCache(`messages_${conversationId}`, msgs);
+      return msgs;
+    } catch (err) {
+      return getCache<ChatMessage[]>(`messages_${conversationId}`, []);
+    }
+  },
+
+  /**
+   * Sends a message with optional attachments or meeting metadata.
+   */
+  async sendMessage(params: {
+    conversationId: string;
+    companyId: string;
+    senderId: string;
+    senderName: string;
+    content: string;
+    type?: 'text' | 'image' | 'file' | 'meeting' | 'call_log' | 'system';
+    replyTo?: { id: string; sender_name: string; content: string };
+    attachments?: { file_name: string; file_type: string; file_size: number; file_url: string; folder_path?: string }[];
+    metadata?: Record<string, any>;
+  }): Promise<ChatMessage> {
+    const type = params.type || (params.attachments && params.attachments.length > 0 ? (params.attachments[0].file_type.startsWith('image/') ? 'image' : 'file') : 'text');
+
+    const meta = {
+      ...(params.metadata || {}),
+      sender_name: params.senderName,
+      reply_to: params.replyTo,
+    };
+
+    let preview = params.content;
+    if (type === 'image') preview = '📷 Photo';
+    else if (type === 'file') preview = `📎 ${params.attachments?.[0]?.file_name || 'Attachment'}`;
+    else if (type === 'meeting') preview = `📅 Meeting: ${params.metadata?.title || 'Invitation'}`;
+    else if (type === 'call_log') preview = params.content;
+
+    try {
+      const { data: msg, error } = await supabase
+        .from('bi_chat_messages')
+        .insert({
+          conversation_id: params.conversationId,
+          company_id: params.companyId,
+          sender_id: params.senderId,
+          content: params.content,
+          type,
+          reply_to_id: params.replyTo?.id || null,
+          metadata: meta,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Insert attachments if any
+      let createdAttachments: ChatAttachment[] = [];
+      if (params.attachments && params.attachments.length > 0) {
+        const attRows = params.attachments.map((a) => ({
+          message_id: msg.id,
+          conversation_id: params.conversationId,
+          company_id: params.companyId,
+          uploader_id: params.senderId,
+          file_name: a.file_name,
+          file_type: a.file_type,
+          file_size: a.file_size,
+          file_url: a.file_url,
+          folder_path: a.folder_path || '/',
+        }));
+        const { data: attData } = await supabase.from('bi_chat_attachments').insert(attRows).select();
+        createdAttachments = attData || [];
+      }
+
+      // Update conversation last message
+      void supabase
+        .from('bi_chat_conversations')
+        .update({
+          last_message_at: msg.created_at,
+          last_message_preview: preview.slice(0, 80),
+        })
+        .eq('id', params.conversationId);
+
+      const created: ChatMessage = {
+        id: msg.id,
+        conversation_id: msg.conversation_id,
+        company_id: msg.company_id,
+        sender_id: msg.sender_id,
+        sender_name: params.senderName,
+        content: msg.content,
+        type: msg.type,
+        reply_to_id: msg.reply_to_id,
+        reply_to: params.replyTo,
+        is_pinned: false,
+        is_edited: false,
+        is_deleted: false,
+        metadata: meta,
+        attachments: createdAttachments,
+        created_at: msg.created_at,
+        status: 'sent',
+      };
+
+      // Update cache
+      const cached = getCache<ChatMessage[]>(`messages_${params.conversationId}`, []);
+      setCache(`messages_${params.conversationId}`, [...cached, created]);
+
+      // Broadcast message event to conversation channel
+      void supabase.channel(`bi-chat-${params.conversationId}`).send({
+        type: 'broadcast',
+        event: 'new_message',
+        payload: created,
+      });
+
+      return created;
+    } catch (err) {
+      console.warn('Falling back to local storage message:', err);
+      const fallbackMsg: ChatMessage = {
+        id: 'msg-' + Date.now(),
+        conversation_id: params.conversationId,
+        company_id: params.companyId,
+        sender_id: params.senderId,
+        sender_name: params.senderName,
+        content: params.content,
+        type,
+        reply_to_id: params.replyTo?.id,
+        reply_to: params.replyTo,
+        is_pinned: false,
+        is_edited: false,
+        is_deleted: false,
+        metadata: meta,
+        attachments: (params.attachments || []).map((a, i) => ({
+          id: 'att-' + Date.now() + '-' + i,
+          message_id: 'msg-' + Date.now(),
+          conversation_id: params.conversationId,
+          company_id: params.companyId,
+          uploader_id: params.senderId,
+          file_name: a.file_name,
+          file_type: a.file_type,
+          file_size: a.file_size,
+          file_url: a.file_url,
+          folder_path: a.folder_path || '/',
+          created_at: new Date().toISOString(),
+        })),
+        created_at: new Date().toISOString(),
+        status: 'sent',
+      };
+
+      const cached = getCache<ChatMessage[]>(`messages_${params.conversationId}`, []);
+      setCache(`messages_${params.conversationId}`, [...cached, fallbackMsg]);
+      return fallbackMsg;
+    }
+  },
+
+  /**
+   * Edits a message content.
+   */
+  async editMessage(messageId: string, conversationId: string, newContent: string): Promise<boolean> {
+    try {
+      await supabase
+        .from('bi_chat_messages')
+        .update({ content: newContent, is_edited: true, updated_at: new Date().toISOString() })
+        .eq('id', messageId);
+    } catch {
+      /* ignore */
+    }
+
+    const cached = getCache<ChatMessage[]>(`messages_${conversationId}`, []);
+    const updated = cached.map((m) => (m.id === messageId ? { ...m, content: newContent, is_edited: true } : m));
+    setCache(`messages_${conversationId}`, updated);
+    return true;
+  },
+
+  /**
+   * Deletes a message (soft delete).
+   */
+  async deleteMessage(messageId: string, conversationId: string): Promise<boolean> {
+    try {
+      await supabase
+        .from('bi_chat_messages')
+        .update({ is_deleted: true, content: 'This message was deleted', updated_at: new Date().toISOString() })
+        .eq('id', messageId);
+    } catch {
+      /* ignore */
+    }
+
+    const cached = getCache<ChatMessage[]>(`messages_${conversationId}`, []);
+    const updated = cached.map((m) => (m.id === messageId ? { ...m, is_deleted: true, content: 'This message was deleted' } : m));
+    setCache(`messages_${conversationId}`, updated);
+    return true;
+  },
+
+  /**
+   * Toggles pinned status for a message.
+   */
+  async togglePinMessage(messageId: string, conversationId: string, currentPin: boolean): Promise<boolean> {
+    const nextPin = !currentPin;
+    try {
+      await supabase
+        .from('bi_chat_messages')
+        .update({ is_pinned: nextPin })
+        .eq('id', messageId);
+    } catch {
+      /* ignore */
+    }
+
+    const cached = getCache<ChatMessage[]>(`messages_${conversationId}`, []);
+    const updated = cached.map((m) => (m.id === messageId ? { ...m, is_pinned: nextPin } : m));
+    setCache(`messages_${conversationId}`, updated);
+    return nextPin;
+  },
+
+  /**
+   * Schedules a calendar meeting and posts an invitation card into the chat.
+   */
+  async scheduleMeeting(params: {
+    companyId: string;
+    conversationId: string;
+    organizerId: string;
+    organizerName: string;
+    title: string;
+    description: string;
+    startTime: string;
+    endTime: string;
+    meetingType: 'video' | 'voice' | 'in_person';
+    locationOrLink?: string;
+    participantUserIds: string[];
+    reminderMinutes?: number[];
+  }): Promise<Meeting> {
+    const reminderMinutes = params.reminderMinutes || [15, 5, 0];
+    const meetingId = 'meet-' + Date.now();
+
+    const newMeeting: Meeting = {
+      id: meetingId,
+      company_id: params.companyId,
+      conversation_id: params.conversationId,
+      organizer_id: params.organizerId,
+      organizer_name: params.organizerName,
+      title: params.title,
+      description: params.description,
+      start_time: params.startTime,
+      end_time: params.endTime,
+      meeting_type: params.meetingType,
+      locationOrLink: params.locationOrLink || `https://meet.argus-cnc.internal/${meetingId}`,
+      status: 'scheduled',
+      reminder_minutes: reminderMinutes,
+      participants: params.participantUserIds.map((uid) => ({
+        user_id: uid,
+        status: uid === params.organizerId ? 'accepted' : 'pending',
+      })),
+      created_at: new Date().toISOString(),
+    };
+
+    try {
+      const { data: dbMeet, error } = await supabase
+        .from('bi_chat_meetings')
+        .insert({
+          company_id: params.companyId,
+          conversation_id: params.conversationId,
+          organizer_id: params.organizerId,
+          title: params.title,
+          description: params.description,
+          start_time: params.startTime,
+          end_time: params.endTime,
+          meeting_type: params.meetingType,
+          location_or_link: newMeeting.location_or_link,
+          reminder_minutes: reminderMinutes,
+        })
+        .select()
+        .single();
+
+      if (!error && dbMeet) {
+        newMeeting.id = dbMeet.id;
+        const partRows = params.participantUserIds.map((uid) => ({
+          meeting_id: dbMeet.id,
+          user_id: uid,
+          status: uid === params.organizerId ? 'accepted' : 'pending',
+        }));
+        await supabase.from('bi_chat_meeting_participants').insert(partRows);
+      }
+    } catch (err) {
+      console.warn('Saving meeting locally:', err);
+    }
+
+    // Post meeting invitation message into chat thread
+    await this.sendMessage({
+      conversationId: params.conversationId,
+      companyId: params.companyId,
+      senderId: params.organizerId,
+      senderName: params.organizerName,
+      content: `Meeting Scheduled: ${params.title}`,
+      type: 'meeting',
+      metadata: {
+        meeting: newMeeting,
+      },
+    });
+
+    // Save to company meetings cache
+    const existing = getCache<Meeting[]>(`meetings_${params.companyId}`, []);
+    setCache(`meetings_${params.companyId}`, [...existing, newMeeting]);
+
+    return newMeeting;
+  },
+
+  /**
+   * Responds to a meeting invitation (accept / decline).
+   */
+  async respondToMeeting(meetingId: string, userId: string, status: 'accepted' | 'declined', companyId: string) {
+    try {
+      await supabase
+        .from('bi_chat_meeting_participants')
+        .update({ status, responded_at: new Date().toISOString() })
+        .eq('meeting_id', meetingId)
+        .eq('user_id', userId);
+    } catch {
+      /* ignore */
+    }
+
+    const cached = getCache<Meeting[]>(`meetings_${companyId}`, []);
+    const updated = cached.map((m) => {
+      if (m.id !== meetingId) return m;
+      return {
+        ...m,
+        participants: m.participants.map((p) => (p.user_id === userId ? { ...p, status } : p)),
+      };
+    });
+    setCache(`meetings_${companyId}`, updated);
+  },
+
+  /**
+   * Cancels a scheduled meeting.
+   */
+  async cancelMeeting(meetingId: string, companyId: string, conversationId?: string, cancelerName?: string) {
+    try {
+      await supabase.from('bi_chat_meetings').update({ status: 'cancelled' }).eq('id', meetingId);
+    } catch {
+      /* ignore */
+    }
+
+    const cached = getCache<Meeting[]>(`meetings_${companyId}`, []);
+    const updated = cached.map((m) => (m.id === meetingId ? { ...m, status: 'cancelled' as const } : m));
+    setCache(`meetings_${companyId}`, updated);
+
+    if (conversationId && cancelerName) {
+      await this.sendMessage({
+        conversationId,
+        companyId,
+        senderId: 'system',
+        senderName: 'Meeting System',
+        content: `Meeting was cancelled by ${cancelerName}`,
+        type: 'system',
+      });
+    }
+  },
+
+  /**
+   * Fetches meetings for conversation or company.
+   */
+  async getMeetings(companyId: string, conversationId?: string): Promise<Meeting[]> {
+    try {
+      let q = supabase
+        .from('bi_chat_meetings')
+        .select(`
+          *,
+          participants:bi_chat_meeting_participants(*)
+        `)
+        .eq('company_id', companyId)
+        .order('start_time', { ascending: true });
+
+      if (conversationId) {
+        q = q.eq('conversation_id', conversationId);
+      }
+
+      const { data, error } = await q;
+      if (error) throw error;
+
+      return (data || []).map((m: any) => ({
+        id: m.id,
+        company_id: m.company_id,
+        conversation_id: m.conversation_id,
+        organizer_id: m.organizer_id,
+        title: m.title,
+        description: m.description,
+        start_time: m.start_time,
+        end_time: m.end_time,
+        meeting_type: m.meeting_type,
+        location_or_link: m.location_or_link,
+        status: m.status,
+        reminder_minutes: m.reminder_minutes || [15, 5, 0],
+        participants: (m.participants || []).map((p: any) => ({
+          user_id: p.user_id,
+          status: p.status,
+          responded_at: p.responded_at,
+        })),
+        created_at: m.created_at,
+      }));
+    } catch {
+      const cached = getCache<Meeting[]>(`meetings_${companyId}`, []);
+      return conversationId ? cached.filter((m) => m.conversation_id === conversationId) : cached;
+    }
+  },
+
+  /**
+   * Logs a call event in chat history.
+   */
+  async logCall(params: {
+    companyId: string;
+    conversationId: string;
+    callerId: string;
+    callerName: string;
+    callType: 'voice' | 'video';
+    status: 'connected' | 'missed' | 'rejected';
+    durationSeconds: number;
+  }) {
+    const text =
+      params.status === 'missed'
+        ? `Missed ${params.callType} call`
+        : params.status === 'rejected'
+        ? `Declined ${params.callType} call`
+        : `${params.callType === 'video' ? 'Video' : 'Voice'} call ended (${formatDuration(params.durationSeconds)})`;
+
+    await this.sendMessage({
+      conversationId: params.conversationId,
+      companyId: params.companyId,
+      senderId: params.callerId,
+      senderName: params.callerName,
+      content: text,
+      type: 'call_log',
+      metadata: {
+        call_type: params.callType,
+        call_duration: params.durationSeconds,
+        call_status: params.status,
+      },
+    });
+  },
+};
+
+function formatDuration(sec: number): string {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${s < 10 ? '0' : ''}${s}`;
+}

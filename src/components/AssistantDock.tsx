@@ -61,7 +61,13 @@ export function useDockDrag() {
 
 export function AssistantDock() {
   const [pos, setPos] = useState(read);
-  // the AI button / Co-worker pill being dragged (useDockDrag)
+  const [open, setOpen] = useState(false);
+  const [anyActive, setAnyActive] = useState(false);
+  const [cwState, setCwState] = useState<string>('');
+  const drag = useRef<{ dx: number; dy: number; sx: number; sy: number; moved: boolean } | null>(null);
+  const moved = useRef(false);
+
+  // Dragging the arrow moves the dock position
   useEffect(() => {
     const h = (e: Event) => {
       const d = (e as CustomEvent<{ x: number; y: number; save: boolean }>).detail;
@@ -73,11 +79,6 @@ export function AssistantDock() {
     window.addEventListener('argus:dock-move', h);
     return () => window.removeEventListener('argus:dock-move', h);
   }, []);
-  const [open, setOpen] = useState(false);
-  const pinned = useRef(false);
-  const timer = useRef<number | null>(null);
-  const drag = useRef<{ dx: number; dy: number; sx: number; sy: number; moved: boolean } | null>(null);
-  const moved = useRef(false);
 
   useEffect(() => { publish(pos); }, [pos]);
   useEffect(() => {
@@ -85,39 +86,43 @@ export function AssistantDock() {
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
-  useEffect(() => {
-    document.documentElement.setAttribute('data-dock', open ? 'open' : 'collapsed');
-  }, [open]);
-  useEffect(() => () => { document.documentElement.removeAttribute('data-dock'); }, []);
 
-  const stopTimer = () => { if (timer.current !== null) { window.clearTimeout(timer.current); timer.current = null; } };
-  const tuck = useCallback(() => { stopTimer(); timer.current = window.setTimeout(() => { if (!pinned.current) setOpen(false); }, 1500); }, []);
-
-  // While open: staying over the arrow, a button or a popup keeps it open; leaving them all tucks it away after a moment.
+  // Sync state from HelpAssistant (whether menu is open and whether any AI mode is running)
   useEffect(() => {
-    if (!open) return;
-    const onMove = (e: PointerEvent) => {
-      const t = e.target as Element | null;
-      if (t?.closest?.('[data-dock-handle], [data-assistant-launcher], [role="menu"], [role="dialog"]')) stopTimer();
-      else if (timer.current === null) tuck();
+    const onState = (e: Event) => {
+      const d = (e as CustomEvent<{ open: boolean; anyOn?: boolean; cw?: string }>).detail;
+      if (!d) return;
+      setOpen(Boolean(d.open));
+      if (typeof d.anyOn === 'boolean') setAnyActive(d.anyOn);
+      if (typeof d.cw === 'string') setCwState(d.cw);
     };
-    window.addEventListener('pointermove', onMove);
-    return () => window.removeEventListener('pointermove', onMove);
-  }, [open, tuck]);
+    window.addEventListener('argus:ai-menu-state', onState);
+    return () => window.removeEventListener('argus:ai-menu-state', onState);
+  }, []);
 
-  const Icon = (pos.x > window.innerWidth / 2) !== open ? ChevronLeft : ChevronRight;
+  const isRight = pos.x > window.innerWidth / 2;
+  const Icon = isRight !== open ? ChevronLeft : ChevronRight;
 
   return (
     <button
       type="button"
       data-dock-handle
       data-voice-ignore
-      aria-label={open ? 'Hide the AI buttons' : 'Show the AI buttons'}
+      aria-label={open ? 'Close AI options' : 'Open AI options (Teaching, Co-worker, Adviser)'}
       aria-expanded={open}
-      title="AI help + Co-worker · point here to open · drag to move · double-click to reset"
-      className="fixed z-[61] flex touch-none select-none items-center justify-center rounded-r-xl border border-l-0 border-slate-700 bg-slate-900/90 text-white shadow-lg backdrop-blur-xs hover:bg-slate-800 cursor-grab active:cursor-grabbing"
-      style={{ left: pos.x, bottom: pos.y, width: W, height: H, ...(pos.x > window.innerWidth / 2 ? { borderRadius: '0.75rem 0 0 0.75rem', borderLeftWidth: 1, borderRightWidth: 0 } : {}) }}
-      onMouseEnter={() => { stopTimer(); setOpen(true); }}
+      title="AI options: Teaching, Co-worker, Adviser · click to open · drag to move · double-click to reset"
+      className={`fixed z-[61] flex touch-none select-none items-center justify-center border text-white shadow-lg backdrop-blur-xs cursor-grab active:cursor-grabbing transition-colors ${
+        anyActive ? 'bg-emerald-600 hover:bg-emerald-700 border-emerald-500' : 'bg-slate-900/90 hover:bg-slate-800 border-slate-700'
+      }`}
+      style={{
+        left: pos.x,
+        bottom: pos.y,
+        width: W,
+        height: H,
+        borderRadius: isRight ? '0.75rem 0 0 0.75rem' : '0 0.75rem 0.75rem 0',
+        borderLeftWidth: isRight ? 1 : 0,
+        borderRightWidth: isRight ? 0 : 1,
+      }}
       onPointerDown={(e) => {
         const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
         drag.current = { dx: e.clientX - r.left, dy: r.bottom - e.clientY, sx: e.clientX, sy: e.clientY, moved: false };
@@ -134,17 +139,22 @@ export function AssistantDock() {
         const d = drag.current; drag.current = null;
         if (d?.moved) {
           try { localStorage.setItem(KEY, JSON.stringify(pos)); } catch { /* not saved */ }
-          setTimeout(() => { moved.current = false; }, 0);
+          setTimeout(() => { moved.current = false; }, 50);
         }
       }}
       onDoubleClick={() => { const p = defaults(); setPos(p); try { localStorage.removeItem(KEY); } catch { /* ignore */ } }}
       onClick={() => {
         if (moved.current) return;
-        // a click keeps the buttons open until it is clicked again
-        if (pinned.current) { pinned.current = false; setOpen(false); } else { pinned.current = true; setOpen(true); }
+        window.dispatchEvent(new CustomEvent('argus:toggle-ai-menu'));
       }}
     >
       <Icon size={16} />
+      {cwState === 'listening' && (
+        <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5" title='Co-worker is listening: say "Hi Raaju"'>
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+          <span className="relative inline-flex h-3.5 w-3.5 rounded-full border-2 border-slate-900 bg-emerald-500" />
+        </span>
+      )}
     </button>
   );
 }

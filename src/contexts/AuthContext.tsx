@@ -272,7 +272,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [loadPermissions, loadPlatforms, company?.id, profile?.role]);
 
   const canView = useCallback((moduleKey: string) => {
-    if (moduleKey === 'dashboard') return true;
+    if (moduleKey === 'dashboard' || moduleKey === 'bi-chat') return true;
     return permissions?.[moduleKey]?.view ?? false;
   }, [permissions]);
 
