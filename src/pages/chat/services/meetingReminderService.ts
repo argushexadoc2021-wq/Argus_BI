@@ -87,3 +87,8 @@ function fireReminder(meeting: Meeting, minutesLeft: number) {
     }
   }
 }
+
+export const meetingReminderService = {
+  start: startMeetingReminderService,
+  stop: stopMeetingReminderService,
+};

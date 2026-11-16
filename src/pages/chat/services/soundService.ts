@@ -112,3 +112,5 @@ export function playEndCallTone() {
     /* ignore */
   }
 }
+
+export const playChime = playNotificationChime;
