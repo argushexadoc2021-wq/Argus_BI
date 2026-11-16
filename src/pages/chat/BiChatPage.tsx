@@ -35,16 +35,16 @@ import { MediaPreviewModal } from './components/MediaPreviewModal';
 import { CallOverlay } from './components/CallOverlay';
 
 export default function BiChatPage() {
-  const { user, profile } = useAuth();
+  const { user, profile, company } = useAuth();
 
-  const currentUserId = user?.id || '';
+  const currentUserId = profile?.id || user?.id || '';
   const currentUserName =
     profile?.full_name ||
     user?.user_metadata?.full_name ||
     user?.email?.split('@')[0] ||
     'Argus User';
-  const companyId = profile?.company_id || (user as any)?.company_id || '';
-  const companyName = (user as any)?.company_name || 'Argus CNC ERP';
+  const companyId = company?.id || profile?.company_id || (user as any)?.company_id || '';
+  const companyName = company?.company_name || (user as any)?.company_name || 'Argus CNC ERP';
 
   // State
   const [colleagues, setColleagues] = useState<UserColleague[]>([]);
@@ -573,7 +573,9 @@ export default function BiChatPage() {
             activeConversationId={activeConversation?.id}
             currentUserId={currentUserId}
             colleagues={colleagues}
+            companyName={companyName}
             onSelectConversation={handleSelectConversation}
+            onSelectColleague={handleSelectColleague}
             onOpenNewChat={() => setIsNewChatOpen(true)}
             onOpenNewGroup={() => setIsNewGroupOpen(true)}
           />
@@ -633,6 +635,78 @@ export default function BiChatPage() {
                   Create Team Group
                 </button>
               </div>
+
+              {/* Company Team Directory */}
+              {colleagues.length > 0 && (
+                <div className="w-full max-w-2xl mt-8 pt-6 border-t border-slate-800">
+                  <div className="flex items-center justify-between mb-3 text-left">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+                      <Users size={14} className="text-brand-500" />
+                      Company Colleagues in {companyName} ({colleagues.length})
+                    </h3>
+                    <span className="text-[11px] text-slate-500">Tap to start conversation</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[340px] overflow-y-auto pr-1">
+                    {colleagues.map((colleague) => {
+                      const initials = (colleague.full_name || 'U')
+                        .split(' ')
+                        .map((n) => n[0])
+                        .join('')
+                        .slice(0, 2)
+                        .toUpperCase();
+
+                      return (
+                        <div
+                          key={colleague.id}
+                          onClick={() => handleSelectColleague(colleague)}
+                          className="flex items-center gap-3 p-3 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 hover:border-brand-500/50 transition-all text-left cursor-pointer group shadow-sm"
+                        >
+                          <div className="relative shrink-0">
+                            <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-brand-600 to-orange-500 text-white flex items-center justify-center text-xs font-bold shadow-md">
+                              {initials}
+                            </div>
+                            <span
+                              title={colleague.is_online ? 'Online' : 'Offline'}
+                              className={`absolute bottom-0 right-0 w-3 h-3 rounded-full ring-2 ring-slate-900 ${
+                                colleague.is_online ? 'bg-emerald-400' : 'bg-slate-500'
+                              }`}
+                            />
+                          </div>
+
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-1 mb-0.5">
+                              <h4 className="text-xs font-bold text-white group-hover:text-brand-400 transition-colors truncate">
+                                {colleague.full_name}
+                              </h4>
+                              <span
+                                className={`text-[9px] font-bold px-1.5 py-0.2 rounded shrink-0 ${
+                                  colleague.role === 'SUPER_ADMIN'
+                                    ? 'bg-purple-900/40 text-purple-300'
+                                    : colleague.role === 'COMPANY_ADMIN'
+                                    ? 'bg-amber-900/40 text-amber-300'
+                                    : 'bg-slate-800 text-slate-400'
+                                }`}
+                              >
+                                {colleague.role === 'SUPER_ADMIN'
+                                  ? 'Super Admin'
+                                  : colleague.role === 'COMPANY_ADMIN'
+                                  ? 'Admin'
+                                  : 'Staff'}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-400 truncate leading-tight">
+                              {colleague.designation || colleague.email}
+                            </p>
+                          </div>
+
+                          <MessageSquare size={14} className="text-slate-600 group-hover:text-brand-400 transition-colors shrink-0" />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
