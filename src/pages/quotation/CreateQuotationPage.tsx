@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Building2, Calculator, Plus, UserCheck, Trash2, Package, Palette, MessageCircle, Mail, FileDown, FileSpreadsheet, Bookmark, BookmarkPlus, Download, Upload, Library, Search, X } from 'lucide-react';
+import { Building2, Calculator, Plus, UserCheck, Trash2, Package, Palette, MessageCircle, Mail, FileDown, Upload, Library, Search, X, Edit2, Check } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { desktopToast } from '@/lib/desktop/toast';
@@ -8,7 +8,7 @@ import { Modal } from '@/components/ui/Modal';
 import { QUOTE_UNITS, calcLine, calcTotals, emptyLine, validateQuote, type QuoteLine } from '@/lib/quotationCalc';
 import { loadProducts, saveProducts, newId, validateDraft, type LibraryProduct } from '@/lib/productLibrary';
 import { defaultTermsText, loadTerms, type TermsTemplate } from '@/lib/termsLibrary';
-import { loadProfileStore, resolveSeller, syncProfileStore, type ProfileStore } from '@/lib/companyProfile';
+import { loadProfileStore, resolveSeller, syncProfileStore, saveProfileStore, saveProfileRemote, type ProfileStore, type SubCompany } from '@/lib/companyProfile';
 import { newIdent, takeReuse, upsertQuote, type QuoteIdent } from '@/lib/quotationStore';
 import { clientsDiffer, fillClientDetails } from '@/lib/quoteClients';
 import { HsnDatalist } from '@/components/HsnDatalist';
@@ -51,7 +51,7 @@ export interface QuotationEmbed {
 }
 
 export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) {
-  const { company, email: authEmail } = useAuth();
+  const { company, companies = [], email: authEmail } = useAuth();
   const [date, setDate] = useState(todayISO());
   const [clients, setClients] = useState<QuoteClient[]>(() => (embed?.client ? [{ key: embed.client.key || embed.client.name.toLowerCase(), email: '', phone: '', address: '', gstin: '', ...embed.client }] : []));
   const [lines, setLines] = useState<QuoteLine[]>(() => ((embed?.lines ?? []).length ? (embed!.lines!).map(l => ({ ...newLine(), ...l })) : [newLine()]));
@@ -67,16 +67,32 @@ export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) 
   useEffect(() => { if (msg) msgRef.current?.scrollIntoView({ block: 'nearest' }); }, [msg]);
   const [showIssues, setShowIssues] = useState(false);
   const [busy, setBusy] = useState(false);
+
   // Read again whenever the company changes (it can arrive after this page opens), so the phone, address and bank details of the right company are printed.
   const profileDefaults = useMemo(() => ({ orgName: company?.company_name ?? '', email: authEmail ?? '' }), [company?.company_name, authEmail]);
   const [profileStore, setProfileStore] = useState<ProfileStore>(() => loadProfileStore(company?.id, profileDefaults));
   useEffect(() => {
     let off = false;
     setProfileStore(loadProfileStore(company?.id, profileDefaults));
-    void syncProfileStore(company?.id, profileDefaults).then(s => { if (!off) setProfileStore(s); });   // the company's shared profile
+    void syncProfileStore(company?.id, profileDefaults).then(s => { if (!off) setProfileStore(s); }); // the company's shared profile
     return () => { off = true; };
   }, [company?.id, profileDefaults]);
+
+  // Seller reference: empty string = primary organisation profile, or sub-company ID, or "comp_<id>"
   const [sellerRef, setSellerRef] = useState('');
+
+  // Sub-company management modal state
+  const [subModalOpen, setSubModalOpen] = useState(false);
+  const [subForm, setSubForm] = useState({
+    id: '',
+    name: '',
+    gstin: '',
+    address: '',
+    phone: '',
+    email: '',
+  });
+  const [subFormError, setSubFormError] = useState<string | null>(null);
+
   // Identity (id + number) of the quotation being worked on; assigned the first time it is saved/exported.
   const ident = useRef<QuoteIdent | null>(null);
   const [termsMenu, setTermsMenu] = useState<TermsTemplate[] | null>(null);
@@ -95,10 +111,9 @@ export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) 
   // Loads the client list the first time the picker opens (and again on Retry).
   const [libTry, setLibTry] = useState(0);
   useEffect(() => {
-    if (!pickOpen || libTry === 0 && libState === 'ready') return;
+    if (!pickOpen || (libTry === 0 && libState === 'ready')) return;
     let live = true;
     setLibState('loading');
-    // Same sources as All Companies: the company master plus every company with an enquiry, for this tenant only.
     let custQ = supabase.from('cnc_customers').select('*');
     let enqQ = supabase.from('cnc_enquiries').select('customer,contact_person,phone,email,city,gst');
     if (company?.id) { custQ = custQ.eq('company_id', company.id); enqQ = enqQ.eq('company_id', company.id); }
@@ -140,8 +155,75 @@ export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) 
     setMsg(ok ? { kind: 'ok', text: `“${name}” saved to the Product Library` } : { kind: 'err', text: 'Could not save: browser storage is unavailable or full.' });
   };
 
-  const seller = useMemo(() => resolveSeller(profileStore, sellerRef), [profileStore, sellerRef]);
+  // Seller resolution: handles sub-company reference or company selection from ERP
+  const seller = useMemo(() => {
+    if (sellerRef.startsWith('comp_')) {
+      const compId = sellerRef.replace('comp_', '');
+      const c = companies.find(x => x.id === compId);
+      if (c) {
+        return {
+          ...resolveSeller(profileStore, undefined),
+          name: c.company_name,
+        };
+      }
+    }
+    return resolveSeller(profileStore, sellerRef);
+  }, [profileStore, sellerRef, companies]);
+
   const sellerName = seller.name || company?.company_name || 'ARGUS CNC';
+
+  // Sub-company save handler
+  const handleSaveSubCompany = async () => {
+    const name = subForm.name.trim();
+    if (!name) {
+      setSubFormError('Sub-company name is required');
+      return;
+    }
+    setSubFormError(null);
+    const subId = subForm.id || `sub_${Date.now()}`;
+    const newSub: SubCompany = {
+      id: subId,
+      name,
+      gstin: subForm.gstin.trim().toUpperCase(),
+      address: subForm.address.trim(),
+      phone: subForm.phone.trim(),
+      email: subForm.email.trim(),
+    };
+    const existingIdx = profileStore.subs.findIndex(s => s.id === subId);
+    let updatedSubs: SubCompany[];
+    if (existingIdx >= 0) {
+      updatedSubs = [...profileStore.subs];
+      updatedSubs[existingIdx] = newSub;
+    } else {
+      updatedSubs = [...profileStore.subs, newSub];
+    }
+    const updatedStore: ProfileStore = {
+      ...profileStore,
+      subs: updatedSubs,
+    };
+    setProfileStore(updatedStore);
+    saveProfileStore(company?.id, updatedStore);
+    void saveProfileRemote(updatedStore);
+    setSellerRef(subId);
+    setSubModalOpen(false);
+    setSubForm({ id: '', name: '', gstin: '', address: '', phone: '', email: '' });
+    setMsg({ kind: 'ok', text: `Sub-company "${name}" saved and active for this quotation.` });
+  };
+
+  const handleDeleteSubCompany = (subId: string, subName: string) => {
+    if (!window.confirm(`Delete sub-company profile "${subName}"?`)) return;
+    const updatedSubs = profileStore.subs.filter(s => s.id !== subId);
+    const updatedStore: ProfileStore = {
+      ...profileStore,
+      subs: updatedSubs,
+    };
+    setProfileStore(updatedStore);
+    saveProfileStore(company?.id, updatedStore);
+    void saveProfileRemote(updatedStore);
+    if (sellerRef === subId) setSellerRef('');
+    setMsg({ kind: 'ok', text: `Sub-company "${subName}" removed.` });
+  };
+
   // A client that arrived without its address / GSTIN (pipeline card, older saved quotation) gets them from the company master.
   useEffect(() => {
     if (!clients.some(c => c.name && (!c.address || !c.gstin || !c.phone || !c.email))) return;
@@ -149,6 +231,7 @@ export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) 
     void fillClientDetails(clients, company?.id).then(next => { if (!off && clientsDiffer(clients, next)) setClients(next); });
     return () => { off = true; };
   }, [clients, company?.id]);
+
   const buildDoc = (): QuoteDoc => ({ quoteNo: ident.current?.quoteNo ?? '', date, sellerName, sellerRef, clients, lines, tax, terms, notes });
 
   // "Reuse" from the Quotation Library: load the saved quotation and keep editing the same record.
@@ -200,7 +283,8 @@ export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) 
       <div className={embed ? '' : 'p-4 lg:p-6 bg-grid min-h-full'}>
         <ProductWorkingsPage key={wl.id} title={wl.description} initial={wl.workings} onBack={() => setWorkingsFor(null)}
           onSave={(w: Workings, price: number, leave: boolean) => {
-            setLine(wl.id, { workings: w, unitPrice: String(price) });
+            const roundedPrice = (Math.round(price * 100) / 100).toFixed(2);
+            setLine(wl.id, { workings: w, unitPrice: roundedPrice });
             if (leave) {
               setWorkingsFor(null);
               setMsg({ kind: 'ok', text: `Calculations saved: unit price ${formatINR(price, { decimals: 'always' })} applied to ${wl.description.trim() ? `“${wl.description.trim()}”` : 'the quotation line'}.` });
@@ -219,22 +303,61 @@ export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) 
           </div>
         )}
 
-        {/* Client */}
+        {/* Client & Issuer Company Header */}
         <section className="rounded-xl border border-slate-200 p-2.5">
           <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
             <h2 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-slate-800"><Building2 size={16} className="text-orange-500" /> Add Client / Company</h2>
             <div className="flex flex-wrap items-center gap-2">
               <label className="flex items-center gap-2 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg px-2 h-8">Date:
-                <input type="date" aria-label="Quotation date" value={date} onChange={e => setDate(e.target.value)} className="text-sm bg-transparent focus:outline-none" />
+                <input type="date" aria-label="Quotation date" value={date} onChange={e => setDate(e.target.value)} className="text-sm bg-transparent focus:outline-none cursor-pointer" />
               </label>
-              {profileStore.subs.length > 0 && (
-                <select aria-label="Quote from" value={sellerRef} onChange={e => setSellerRef(e.target.value)} className="h-8 px-2 text-sm border border-slate-200 rounded-lg bg-white">
-                  <option value="">{profileStore.profile.orgName || 'Main organisation'}</option>
-                  {profileStore.subs.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+
+              {/* Company / Seller Switcher - Always Visible */}
+              <div className="flex items-center gap-1.5 border border-slate-200 rounded-lg px-2 h-8 bg-white shadow-xs">
+                <Building2 size={14} className="text-orange-500 shrink-0" />
+                <span className="text-xs font-semibold text-slate-600 shrink-0">Quote from:</span>
+                <select
+                  aria-label="Quote from company"
+                  value={sellerRef}
+                  onChange={e => {
+                    const val = e.target.value;
+                    if (val === '__add_sub__') {
+                      setSubForm({ id: '', name: '', gstin: '', address: '', phone: '', email: '' });
+                      setSubModalOpen(true);
+                    } else {
+                      setSellerRef(val);
+                    }
+                  }}
+                  className="text-xs font-bold text-slate-800 bg-transparent focus:outline-none cursor-pointer max-w-[190px] truncate"
+                >
+                  <option value="">{profileStore.profile.orgName || company?.company_name || 'Primary Organisation'} (Primary)</option>
+                  {profileStore.subs.map(s => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} {s.gstin ? `[GST: ${s.gstin}]` : '(Sub-Company)'}
+                    </option>
+                  ))}
+                  {companies.filter(c => c.company_name && c.company_name !== (profileStore.profile.orgName || company?.company_name)).map(c => (
+                    <option key={c.id} value={`comp_${c.id}`}>
+                      {c.company_name} (Company)
+                    </option>
+                  ))}
+                  <option value="__add_sub__">+ Add / Manage Sub-Company...</option>
                 </select>
-              )}
+                <button
+                  type="button"
+                  title="Add or manage sub-companies"
+                  onClick={() => {
+                    setSubForm({ id: '', name: '', gstin: '', address: '', phone: '', email: '' });
+                    setSubModalOpen(true);
+                  }}
+                  className="text-slate-400 hover:text-orange-600 p-0.5 rounded transition-colors"
+                >
+                  <Plus size={13} />
+                </button>
+              </div>
+
               <span className="text-xs font-semibold text-orange-600 bg-orange-50 border border-orange-200 rounded-lg px-3 h-8 flex items-center">{clients.length} {clients.length === 1 ? 'Client' : 'Clients'} Selected</span>
-              <button onClick={() => { setSearch(''); setPickOpen(true); }} className="flex items-center gap-1.5 h-8 px-3 text-sm font-medium border border-slate-200 rounded-lg hover:bg-slate-50"><UserCheck size={15} /> Select Client</button>
+              <button onClick={() => { setSearch(''); setPickOpen(true); }} className="flex items-center gap-1.5 h-8 px-3 text-sm font-medium border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"><UserCheck size={15} /> Select Client</button>
             </div>
           </div>
           <div className="overflow-x-auto border border-slate-200 rounded-lg">
@@ -263,7 +386,7 @@ export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) 
         </section>
 
         <HsnDatalist />
-        {/* Items */}
+        {/* Line Items Table */}
         <section className="rounded-xl border border-slate-200">
           <div className="overflow-x-auto">
             <table className="w-full text-sm min-w-[920px]">
@@ -280,8 +403,41 @@ export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) 
                         className={`shrink-0 h-8 px-2.5 text-xs font-semibold rounded-md border flex items-center gap-1 ${hasWorkings(l.workings) ? 'bg-orange-500 text-white border-orange-500' : 'bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100'}`}><Calculator size={13} /> Workings</button></div></td>
                     <td className="px-2 py-1 w-24"><input className={`${cell} ${errAt(i, 'qty') ? 'border-red-400' : ''}`} inputMode="decimal" aria-label={`Row ${i + 1} quantity`} value={l.qty} onChange={e => setLine(l.id, { qty: numeric(e.target.value) })} /></td>
                     <td className="px-2 py-1 w-24"><select className={cell} aria-label={`Row ${i + 1} unit`} value={l.unit} onChange={e => setLine(l.id, { unit: e.target.value })}>{QUOTE_UNITS.map(u => <option key={u}>{u}</option>)}</select></td>
-                    <td className="px-2 py-1 w-32"><input className={`${cell} ${errAt(i, 'unitPrice') ? 'border-red-400' : ''}`} inputMode="decimal" aria-label={`Row ${i + 1} unit price`} placeholder="0" value={l.unitPrice} onChange={e => setLine(l.id, { unitPrice: numeric(e.target.value) })} /></td>
-                    <td className="px-2 py-1 w-24"><input className={`${cell} ${errAt(i, 'discount') ? 'border-red-400' : ''}`} inputMode="decimal" aria-label={`Row ${i + 1} discount`} placeholder="0" value={l.discount} onChange={e => setLine(l.id, { discount: numeric(e.target.value) })} /></td>
+                    {/* Unit Price: rounded to 2 decimals on blur */}
+                    <td className="px-2 py-1 w-32">
+                      <input
+                        className={`${cell} ${errAt(i, 'unitPrice') ? 'border-red-400' : ''}`}
+                        inputMode="decimal"
+                        aria-label={`Row ${i + 1} unit price`}
+                        placeholder="0.00"
+                        value={l.unitPrice}
+                        onChange={e => setLine(l.id, { unitPrice: numeric(e.target.value) })}
+                        onBlur={e => {
+                          const val = Number(e.target.value.replace(/,/g, ''));
+                          if (!Number.isNaN(val) && val > 0) {
+                            setLine(l.id, { unitPrice: (Math.round(val * 100) / 100).toFixed(2) });
+                          } else if (e.target.value.trim() !== '') {
+                            setLine(l.id, { unitPrice: '0.00' });
+                          }
+                        }}
+                      />
+                    </td>
+                    <td className="px-2 py-1 w-24">
+                      <input
+                        className={`${cell} ${errAt(i, 'discount') ? 'border-red-400' : ''}`}
+                        inputMode="decimal"
+                        aria-label={`Row ${i + 1} discount`}
+                        placeholder="0"
+                        value={l.discount}
+                        onChange={e => setLine(l.id, { discount: numeric(e.target.value) })}
+                        onBlur={e => {
+                          const val = Number(e.target.value.replace(/,/g, ''));
+                          if (!Number.isNaN(val) && val > 0) {
+                            setLine(l.id, { discount: String(Math.min(100, Math.max(0, Math.round(val * 100) / 100))) });
+                          }
+                        }}
+                      />
+                    </td>
                     <td className="px-2 py-1 w-32 pt-2 font-mono text-slate-700" data-testid={`disc-unit-${i}`}>{rowResults[i].active && !Object.keys(rowResults[i].issues).length ? formatINR(rowResults[i].discountedUnit, { decimals: 'always' }) : (rowResults[i].active ? '—' : formatINR(0, { decimals: 'always' }))}</td>
                     <td className="px-2 py-1 w-32 pt-2 font-mono font-semibold text-slate-900" data-testid={`amount-${i}`}>{rowResults[i].active && !Object.keys(rowResults[i].issues).length ? formatINR(rowResults[i].amount, { decimals: 'always' }) : (rowResults[i].active ? '—' : formatINR(0, { decimals: 'always' }))}</td>
                     <td className="px-2 py-1 pt-2 whitespace-nowrap"><button aria-label={`Save row ${i + 1} to product library`} title="Save to Product Library" onClick={() => saveRowToLibrary(l)} className="text-slate-400 hover:text-orange-600 mr-2"><BookmarkPlus size={15} /></button><button aria-label={`Delete row ${i + 1}`} onClick={() => setLines(ls => ls.filter(x => x.id !== l.id))} className="text-slate-400 hover:text-red-600"><Trash2 size={15} /></button></td>
@@ -349,32 +505,35 @@ export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) 
           <ul className="text-xs text-red-600 space-y-0.5">{issues.map(i => <li key={i.message}>{i.message}</li>)}</ul>
         )}
 
-        {/* Actions */}
-        <div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-2">
-          <div className="relative">
-            <button onClick={() => setThemeOpen(o => !o)} className="flex items-center gap-2 h-10 px-3 text-sm font-medium border border-slate-200 rounded-lg hover:bg-slate-50"><Palette size={15} className="text-orange-500" /> Select PDF Theme · {PDF_THEMES[theme].label}</button>
-            {themeOpen && (
-              <div className="absolute bottom-12 left-0 z-10 bg-white border border-slate-200 rounded-lg shadow-lg p-1 w-40">
-                {(Object.keys(PDF_THEMES) as PdfThemeId[]).map(id => (
-                  <button key={id} onClick={() => { setTheme(id); setThemeOpen(false); }} className={`flex items-center gap-2 w-full text-left text-sm px-3 py-1.5 rounded ${id === theme ? 'bg-slate-100 font-semibold' : 'hover:bg-slate-50'}`}>
-                    <span className="w-3 h-3 rounded-full" style={{ background: `rgb(${PDF_THEMES[id].rgb.join(',')})` }} />{PDF_THEMES[id].label}
-                  </button>
-                ))}
-              </div>
-            )}
+        {/* Action Toolbar - aligned in single clean row with horizontal scroll on small screens */}
+        <div className="w-full overflow-x-auto pb-1 border-t border-slate-100 pt-2">
+          <div className="flex items-center justify-end gap-1.5 sm:gap-2 min-w-max ml-auto">
+            <div className="relative">
+              <button onClick={() => setThemeOpen(o => !o)} className="flex items-center gap-1.5 h-9 px-3 text-xs font-bold border border-slate-200 rounded-lg bg-white hover:bg-slate-50 transition-all shadow-xs"><Palette size={14} className="text-orange-500" /> Select PDF Theme · {PDF_THEMES[theme].label}</button>
+              {themeOpen && (
+                <div className="absolute bottom-11 left-0 z-20 bg-white border border-slate-200 rounded-lg shadow-xl p-1 w-40">
+                  {(Object.keys(PDF_THEMES) as PdfThemeId[]).map(id => (
+                    <button key={id} onClick={() => { setTheme(id); setThemeOpen(false); }} className={`flex items-center gap-2 w-full text-left text-xs px-3 py-1.5 rounded ${id === theme ? 'bg-orange-50 text-orange-700 font-bold' : 'hover:bg-slate-50 text-slate-700'}`}>
+                      <span className="w-2.5 h-2.5 rounded-full" style={{ background: `rgb(${PDF_THEMES[id].rgb.join(',')})` }} />{PDF_THEMES[id].label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <ActionBtn cls="bg-[#25D366] hover:bg-[#20ba59] text-white" icon={<MessageCircle size={14} />} disabled={busy}
+              onClick={() => run('Opened WhatsApp with the quotation summary', () => { const d = buildDoc(); window.open(`https://wa.me/?text=${encodeURIComponent(quoteSummaryText(d))}`, '_blank', 'noopener'); })}>Send to Whatsapp</ActionBtn>
+            <ActionBtn cls="bg-blue-600 hover:bg-blue-700 text-white" icon={<Mail size={14} />} disabled={busy}
+              onClick={() => run('Opened your mail app', () => { const d = buildDoc(); window.location.href = `mailto:${clients.map(c => c.email).filter(Boolean).join(',')}?subject=${encodeURIComponent(`Quotation ${d.quoteNo} from ${sellerName}`)}&body=${encodeURIComponent(quoteSummaryText(d))}`; })}>Send to Client</ActionBtn>
+            <ActionBtn cls="bg-orange-500 hover:bg-orange-600 text-white" icon={<FileDown size={14} />} disabled={busy} onClick={() => run('PDF downloaded', () => downloadQuotePdf(buildDoc(), false, theme, seller))}>PDF without Workings</ActionBtn>
+            <ActionBtn cls="bg-slate-700 hover:bg-slate-800 text-white" icon={<FileDown size={14} />} disabled={busy} onClick={() => run('PDF with workings downloaded', () => downloadQuotePdf(buildDoc(), true, theme, seller))}>PDF with Workings</ActionBtn>
+            <ActionBtn cls="bg-emerald-600 hover:bg-emerald-700 text-white" icon={<Upload size={14} />} disabled={busy} onClick={() => run('CSV exported', () => exportQuoteCsv(buildDoc()))}>Export CSV</ActionBtn>
+            <ActionBtn cls="border border-slate-200 text-slate-700 bg-white hover:bg-slate-50" icon={<Bookmark size={14} />} disabled={busy}
+              onClick={() => run('Quotation saved', () => undefined, true)}>Save Quote</ActionBtn>
           </div>
-          <ActionBtn cls="bg-green-500 hover:bg-green-600 text-white" icon={<MessageCircle size={15} />} disabled={busy}
-            onClick={() => run('Opened WhatsApp with the quotation summary', () => { const d = buildDoc(); window.open(`https://wa.me/?text=${encodeURIComponent(quoteSummaryText(d))}`, '_blank', 'noopener'); })}>Send to Whatsapp</ActionBtn>
-          <ActionBtn cls="bg-blue-600 hover:bg-blue-700 text-white" icon={<Mail size={15} />} disabled={busy}
-            onClick={() => run('Opened your mail app', () => { const d = buildDoc(); window.location.href = `mailto:${clients.map(c => c.email).filter(Boolean).join(',')}?subject=${encodeURIComponent(`Quotation ${d.quoteNo} from ${sellerName}`)}&body=${encodeURIComponent(quoteSummaryText(d))}`; })}>Send to Client</ActionBtn>
-          <ActionBtn cls="bg-orange-500 hover:bg-orange-600 text-white" icon={<FileDown size={15} />} disabled={busy} onClick={() => run('PDF downloaded', () => downloadQuotePdf(buildDoc(), false, theme, seller))}>PDF without Workings</ActionBtn>
-          <ActionBtn cls="bg-slate-700 hover:bg-slate-800 text-white" icon={<FileDown size={15} />} disabled={busy} onClick={() => run('PDF with workings downloaded', () => downloadQuotePdf(buildDoc(), true, theme, seller))}>PDF with Workings</ActionBtn>
-          <ActionBtn cls="bg-emerald-600 hover:bg-emerald-700 text-white" icon={<Upload size={15} />} disabled={busy} onClick={() => run('CSV exported', () => exportQuoteCsv(buildDoc()))}>Export CSV</ActionBtn>
-          <ActionBtn cls="border border-slate-200 text-slate-700 hover:bg-slate-50" icon={<Bookmark size={15} />} disabled={busy}
-            onClick={() => run('Quotation saved', () => undefined, true)}>Save Quote</ActionBtn>
         </div>
       </div>
 
+      {/* Select Client Modal */}
       <Modal open={pickOpen} onClose={() => setPickOpen(false)} title="Select Client" subtitle="Choose one or more recipient companies" size="md">
         <div className="relative mb-3"><Search size={15} className="absolute left-3 top-3 text-slate-400" /><input aria-label="Search clients" className={`${cell} pl-9 h-10`} placeholder="Search company" value={search} onChange={e => setSearch(e.target.value)} /></div>
         {libState === 'loading' && <p className="text-sm text-slate-500 py-6 text-center">Loading clients…</p>}
@@ -384,32 +543,177 @@ export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) 
           <div className="flex items-center justify-between text-xs mb-2">
             <span className="text-slate-500">{shown.length} {shown.length === 1 ? 'company' : 'companies'}{search.trim() ? ' match' : ' under your account'}</span>
             <span className="flex gap-3 font-semibold">
-              <button onClick={() => setClients(cs => [...cs, ...shown.filter(c => !cs.some(x => x.key === c.key))])} className="text-blue-600">Select all</button>
-              <button onClick={() => setClients(cs => cs.filter(x => !shown.some(c => c.key === x.key)))} className="text-slate-500">Clear</button>
+              <button onClick={() => setClients(cs => [...cs, ...shown.filter(c => !cs.some(x => x.key === c.key))])} className="text-blue-600 hover:underline">Select all</button>
+              <button onClick={() => setClients(cs => cs.filter(x => !shown.some(c => c.key === x.key)))} className="text-slate-500 hover:underline">Clear</button>
             </span>
           </div>
         )}
         <ul className="divide-y divide-slate-100 max-h-80 overflow-y-auto">
           {shown.map(c => (
-            <li key={c.key}><label className="flex items-center gap-3 px-2 py-2 cursor-pointer hover:bg-slate-50">
-              <input type="checkbox" checked={clients.some(x => x.key === c.key)} onChange={() => togglePick(c)} />
-              <span className="text-sm"><span className="font-medium text-slate-800">{c.name}</span>{c.gstin && <span className="text-xs text-slate-500 ml-2">{c.gstin}</span>}</span>
+            <li key={c.key}><label className="flex items-center gap-3 px-2 py-2 cursor-pointer hover:bg-slate-50 rounded">
+              <input type="checkbox" checked={clients.some(x => x.key === c.key)} onChange={() => togglePick(c)} className="rounded text-orange-500 focus:ring-orange-400" />
+              <span className="text-sm"><span className="font-medium text-slate-800">{c.name}</span>{c.gstin && <span className="text-xs text-slate-500 ml-2 font-mono">{c.gstin}</span>}</span>
             </label></li>
           ))}
         </ul>
       </Modal>
 
+      {/* Product Library Modal */}
       <Modal open={prodOpen} onClose={() => setProdOpen(false)} title="Product Library" subtitle="Click a product to add it to the quotation" size="md">
         {prodList.length === 0 ? <p className="text-sm text-slate-500 py-6 text-center">No products saved yet. Add some in Product Library, or use the bookmark icon on a row.</p> : (
           <ul className="divide-y divide-slate-100 max-h-80 overflow-y-auto">
             {prodList.map(p => (
-              <li key={p.id}><button onClick={() => addFromLibrary(p)} className="w-full flex justify-between gap-3 text-left px-2 py-2 hover:bg-slate-50">
+              <li key={p.id}><button onClick={() => addFromLibrary(p)} className="w-full flex justify-between gap-3 text-left px-2 py-2 hover:bg-slate-50 rounded">
                 <span className="text-sm font-medium text-slate-800">{p.name}</span>
                 <span className="text-xs text-slate-500 whitespace-nowrap">{p.price.trim() ? formatINR(Number(p.price.replace(/,/g, '')) || 0, { decimals: 'always' }) : 'No rate'} / {p.unit}</span>
               </button></li>
             ))}
           </ul>
         )}
+      </Modal>
+
+      {/* Sub-Companies & Issuer Profiles Modal */}
+      <Modal open={subModalOpen} onClose={() => setSubModalOpen(false)} title="Company Profiles & Sub-Companies" subtitle="Switch or configure branches and subsidiary seller entities for quotations" size="md">
+        <div className="space-y-4 max-h-[75vh] overflow-y-auto pr-1">
+          {/* Existing Sub-companies */}
+          <div>
+            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Registered Profiles</h4>
+            <div className="space-y-2">
+              {/* Primary */}
+              <div className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 ${sellerRef === '' ? 'bg-orange-50/60 border-orange-300' : 'bg-slate-50 border-slate-200'}`}>
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-bold text-slate-800">{profileStore.profile.orgName || company?.company_name || 'Primary Organisation'}</span>
+                    <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-slate-200 text-slate-700">Primary</span>
+                    {profileStore.profile.gstin && <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded bg-orange-100 text-orange-700">GST: {profileStore.profile.gstin}</span>}
+                  </div>
+                  <p className="text-[11px] text-slate-500 truncate max-w-sm">{profileStore.profile.address || 'Primary organization address'}</p>
+                </div>
+                {sellerRef === '' ? (
+                  <span className="text-xs font-bold text-orange-600 flex items-center gap-1"><Check size={14} /> Active</span>
+                ) : (
+                  <button type="button" onClick={() => { setSellerRef(''); setSubModalOpen(false); }} className="px-2.5 py-1 text-xs font-semibold rounded-lg border border-slate-300 bg-white hover:bg-slate-100">Select</button>
+                )}
+              </div>
+
+              {/* Sub-companies */}
+              {profileStore.subs.map(s => (
+                <div key={s.id} className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 ${sellerRef === s.id ? 'bg-orange-50/60 border-orange-300' : 'bg-white border-slate-200'}`}>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-xs font-bold text-slate-800">{s.name}</span>
+                      <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-blue-50 text-blue-700 border border-blue-100">Sub-Company</span>
+                      {s.gstin && <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded bg-slate-100 text-slate-700">GST: {s.gstin}</span>}
+                    </div>
+                    {s.address && <p className="text-[11px] text-slate-500 truncate">{s.address}</p>}
+                    {(s.phone || s.email) && <p className="text-[10px] text-slate-400">{[s.phone, s.email].filter(Boolean).join(' · ')}</p>}
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    {sellerRef === s.id ? (
+                      <span className="text-xs font-bold text-orange-600 flex items-center gap-1 mr-1"><Check size={14} /> Active</span>
+                    ) : (
+                      <button type="button" onClick={() => { setSellerRef(s.id); setSubModalOpen(false); }} className="px-2.5 py-1 text-xs font-semibold rounded-lg border border-slate-300 bg-white hover:bg-slate-100 mr-1">Select</button>
+                    )}
+                    <button
+                      type="button"
+                      title="Edit Sub-Company"
+                      onClick={() => setSubForm({ id: s.id, name: s.name, gstin: s.gstin, address: s.address, phone: s.phone, email: s.email })}
+                      className="p-1 text-slate-400 hover:text-blue-600 rounded"
+                    >
+                      <Edit2 size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      title="Delete Sub-Company"
+                      onClick={() => handleDeleteSubCompany(s.id, s.name)}
+                      className="p-1 text-slate-400 hover:text-red-600 rounded"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Add / Edit Sub-Company Form */}
+          <div className="border-t border-slate-200 pt-3">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">{subForm.id ? 'Edit Sub-Company Profile' : '+ Add New Sub-Company Profile'}</h4>
+            {subFormError && <p className="text-xs text-red-600 mb-2">{subFormError}</p>}
+            <div className="space-y-2.5 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-0.5">Sub-Company / Branch Name *</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Argus Technologies (Unit 2)"
+                  value={subForm.name}
+                  onChange={e => setSubForm(f => ({ ...f, name: e.target.value }))}
+                  className="w-full h-8 px-2.5 rounded-lg border border-slate-200 focus:outline-none focus:border-brand-500 font-medium"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-0.5">GSTIN Number</label>
+                  <input
+                    type="text"
+                    placeholder="33AAAAA0000A1Z5"
+                    value={subForm.gstin}
+                    onChange={e => setSubForm(f => ({ ...f, gstin: e.target.value.toUpperCase() }))}
+                    className="w-full h-8 px-2.5 rounded-lg border border-slate-200 focus:outline-none focus:border-brand-500 font-mono uppercase"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-0.5">Phone Number</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 9876543210"
+                    value={subForm.phone}
+                    onChange={e => setSubForm(f => ({ ...f, phone: e.target.value }))}
+                    className="w-full h-8 px-2.5 rounded-lg border border-slate-200 focus:outline-none focus:border-brand-500"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 mb-0.5">Email Address</label>
+                <input
+                  type="email"
+                  placeholder="e.g. branch@arguscnc.com"
+                  value={subForm.email}
+                  onChange={e => setSubForm(f => ({ ...f, email: e.target.value }))}
+                  className="w-full h-8 px-2.5 rounded-lg border border-slate-200 focus:outline-none focus:border-brand-500"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 mb-0.5">Full Address</label>
+                <textarea
+                  rows={2}
+                  placeholder="Premises address, city, state, pincode"
+                  value={subForm.address}
+                  onChange={e => setSubForm(f => ({ ...f, address: e.target.value }))}
+                  className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 focus:outline-none focus:border-brand-500"
+                />
+              </div>
+              <div className="flex items-center justify-end gap-2 pt-1">
+                {subForm.id && (
+                  <button
+                    type="button"
+                    onClick={() => setSubForm({ id: '', name: '', gstin: '', address: '', phone: '', email: '' })}
+                    className="px-3 h-8 text-xs font-semibold text-slate-600 rounded-lg hover:bg-slate-100"
+                  >
+                    Cancel Edit
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleSaveSubCompany}
+                  className="px-4 h-8 text-xs font-bold text-white bg-orange-600 hover:bg-orange-700 rounded-lg shadow-xs"
+                >
+                  {subForm.id ? 'Update Sub-Company' : 'Save & Select Sub-Company'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       </Modal>
     </div>
   );
@@ -426,5 +730,5 @@ function Row({ label, value, testid, plus }: { label: string; value: number; tes
 }
 
 function ActionBtn({ children, icon, cls, onClick, disabled }: { children: string; icon: React.ReactNode; cls: string; onClick: () => void; disabled?: boolean }) {
-  return <button onClick={onClick} disabled={disabled} className={`flex items-center gap-2 h-8 px-3 text-sm font-semibold rounded-lg disabled:opacity-60 ${cls}`}>{icon}{children}</button>;
+  return <button onClick={onClick} disabled={disabled} className={`flex items-center gap-1.5 h-9 px-3 text-xs font-bold rounded-lg shadow-xs transition-all whitespace-nowrap shrink-0 disabled:opacity-60 cursor-pointer ${cls}`}>{icon}{children}</button>;
 }

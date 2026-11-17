@@ -29,6 +29,36 @@ export type PdfThemeId = keyof typeof PDF_THEMES;
 const inr = (n: number) => 'Rs. ' + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const dmy = (iso: string) => (iso ? iso.split('-').reverse().join('-') : '');
 
+// Helper: Parse and normalize Terms and Conditions text into discrete, clean items
+export function parseQuoteTermsList(termsText: string): { num: string; text: string }[] {
+  if (!termsText || typeof termsText !== 'string') return [];
+  let t = termsText.replace(/(\d+)[\.\)]([A-Za-z])/g, '$1. $2');
+  t = t.replace(/([.;]\s+)(\d+)[\.\)]\s+/g, '$1\n$2. ');
+
+  const rawLines = t.split('\n').map(l => l.trim()).filter(Boolean);
+  const items: { num: string; text: string }[] = [];
+
+  rawLines.forEach((line) => {
+    const markerMatch = line.match(/^(\d+[\.\)]|\u2022|\-|\*)\s*(.*)/);
+    if (markerMatch) {
+      items.push({
+        num: `${items.length + 1}.`,
+        text: markerMatch[2].trim(),
+      });
+    } else {
+      if (items.length > 0) {
+        items[items.length - 1].text += ' ' + line.trim();
+      } else {
+        items.push({
+          num: `${items.length + 1}.`,
+          text: line.trim(),
+        });
+      }
+    }
+  });
+  return items;
+}
+
 export async function buildQuotePdf(doc: QuoteDoc, withWorkings: boolean, themeId: PdfThemeId, seller?: QuoteSeller) {
   const [{ default: JsPDF }, { default: autoTable }] = await Promise.all([import('jspdf'), import('jspdf-autotable')]);
   const pdf = new JsPDF({ unit: 'mm', format: 'a4', compress: true });
@@ -81,20 +111,98 @@ export async function buildQuotePdf(doc: QuoteDoc, withWorkings: boolean, themeI
     y += 2;
   }
 
-  const rows = doc.lines.filter(l => calcLine(l).active).map((l, i) => {
-    const r = calcLine(l);
-    const base = [String(i + 1), l.hsn, l.description, `${l.qty} ${l.unit}`];
-    return withWorkings
-      ? [...base, inr(Number(l.unitPrice.replace(/,/g, '')) || 0), l.discount ? `${l.discount}%` : '-', inr(r.discountedUnit), inr(r.amount)]
-      : [...base, inr(r.discountedUnit), inr(r.amount)];
+  // Dynamic Discount Omission: check if any item has a positive discount
+  const hasAnyDiscount = doc.lines.some(l => {
+    const d = Number((l.discount || '').replace(/,/g, ''));
+    return !Number.isNaN(d) && d > 0;
   });
-  const head = withWorkings
-    ? [['Sl', 'HSN/SAC', 'Description', 'Qty', 'Unit Price', 'Disc.', 'Disc. Unit Price', 'Amount']]
-    : [['Sl', 'HSN/SAC', 'Description', 'Qty', 'Rate', 'Amount']];
+
+  let head: string[][];
+  let rows: string[][];
+  let columnStyles: Record<number, { halign?: 'left' | 'center' | 'right'; cellWidth?: number }>;
+
+  if (hasAnyDiscount) {
+    head = [['SL.NO', 'HSN/SAC CODE', 'DESCRIPTION', 'QTY', 'UNIT', 'UNIT PRICE', 'DISCOUNT %', 'DISC. PRICE', 'AMOUNT']];
+    columnStyles = {
+      0: { halign: 'center', cellWidth: 12 },
+      1: { halign: 'center', cellWidth: 18 },
+      2: { halign: 'left', cellWidth: 43 },
+      3: { halign: 'center', cellWidth: 11 },
+      4: { halign: 'center', cellWidth: 11 },
+      5: { halign: 'right', cellWidth: 20 },
+      6: { halign: 'center', cellWidth: 18 },
+      7: { halign: 'right', cellWidth: 24 },
+      8: { halign: 'right', cellWidth: 25 },
+    };
+    rows = doc.lines.filter(l => calcLine(l).active).map((l, i) => {
+      const r = calcLine(l);
+      const unitP = Number((l.unitPrice || '0').replace(/,/g, '')) || 0;
+      const disc = Number((l.discount || '0').replace(/,/g, '')) || 0;
+      return [
+        String(i + 1),
+        l.hsn || '-',
+        l.description || `Item ${i + 1}`,
+        l.qty || '1',
+        l.unit || 'Nos',
+        inr(unitP),
+        disc > 0 ? `${disc}%` : '0%',
+        inr(r.discountedUnit),
+        inr(r.amount),
+      ];
+    });
+  } else {
+    // When no discount is applied on any item, omit DISCOUNT and DISC. PRICE and expand description to 66mm
+    head = [['SL.NO', 'HSN/SAC CODE', 'DESCRIPTION', 'QTY', 'UNIT', 'UNIT PRICE', 'AMOUNT']];
+    columnStyles = {
+      0: { halign: 'center', cellWidth: 12 },
+      1: { halign: 'center', cellWidth: 20 },
+      2: { halign: 'left', cellWidth: 66 },
+      3: { halign: 'center', cellWidth: 14 },
+      4: { halign: 'center', cellWidth: 14 },
+      5: { halign: 'right', cellWidth: 26 },
+      6: { halign: 'right', cellWidth: 30 },
+    };
+    rows = doc.lines.filter(l => calcLine(l).active).map((l, i) => {
+      const r = calcLine(l);
+      const unitP = Number((l.unitPrice || '0').replace(/,/g, '')) || 0;
+      return [
+        String(i + 1),
+        l.hsn || '-',
+        l.description || `Item ${i + 1}`,
+        l.qty || '1',
+        l.unit || 'Nos',
+        inr(unitP),
+        inr(r.amount),
+      ];
+    });
+  }
+
   autoTable(pdf, {
-    startY: Math.max(y, sellerEnd) + 2, head, body: rows, theme: 'grid', styles: { fontSize: 8.5, cellPadding: 2 },
-    headStyles: { fillColor: theme, textColor: 255 },
-    columnStyles: withWorkings ? { 4: { halign: 'right' }, 6: { halign: 'right' }, 7: { halign: 'right' } } : { 4: { halign: 'right' }, 5: { halign: 'right' } },
+    startY: Math.max(y, sellerEnd) + 2,
+    head,
+    body: rows,
+    theme: 'grid',
+    styles: {
+      fontSize: 7.0,
+      textColor: [15, 23, 42],
+      cellPadding: 1.8,
+      valign: 'middle',
+      lineColor: [226, 232, 240],
+      lineWidth: 0.1,
+    },
+    headStyles: {
+      fillColor: theme,
+      textColor: 255,
+      fontStyle: 'bold',
+      fontSize: 6.8,
+      halign: 'center',
+      valign: 'middle',
+      cellPadding: { top: 2.0, bottom: 2.0, left: 1.0, right: 1.0 },
+    },
+    alternateRowStyles: {
+      fillColor: [248, 250, 252],
+    },
+    columnStyles,
   });
 
   const totalsRows: string[][] = [['Total before tax', inr(t.subtotal)]];
@@ -137,8 +245,49 @@ export async function buildQuotePdf(doc: QuoteDoc, withWorkings: boolean, themeI
       yy = pdf.lastAutoTable.finalY + 6;
     }
   }
-  block('Terms & Conditions', doc.terms);
-  block('Notes', doc.notes);
+
+  // Render Terms & Conditions with true hanging indent
+  if (doc.terms && doc.terms.trim()) {
+    const termsItems = parseQuoteTermsList(doc.terms);
+    if (termsItems.length) {
+      if (yy + 14 > 280) { pdf.addPage(); yy = 16; }
+      pdf.setFont('helvetica', 'bold'); pdf.setFontSize(9.5); pdf.setTextColor(30);
+      pdf.text('Terms & Conditions', 14, yy); yy += 5;
+
+      const numWidth = 5.2;
+      const textX = 14 + numWidth;
+      const textWidth = W - 28 - numWidth;
+      const lineHeight = 3.0;
+      const itemGap = 1.2;
+
+      termsItems.forEach(item => {
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(8);
+        const wrapped = pdf.splitTextToSize(item.text, textWidth) as string[];
+        const itemH = (wrapped.length * lineHeight) + itemGap;
+        if (yy + itemH > 282) {
+          pdf.addPage();
+          yy = 16;
+        }
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(8);
+        pdf.setTextColor(30);
+        pdf.text(item.num, 14, yy);
+
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(71, 85, 105);
+        pdf.text(wrapped, textX, yy);
+        yy += itemH;
+      });
+      yy += 3;
+    }
+  }
+
+  // Render Additional Notes
+  if (doc.notes && doc.notes.trim()) {
+    block('Additional Notes', doc.notes);
+  }
+
   if (seller?.bankLines?.length || seller?.qrCode) {
     const bankBody = seller?.bankLines?.length ? seller.bankLines.join('\n') : '';
     const hasQr = !!seller?.qrCode;

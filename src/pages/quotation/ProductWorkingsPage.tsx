@@ -33,7 +33,7 @@ export function ProductWorkingsPage({ title, initial, onBack, onSave }: {
   // Keep the quotation line's unit price in step with the workings as they are edited, so leaving
   // the sheet (or exporting) never finds the price still empty.
   useEffect(() => {
-    if (dirty && r.issues.length === 0 && r.total > 0) onSave(w, r.total, false);
+    if (dirty && r.issues.length === 0 && r.total > 0) onSave(w, Math.round(r.total * 100) / 100, false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [w]);
   const back = () => { if (!dirty || r.issues.length === 0 || window.confirm('Leave without saving this product\'s workings?')) onBack(); };
@@ -43,8 +43,9 @@ export function ProductWorkingsPage({ title, initial, onBack, onSave }: {
     if (r.issues.length) { setNote(r.issues[0]); setSaveError(r.issues[0]); return; }
     // nothing to price yet: say so next to the button (the page's own message is at the very top, out of sight)
     if (!(r.total > 0)) { const m = 'Add at least one material, process or expense with a rate first, so there is a cost to save.'; setNote(m); setSaveError(m); return; }
-    onSave(w, r.total, leave);
-    if (!leave) { setDirty(false); setNote(`Saved. Unit price ${inr(r.total)} applied to the quotation line.`); }
+    const roundedPrice = Math.round(r.total * 100) / 100;
+    onSave(w, roundedPrice, leave);
+    if (!leave) { setDirty(false); setNote(`Saved. Unit price ${inr(roundedPrice)} applied to the quotation line.`); }
   };
 
   const header = (k: Key, label: string, cls: string, color: string) => (
@@ -58,11 +59,20 @@ export function ProductWorkingsPage({ title, initial, onBack, onSave }: {
         <tr key={row.id} className="border-t border-slate-100" data-testid={`${k}-row`}>
           {editable ? <>
             <td className="px-3 py-1.5"><input className={cell} aria-label={`${k} ${i + 1} description`} value={row.description} onChange={e => upd(k, row.id, { description: e.target.value })} /></td>
-            <td className="px-2 py-1.5 w-28"><input className={cell} inputMode="decimal" aria-label={`${k} ${i + 1} qty`} value={row.qty} onChange={e => upd(k, row.id, { qty: numeric(e.target.value) })} /></td>
+            <td className="px-2 py-1.5 w-28 text-center">
+              {k === 'materials' ? (
+                <div className="inline-flex flex-col items-center">
+                  <span className="font-bold text-xs text-slate-800">1</span>
+                  <span className="text-[10px] font-mono font-bold text-slate-500 whitespace-nowrap">{row.qty} kg</span>
+                </div>
+              ) : (
+                <input className={cell} inputMode="decimal" aria-label={`${k} ${i + 1} qty`} value={row.qty} onChange={e => upd(k, row.id, { qty: numeric(e.target.value) })} />
+              )}
+            </td>
             <td className="px-2 py-1.5 w-28"><input className={cell} inputMode="decimal" aria-label={`${k} ${i + 1} rate`} value={row.rate} onChange={e => upd(k, row.id, { rate: numeric(e.target.value) })} /></td>
           </> : <>
             <td className="px-3 py-2 text-xs text-slate-700">{row.description || '—'}</td>
-            <td className="px-2 py-2 w-28 text-xs font-mono">{row.qty || '—'}</td>
+            <td className="px-2 py-2 w-28 text-xs font-mono">{k === 'materials' ? `1 (${row.qty} kg)` : (row.qty || '—')}</td>
             <td className="px-2 py-2 w-28 text-xs font-mono">{row.rate || '—'}</td>
           </>}
           <td className={`px-2 py-1.5 w-28 text-right font-mono text-xs ${Number.isNaN(c) ? 'text-red-500' : 'text-slate-800'}`}>{Number.isNaN(c) ? '—' : inr(c)}</td>
