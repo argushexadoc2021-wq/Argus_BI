@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Building2, Calculator, Plus, UserCheck, Trash2, Package, Palette, MessageCircle, Mail, FileDown, Upload, Library, Search, X, Edit2, Check } from 'lucide-react';
+import { Building2, Calculator, Plus, UserCheck, Trash2, Package, Palette, MessageCircle, Mail, FileDown, Upload, Library, Search, X, Edit2, Check, Bookmark, BookmarkPlus, Download } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { desktopToast } from '@/lib/desktop/toast';
