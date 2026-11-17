@@ -17,7 +17,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Layers,
-  Orbit,
   Box,
   LayoutGrid,
   Loader2,
@@ -47,7 +46,7 @@ export interface MindBranch {
 }
 
 const BRANCHES: MindBranch[] = [
-  // LEFT / FIRST HALF
+  // LEFT WING (Core Operations)
   {
     id: 'sales',
     title: 'Sales & Quotations',
@@ -125,7 +124,7 @@ const BRANCHES: MindBranch[] = [
     ],
   },
 
-  // RIGHT / SECOND HALF
+  // RIGHT WING (Suites, Reports & Admin)
   {
     id: 'attendance',
     title: 'AI Face Attendance',
@@ -225,37 +224,34 @@ interface CurvePath {
   thick?: boolean;
 }
 
-// Compute the 3D position of a branch by index (matches MindMap3DScene)
-function getBranchPos3D(index: number, total: number): [number, number, number] {
-  const angle = (index / total) * Math.PI * 2 - Math.PI / 2;
-  const radius = 6.3;
-  return [
-    Math.cos(angle) * radius,
-    index % 2 === 0 ? 1.15 : -1.05,
-    Math.sin(angle) * radius,
-  ];
+// Match the clean non-overlapping amphitheater coordinates in MindMap3DScene
+function getAmphitheaterPos(branch: MindBranch): [number, number, number] {
+  const sideList = BRANCHES.filter((b) => b.side === branch.side);
+  const idx = sideList.findIndex((b) => b.id === branch.id);
+  const yPositions = [6.3, 2.1, -2.1, -6.3];
+  const y = yPositions[idx] ?? 0;
+  const x = branch.side === 'left' ? -5.8 : 5.8;
+  const z = Math.abs(y) > 4 ? 0.5 : -0.4;
+  return [x, y, z];
 }
+
+const DEFAULT_CAM = {
+  pos: [0, 0.4, 21.5] as [number, number, number],
+  target: [0, 0, 0] as [number, number, number],
+};
 
 export function MindMapPage() {
   const navigate = useNavigate();
 
-  // View mode: '3d' by default!
+  // Default: 3D curved amphitheater with ALL branches cleanly visible & zero overlap!
   const [viewMode, setViewMode] = useState<'3d' | '2d'>('3d');
-  const [autoRotate, setAutoRotate] = useState(true);
   const [focusedId, setFocusedId] = useState<string | null>(null);
-  const [cameraTarget, setCameraTarget] = useState<{
-    pos: [number, number, number];
-    target: [number, number, number];
-  }>({
-    pos: [0, 5.2, 16.2],
-    target: [0, 0, 0],
-  });
+  const [cameraTarget, setCameraTarget] = useState(DEFAULT_CAM);
   const [cameraTrigger, setCameraTrigger] = useState(0);
 
-  // Expanded state for branches (in 3D start clean with overview orbs; clicking blooms satellites!)
   const [expanded, setExpanded] = useState<Record<string, boolean>>(() => {
     const init: Record<string, boolean> = {};
-    BRANCHES.forEach((b) => { init[b.id] = false; });
+    BRANCHES.forEach((b) => { init[b.id] = true; });
     return init;
   });
 
@@ -270,55 +266,39 @@ export function MindMapPage() {
 
   const allExpanded = BRANCHES.every((b) => expanded[b.id]);
 
-  // Focus & bloom a branch in 3D
+  // Smoothly zoom camera right into the selected module (dims all others for crystal clarity!)
   const handleFocusBranch3D = useCallback((branchId: string, customPos?: [number, number, number]) => {
-    const idx = BRANCHES.findIndex((b) => b.id === branchId);
-    if (idx === -1) return;
+    const branch = BRANCHES.find((b) => b.id === branchId);
+    if (!branch) return;
 
-    const alreadyFocused = focusedId === branchId;
-    if (alreadyFocused) {
-      // Collapse & zoom back out to center overview
+    if (focusedId === branchId) {
+      // Clicking the focused module again smoothly returns to full map overview
       setFocusedId(null);
-      setExpanded((prev) => ({ ...prev, [branchId]: false }));
-      setCameraTarget({ pos: [0, 5.2, 16.2], target: [0, 0, 0] });
+      setCameraTarget(DEFAULT_CAM);
       setCameraTrigger((t) => t + 1);
-      setAutoRotate(true);
       return;
     }
 
-    const pos = customPos || getBranchPos3D(idx, BRANCHES.length);
-    const len = Math.hypot(pos[0], pos[2]) || 1;
-    const dirX = pos[0] / len;
-    const dirZ = pos[2] / len;
+    const [bx, by] = customPos || getAmphitheaterPos(branch);
+    const isLeft = branch.side === 'left';
 
-    // Position camera gracefully outside & slightly above the selected module so all its satellites shine clearly
-    const camPos: [number, number, number] = [
-      pos[0] + dirX * 8.6,
-      pos[1] + 2.4,
-      pos[2] + dirZ * 8.6,
-    ];
-    const targetPos: [number, number, number] = [
-      pos[0] + dirX * 1.4,
-      pos[1],
-      pos[2] + dirZ * 1.4,
-    ];
+    // Aim cleanly between the branch sphere and its outer leaf labels
+    const targetX = isLeft ? -8.4 : 8.4;
+    const camX = isLeft ? -7.2 : 7.2;
 
     setFocusedId(branchId);
-    setExpanded((prev) => {
-      const next: Record<string, boolean> = {};
-      BRANCHES.forEach((b) => { next[b.id] = b.id === branchId; });
-      return next;
+    setExpanded((prev) => ({ ...prev, [branchId]: true }));
+    setCameraTarget({
+      pos: [camX, by, 11.2],
+      target: [targetX, by, 0.4],
     });
-    setAutoRotate(false);
-    setCameraTarget({ pos: camPos, target: targetPos });
     setCameraTrigger((t) => t + 1);
   }, [focusedId]);
 
   const handleReset3D = useCallback(() => {
     setFocusedId(null);
-    setCameraTarget({ pos: [0, 5.2, 16.2], target: [0, 0, 0] });
+    setCameraTarget(DEFAULT_CAM);
     setCameraTrigger((t) => t + 1);
-    setAutoRotate(true);
   }, []);
 
   const handleToggleAll = () => {
@@ -328,21 +308,8 @@ export function MindMapPage() {
     setExpanded(next);
     if (viewMode === '3d') {
       setFocusedId(null);
-      setCameraTarget({
-        pos: nextState ? [0, 7.5, 22.0] : [0, 5.2, 16.2],
-        target: [0, 0, 0],
-      });
+      setCameraTarget(nextState ? DEFAULT_CAM : { pos: [0, 0.4, 17.0], target: [0, 0, 0] });
       setCameraTrigger((t) => t + 1);
-    }
-  };
-
-  // When switching to 2D, expand all branches so full map is immediately readable
-  const handleSwitchMode = (mode: '3d' | '2d') => {
-    setViewMode(mode);
-    if (mode === '2d') {
-      const next: Record<string, boolean> = {};
-      BRANCHES.forEach((b) => { next[b.id] = true; });
-      setExpanded(next);
     }
   };
 
@@ -578,12 +545,12 @@ export function MindMapPage() {
   );
 
   return (
-    <div className="h-[calc(100vh-56px)] min-h-[600px] flex flex-col relative overflow-hidden bg-[#060b19]">
+    <div className="h-[calc(100vh-56px)] min-h-[620px] flex flex-col relative overflow-hidden bg-[#060b19]">
       {/* Clean Minimal Header Bar */}
       <div
         className={`px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3 z-30 border-b ${
           viewMode === '3d'
-            ? 'bg-slate-950/80 backdrop-blur-md border-white/10 text-white'
+            ? 'bg-slate-950/85 backdrop-blur-md border-white/10 text-white'
             : 'bg-white border-slate-200 text-slate-900'
         }`}
       >
@@ -597,7 +564,7 @@ export function MindMapPage() {
             </h1>
             <p className={`text-[11px] ${viewMode === '3d' ? 'text-slate-400' : 'text-slate-500'}`}>
               {viewMode === '3d'
-                ? 'Drag to rotate 360° • Scroll to zoom • Click any glowing sphere to explore modules'
+                ? 'Click any module to zoom in • Click any topic card to open it • Drag to tilt in 3D'
                 : 'Click any branch to fold or click any topic to open it'}
             </p>
           </div>
@@ -615,34 +582,19 @@ export function MindMapPage() {
             }`}
           >
             <ChevronsUpDown className="w-3.5 h-3.5 text-sky-400" />
-            <span>{allExpanded ? 'Collapse All' : 'Expand All'}</span>
+            <span>{allExpanded ? 'Modules Only' : 'Show All Topics'}</span>
           </button>
 
           {viewMode === '3d' ? (
-            <>
-              <button
-                type="button"
-                onClick={() => setAutoRotate((r) => !r)}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${
-                  autoRotate
-                    ? 'bg-blue-600/25 border-blue-400/50 text-sky-200'
-                    : 'bg-white/10 hover:bg-white/15 border-white/15 text-slate-300'
-                }`}
-              >
-                <Orbit className="w-3.5 h-3.5" />
-                <span>{autoRotate ? 'Auto-Orbit On' : 'Auto-Orbit Off'}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handleReset3D}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-white/10 hover:bg-white/15 border border-white/15 text-white transition-colors cursor-pointer"
-                title="Reset 3D Camera"
-              >
-                <RotateCcw className="w-3.5 h-3.5 text-sky-400" />
-                <span>Reset</span>
-              </button>
-            </>
+            <button
+              type="button"
+              onClick={handleReset3D}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-white/10 hover:bg-white/15 border border-white/15 text-white transition-colors cursor-pointer"
+              title="Reset 3D Camera"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-sky-400" />
+              <span>Full Map</span>
+            </button>
           ) : (
             <div className="inline-flex items-center bg-white border border-slate-200 rounded-xl p-0.5">
               <button
@@ -673,7 +625,7 @@ export function MindMapPage() {
           >
             <button
               type="button"
-              onClick={() => handleSwitchMode('3d')}
+              onClick={() => setViewMode('3d')}
               className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 viewMode === '3d'
                   ? 'bg-blue-600 text-white shadow-xs'
@@ -685,7 +637,7 @@ export function MindMapPage() {
             </button>
             <button
               type="button"
-              onClick={() => handleSwitchMode('2d')}
+              onClick={() => setViewMode('2d')}
               className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 viewMode === '2d'
                   ? 'bg-blue-600 text-white shadow-xs'
@@ -715,19 +667,30 @@ export function MindMapPage() {
                 branches={BRANCHES}
                 expanded={expanded}
                 focusedId={focusedId}
-                autoRotate={autoRotate}
+                autoRotate={false}
                 cameraTarget={cameraTarget}
                 cameraTrigger={cameraTrigger}
-                onToggleBranch={handleFocusBranch3D}
+                onFocusBranch={handleFocusBranch3D}
                 onResetView={handleReset3D}
                 onNavigate={(route: string) => navigate(route)}
               />
             </Suspense>
           </Scene3DBoundary>
 
-          {/* Floating Bottom Quick-Jump Module Dock */}
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 max-w-[95vw] overflow-x-auto">
-            <div className="inline-flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-slate-950/80 backdrop-blur-md border border-white/15 shadow-2xl">
+          {/* Floating Bottom Quick-Focus Module Dock */}
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 max-w-[96vw] overflow-x-auto">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-slate-950/85 backdrop-blur-md border border-white/15 shadow-2xl">
+              <button
+                type="button"
+                onClick={handleReset3D}
+                className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap ${
+                  focusedId === null
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-slate-300 hover:bg-white/10 hover:text-white'
+                }`}
+              >
+                All Modules
+              </button>
               {BRANCHES.map((b) => {
                 const active = focusedId === b.id;
                 return (
@@ -737,7 +700,7 @@ export function MindMapPage() {
                     onClick={() => handleFocusBranch3D(b.id)}
                     className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap ${
                       active
-                        ? 'bg-white text-slate-950 shadow-md scale-105'
+                        ? 'bg-white text-slate-950 shadow-md'
                         : 'text-slate-200 hover:bg-white/10 hover:text-white'
                     }`}
                   >
