@@ -8,7 +8,7 @@ import { Modal } from '@/components/ui/Modal';
 import { QUOTE_UNITS, calcLine, calcTotals, emptyLine, validateQuote, type QuoteLine } from '@/lib/quotationCalc';
 import { loadProducts, saveProducts, newId, validateDraft, type LibraryProduct } from '@/lib/productLibrary';
 import { defaultTermsText, loadTerms, type TermsTemplate } from '@/lib/termsLibrary';
-import { loadProfileStore, resolveSeller, syncProfileStore, saveProfileStore, saveProfileRemote, type ProfileStore, type SubCompany } from '@/lib/companyProfile';
+import { loadProfileStore, resolveSeller, syncProfileStore, saveProfileStore, saveProfileRemote, emptyProfile, normaliseStore, type ProfileStore, type SubCompany } from '@/lib/companyProfile';
 import { newIdent, takeReuse, upsertQuote, type QuoteIdent } from '@/lib/quotationStore';
 import { clientsDiffer, fillClientDetails } from '@/lib/quoteClients';
 import { HsnDatalist } from '@/components/HsnDatalist';
@@ -53,8 +53,35 @@ export interface QuotationEmbed {
 export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) {
   const { company, companies = [], email: authEmail } = useAuth();
   const [date, setDate] = useState(todayISO());
-  const [clients, setClients] = useState<QuoteClient[]>(() => (embed?.client ? [{ key: embed.client.key || embed.client.name.toLowerCase(), email: '', phone: '', address: '', gstin: '', ...embed.client }] : []));
-  const [lines, setLines] = useState<QuoteLine[]>(() => ((embed?.lines ?? []).length ? (embed!.lines!).map(l => ({ ...newLine(), ...l })) : [newLine()]));
+  const safeCompanies = useMemo(() => (Array.isArray(companies) ? companies.filter(Boolean) : []), [companies]);
+  const [clients, setClients] = useState<QuoteClient[]>(() => {
+    if (!embed?.client) return [];
+    const clientName = typeof embed.client.name === 'string' ? embed.client.name : '';
+    const clientKey = embed.client.key || (clientName ? clientName.toLowerCase() : '') || 'client_1';
+    return [{
+      key: clientKey,
+      name: clientName,
+      email: embed.client.email || '',
+      phone: embed.client.phone || '',
+      address: embed.client.address || '',
+      gstin: embed.client.gstin || '',
+      ...embed.client,
+    }];
+  });
+  const [lines, setLines] = useState<QuoteLine[]>(() => {
+    const raw = embed?.lines;
+    if (Array.isArray(raw) && raw.length > 0) {
+      return raw.filter(Boolean).map(l => ({
+        ...newLine(),
+        ...l,
+        description: String(l?.description ?? ''),
+        qty: String(l?.qty ?? '1'),
+        unitPrice: String(l?.unitPrice ?? ''),
+        discount: String(l?.discount ?? '0'),
+      }));
+    }
+    return [newLine()];
+  });
   const [workingsFor, setWorkingsFor] = useState<string | null>(null);
   const [tax, setTax] = useState({ cgst: '9', sgst: '9', igst: '' });
   const [terms, setTerms] = useState(() => defaultTermsText(company?.id));
@@ -155,22 +182,26 @@ export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) 
     setMsg(ok ? { kind: 'ok', text: `“${name}” saved to the Product Library` } : { kind: 'err', text: 'Could not save: browser storage is unavailable or full.' });
   };
 
+  const safeProfile = useMemo(() => profileStore?.profile || emptyProfile(company?.company_name ?? '', authEmail ?? ''), [profileStore?.profile, company?.company_name, authEmail]);
+  const safeSubs = useMemo(() => (Array.isArray(profileStore?.subs) ? profileStore.subs.filter(Boolean) : []), [profileStore?.subs]);
+
   // Seller resolution: handles sub-company reference or company selection from ERP
   const seller = useMemo(() => {
+    const currentStore = profileStore || normaliseStore(null, profileDefaults);
     if (sellerRef.startsWith('comp_')) {
       const compId = sellerRef.replace('comp_', '');
-      const c = companies.find(x => x.id === compId);
+      const c = safeCompanies.find(x => x?.id === compId);
       if (c) {
         return {
-          ...resolveSeller(profileStore, undefined),
-          name: c.company_name,
+          ...resolveSeller(currentStore, undefined),
+          name: c.company_name || (c as any).name || 'ARGUS CNC',
         };
       }
     }
-    return resolveSeller(profileStore, sellerRef);
-  }, [profileStore, sellerRef, companies]);
+    return resolveSeller(currentStore, sellerRef);
+  }, [profileStore, sellerRef, safeCompanies, profileDefaults]);
 
-  const sellerName = seller.name || company?.company_name || 'ARGUS CNC';
+  const sellerName = seller?.name || safeProfile?.orgName || company?.company_name || 'ARGUS CNC';
 
   // Sub-company save handler
   const handleSaveSubCompany = async () => {
@@ -189,13 +220,14 @@ export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) 
       phone: subForm.phone.trim(),
       email: subForm.email.trim(),
     };
-    const existingIdx = profileStore.subs.findIndex(s => s.id === subId);
+    const currentSubs = Array.isArray(profileStore?.subs) ? profileStore.subs : [];
+    const existingIdx = currentSubs.findIndex(s => s.id === subId);
     let updatedSubs: SubCompany[];
     if (existingIdx >= 0) {
-      updatedSubs = [...profileStore.subs];
+      updatedSubs = [...currentSubs];
       updatedSubs[existingIdx] = newSub;
     } else {
-      updatedSubs = [...profileStore.subs, newSub];
+      updatedSubs = [...currentSubs, newSub];
     }
     const updatedStore: ProfileStore = {
       ...profileStore,
@@ -212,7 +244,7 @@ export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) 
 
   const handleDeleteSubCompany = (subId: string, subName: string) => {
     if (!window.confirm(`Delete sub-company profile "${subName}"?`)) return;
-    const updatedSubs = profileStore.subs.filter(s => s.id !== subId);
+    const updatedSubs = (profileStore?.subs || []).filter(s => s.id !== subId);
     const updatedStore: ProfileStore = {
       ...profileStore,
       subs: updatedSubs,
@@ -240,7 +272,7 @@ export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) 
     const q = takeReuse(company?.id);
     if (!q) return;
     ident.current = { id: q.id, seq: q.seq, quoteNo: q.quoteNo };
-    setSellerRef(q.sellerRef && profileStore.subs.some(s => s.id === q.sellerRef) ? q.sellerRef : '');
+    setSellerRef(q.sellerRef && (profileStore?.subs || []).some(s => s.id === q.sellerRef) ? q.sellerRef : '');
     setDate(q.date); setClients(q.clients); setLines(q.lines.map(l => ({ ...l, id: `l${++rowSeq}` })));
     setTax(q.tax); setTerms(q.terms); setNotes(q.notes);
     setMsg({ kind: 'ok', text: `Loaded quotation #${q.seq} (${q.quoteNo}). Saving updates the same record.` });
@@ -330,13 +362,13 @@ export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) 
                   }}
                   className="text-xs font-bold text-slate-800 bg-transparent focus:outline-none cursor-pointer max-w-[190px] truncate"
                 >
-                  <option value="">{profileStore.profile.orgName || company?.company_name || 'Primary Organisation'} (Primary)</option>
-                  {profileStore.subs.map(s => (
+                  <option value="">{safeProfile.orgName || company?.company_name || 'Primary Organisation'} (Primary)</option>
+                  {safeSubs.map(s => (
                     <option key={s.id} value={s.id}>
                       {s.name} {s.gstin ? `[GST: ${s.gstin}]` : '(Sub-Company)'}
                     </option>
                   ))}
-                  {companies.filter(c => c.company_name && c.company_name !== (profileStore.profile.orgName || company?.company_name)).map(c => (
+                  {safeCompanies.filter(c => c && c.company_name && c.company_name !== (safeProfile.orgName || company?.company_name)).map(c => (
                     <option key={c.id} value={`comp_${c.id}`}>
                       {c.company_name} (Company)
                     </option>
@@ -583,11 +615,11 @@ export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) 
               <div className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 ${sellerRef === '' ? 'bg-orange-50/60 border-orange-300' : 'bg-slate-50 border-slate-200'}`}>
                 <div>
                   <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-bold text-slate-800">{profileStore.profile.orgName || company?.company_name || 'Primary Organisation'}</span>
+                    <span className="text-xs font-bold text-slate-800">{safeProfile.orgName || company?.company_name || 'Primary Organisation'}</span>
                     <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-slate-200 text-slate-700">Primary</span>
-                    {profileStore.profile.gstin && <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded bg-orange-100 text-orange-700">GST: {profileStore.profile.gstin}</span>}
+                    {safeProfile.gstin && <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded bg-orange-100 text-orange-700">GST: {safeProfile.gstin}</span>}
                   </div>
-                  <p className="text-[11px] text-slate-500 truncate max-w-sm">{profileStore.profile.address || 'Primary organization address'}</p>
+                  <p className="text-[11px] text-slate-500 truncate max-w-sm">{safeProfile.address || 'Primary organization address'}</p>
                 </div>
                 {sellerRef === '' ? (
                   <span className="text-xs font-bold text-orange-600 flex items-center gap-1"><Check size={14} /> Active</span>

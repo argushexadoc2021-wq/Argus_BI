@@ -5965,7 +5965,7 @@ export function SalesPipelinePage() {
       // Parse individual parts from the lead's enquiring_for JSON
       let parsedParts: any[] = [];
       try {
-        const raw = card.raw.enquiring_for;
+        const raw = card.raw?.enquiring_for;
         if (raw) {
           const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
           if (Array.isArray(parsed)) parsedParts = parsed;
@@ -5988,7 +5988,7 @@ export function SalesPipelinePage() {
         : [{
             id: crypto.randomUUID(),
             partName: card.part || '',
-            partNumber: card.raw.part_no !== 'N/A' ? (card.raw.part_no || '') : '',
+            partNumber: card.raw?.part_no !== 'N/A' ? (card.raw?.part_no || '') : '',
             quantity: card.qty?.toString() || '',
             unitPrice: '',
             discount: '0',
@@ -9137,7 +9137,11 @@ export function SalesPipelinePage() {
             <div data-testid="quotation-tool">
               <button type="button" onClick={() => setQuoteTool(null)} className="mb-3 inline-flex items-center gap-1.5 text-sm font-semibold text-slate-600 hover:text-brand-600">← Back to quotations</button>
               {quoteTool === '/quotation/metal-calculator' && <MetalCalculatorPage />}
-              {quoteTool === '/quotation/create' && <CreateQuotationPage />}
+              {quoteTool === '/quotation/create' && (
+                <ErrorBoundary title="Quotation maker failed to load" onClose={() => setQuoteTool(null)}>
+                  <CreateQuotationPage />
+                </ErrorBoundary>
+              )}
               {quoteTool === '/quotation/client-library' && <ClientLibraryPage />}
               {quoteTool === '/quotation/product-library' && <ProductLibraryPage />}
               {quoteTool === '/quotation/terms-library' && <TermsLibraryPage />}
@@ -9670,7 +9674,9 @@ export function SalesPipelinePage() {
       <HsnDatalist />
       <Modal open={!!quotationModalTarget} onClose={closeQuotationPopup} accent={tint('Quotation')} title="Create Quotation" subtitle={quotationModalTarget?.customer ? `From enquiry · ${quotationModalTarget.customer}` : undefined} size="full" width={1040} windowControls>
         {quotationModalTarget && (
-          <CreateQuotationPage key={quotationModalTarget.refNo + quoteForm.quoteNo} embed={quotationEmbed} />
+          <ErrorBoundary title="Quotation form failed to load" onClose={closeQuotationPopup}>
+            <CreateQuotationPage key={quotationModalTarget.refNo + quoteForm.quoteNo} embed={quotationEmbed} />
+          </ErrorBoundary>
         )}
       </Modal>
 
