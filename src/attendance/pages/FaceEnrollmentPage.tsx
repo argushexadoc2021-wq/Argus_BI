@@ -189,7 +189,7 @@ export function FaceEnrollmentPage() {
       <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-orange-500" />
+            <span className="w-2.5 h-2.5 rounded-full bg-blue-600" />
             <h1 className="text-xl font-bold text-slate-900 tracking-tight">Biometric Face Enrollment Wizard</h1>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
@@ -208,7 +208,7 @@ export function FaceEnrollmentPage() {
               <span
                 className={`w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center transition-all ${
                   step === s.num
-                    ? 'bg-orange-600 text-white shadow-sm shadow-orange-500/30 ring-2 ring-orange-200'
+                    ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/30 ring-2 ring-blue-200'
                     : step > s.num
                     ? 'bg-emerald-500 text-white'
                     : 'bg-slate-100 text-slate-400'
@@ -264,7 +264,7 @@ export function FaceEnrollmentPage() {
                 <button
                   type="button"
                   onClick={() => setIsCreatingNew(!isCreatingNew)}
-                  className="text-xs font-bold text-orange-600 hover:text-orange-700"
+                  className="text-xs font-bold text-blue-600 hover:text-blue-700"
                 >
                   {isCreatingNew ? '← Select Existing Employee' : '+ Register New Employee'}
                 </button>
@@ -285,7 +285,7 @@ export function FaceEnrollmentPage() {
                           onClick={() => setSelectedEmpId(emp.id)}
                           className={`p-3 rounded-2xl border cursor-pointer transition-all flex items-center justify-between ${
                             selectedEmpId === emp.id
-                              ? 'bg-orange-50/60 border-orange-400 ring-2 ring-orange-200'
+                              ? 'bg-blue-50/60 border-blue-400 ring-2 ring-blue-200'
                               : 'bg-white border-slate-200/80 hover:bg-slate-50'
                           }`}
                         >
@@ -396,7 +396,7 @@ export function FaceEnrollmentPage() {
                     }
                     setStep(2);
                   }}
-                  className="px-5 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-2 shadow-sm"
+                  className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-600 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-2 shadow-sm"
                 >
                   Continue to Face Capture <ArrowRight className="w-3.5 h-3.5" />
                 </button>
@@ -414,7 +414,7 @@ export function FaceEnrollmentPage() {
                     Capture 3 clean samples (Front, slight tilt left, slight tilt right) for high-accuracy 1:N consensus matching.
                   </p>
                 </div>
-                <div className="text-xs font-mono font-bold text-orange-600 bg-orange-50 px-3 py-1 rounded-full border border-orange-200">
+                <div className="text-xs font-mono font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-full border border-blue-200">
                   {capturedSamples.length} / 3 Samples
                 </div>
               </div>
@@ -453,7 +453,7 @@ export function FaceEnrollmentPage() {
                       type="button"
                       onClick={captureFrameSample}
                       disabled={capturedSamples.length >= 3}
-                      className="flex-1 py-3 rounded-2xl bg-orange-600 hover:bg-orange-500 disabled:opacity-40 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-sm shadow-orange-500/20"
+                      className="flex-1 py-3 rounded-2xl bg-blue-600 hover:bg-blue-600 disabled:opacity-40 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-sm shadow-blue-500/20"
                     >
                       <Camera className="w-4 h-4" />
                       Capture Sample #{capturedSamples.length + 1}
@@ -521,7 +521,7 @@ export function FaceEnrollmentPage() {
                   type="button"
                   disabled={capturedSamples.length === 0}
                   onClick={() => setStep(3)}
-                  className="px-5 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-2 shadow-sm"
+                  className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-600 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-2 shadow-sm"
                 >
                   Continue to Consent <ArrowRight className="w-3.5 h-3.5" />
                 </button>
@@ -556,7 +556,7 @@ export function FaceEnrollmentPage() {
                   type="checkbox"
                   checked={consentChecked}
                   onChange={(e) => setConsentChecked(e.target.checked)}
-                  className="mt-0.5 w-4 h-4 rounded text-orange-600 focus:ring-orange-500 border-slate-300"
+                  className="mt-0.5 w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300"
                 />
                 <span className="text-xs font-medium text-slate-800 leading-snug">
                   I confirm that the employee has been notified of and consented to the storage of their 128-dimensional facial biometric template for workplace timekeeping.

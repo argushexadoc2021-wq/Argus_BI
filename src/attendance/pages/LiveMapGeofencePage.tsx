@@ -159,7 +159,7 @@ export function LiveMapGeofencePage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">
-            <MapPin className="w-7 h-7 text-orange-600" />
+            <MapPin className="w-7 h-7 text-blue-600" />
             Live Map &amp; Geofencing Boundaries
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
@@ -197,7 +197,7 @@ export function LiveMapGeofencePage() {
           <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
             <div>
               <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <Sliders className="w-4 h-4 text-orange-600" />
+                <Sliders className="w-4 h-4 text-blue-600" />
                 <span>Geofence Parameters</span>
               </h2>
               <p className="text-[11px] text-slate-500">Facility coordinates &amp; radius</p>
@@ -207,7 +207,7 @@ export function LiveMapGeofencePage() {
               type="button"
               onClick={handleGetCurrentLocation}
               title="Detect current device GPS"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-orange-600 bg-orange-50 border border-orange-200 rounded-xl hover:bg-orange-100 transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-600 bg-blue-50 border border-blue-200 rounded-xl hover:bg-blue-100 transition-colors cursor-pointer"
             >
               <LocateFixed className="w-3.5 h-3.5" />
               <span>Use My GPS</span>
@@ -223,7 +223,7 @@ export function LiveMapGeofencePage() {
                 type="text"
                 value={geofence.office_name}
                 onChange={(e) => setGeofence((prev) => ({ ...prev, office_name: e.target.value }))}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               />
             </div>
 
@@ -237,7 +237,7 @@ export function LiveMapGeofencePage() {
                   step="0.0001"
                   value={geofence.latitude}
                   onChange={(e) => setGeofence((prev) => ({ ...prev, latitude: parseFloat(e.target.value) || 0 }))}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
               <div>
@@ -249,7 +249,7 @@ export function LiveMapGeofencePage() {
                   step="0.0001"
                   value={geofence.longitude}
                   onChange={(e) => setGeofence((prev) => ({ ...prev, longitude: parseFloat(e.target.value) || 0 }))}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
             </div>
@@ -259,7 +259,7 @@ export function LiveMapGeofencePage() {
                 <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">
                   Perimeter Radius (Meters)
                 </label>
-                <span className="text-xs font-bold font-mono text-orange-600 bg-orange-50 px-2 py-0.5 rounded-md">
+                <span className="text-xs font-bold font-mono text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">
                   {geofence.radius_meters}m
                 </span>
               </div>
@@ -270,7 +270,7 @@ export function LiveMapGeofencePage() {
                 step="25"
                 value={geofence.radius_meters}
                 onChange={(e) => setGeofence((prev) => ({ ...prev, radius_meters: parseInt(e.target.value, 10) }))}
-                className="w-full accent-orange-600 cursor-pointer"
+                className="w-full accent-blue-600 cursor-pointer"
               />
               <div className="flex justify-between text-[10px] text-slate-400 font-mono mt-1">
                 <span>50m (Tight)</span>
@@ -285,7 +285,7 @@ export function LiveMapGeofencePage() {
                   type="checkbox"
                   checked={geofence.is_enabled}
                   onChange={(e) => setGeofence((prev) => ({ ...prev, is_enabled: e.target.checked }))}
-                  className="w-4 h-4 text-orange-600 rounded border-slate-300 focus:ring-orange-500"
+                  className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
                 />
                 <span className="text-xs font-bold text-slate-800">
                   Enable Geofence Distance Validation
@@ -297,7 +297,7 @@ export function LiveMapGeofencePage() {
                   type="checkbox"
                   checked={geofence.strict_enforcement}
                   onChange={(e) => setGeofence((prev) => ({ ...prev, strict_enforcement: e.target.checked }))}
-                  className="w-4 h-4 text-orange-600 rounded border-slate-300 focus:ring-orange-500"
+                  className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
                 />
                 <span className="text-xs font-medium text-slate-700">
                   Strict Enforcement (Reject punch if outside radius)
@@ -308,7 +308,7 @@ export function LiveMapGeofencePage() {
             <button
               type="submit"
               disabled={saving}
-              className="w-full py-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold shadow-md shadow-orange-500/25 transition-all disabled:opacity-50 cursor-pointer"
+              className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-600 text-white text-xs font-bold shadow-md shadow-blue-500/25 transition-all disabled:opacity-50 cursor-pointer"
             >
               {saving ? 'Saving Geofence...' : 'Save Geofence Settings'}
             </button>
@@ -320,7 +320,7 @@ export function LiveMapGeofencePage() {
           <div className="flex items-center justify-between pb-4 border-b border-slate-100">
             <div>
               <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <Navigation className="w-4 h-4 text-orange-600" />
+                <Navigation className="w-4 h-4 text-blue-600" />
                 <span>Live Interactive Geofence Map</span>
               </h2>
               <p className="text-[11px] text-slate-500">

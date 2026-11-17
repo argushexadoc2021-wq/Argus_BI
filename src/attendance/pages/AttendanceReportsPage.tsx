@@ -107,7 +107,7 @@ export function AttendanceReportsPage() {
       <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <FileSpreadsheet className="w-5 h-5 text-orange-500" />
+            <FileSpreadsheet className="w-5 h-5 text-blue-600" />
             <h1 className="text-xl font-bold text-slate-900 tracking-tight">Attendance & Payroll Reports</h1>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
@@ -139,7 +139,7 @@ export function AttendanceReportsPage() {
             disabled={loading}
             className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 transition-colors"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-orange-500' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-blue-600' : ''}`} />
           </button>
 
           <button
@@ -147,7 +147,7 @@ export function AttendanceReportsPage() {
             disabled={!reportData?.summary?.length}
             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white text-xs font-bold transition-all shadow-sm"
           >
-            <Download className="w-3.5 h-3.5 text-orange-400" />
+            <Download className="w-3.5 h-3.5 text-blue-500" />
             Export Payroll CSV
           </button>
         </div>
@@ -156,7 +156,7 @@ export function AttendanceReportsPage() {
       {/* Aggregate KPI Strip */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-orange-50 text-orange-600 border border-orange-200 flex items-center justify-center font-bold">
+          <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 border border-blue-200 flex items-center justify-center font-bold">
             <Clock className="w-6 h-6" />
           </div>
           <div>
@@ -227,7 +227,7 @@ export function AttendanceReportsPage() {
               {loading ? (
                 <tr>
                   <td colSpan={9} className="py-12 text-center text-slate-400 font-sans">
-                    <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-orange-500" />
+                    <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-blue-600" />
                     Calculating report metrics…
                   </td>
                 </tr>
@@ -255,7 +255,7 @@ export function AttendanceReportsPage() {
                       {item.total_late_days}
                     </td>
 
-                    <td className="py-3 px-4 text-center font-mono font-bold text-orange-700">
+                    <td className="py-3 px-4 text-center font-mono font-bold text-blue-700">
                       {item.total_half_days}
                     </td>
 

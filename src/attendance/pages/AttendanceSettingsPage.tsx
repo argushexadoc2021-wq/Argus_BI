@@ -89,7 +89,7 @@ export function AttendanceSettingsPage() {
       <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <Settings className="w-5 h-5 text-orange-500" />
+            <Settings className="w-5 h-5 text-blue-600" />
             <h1 className="text-xl font-bold text-slate-900 tracking-tight">Attendance & Shift Settings</h1>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
@@ -109,7 +109,7 @@ export function AttendanceSettingsPage() {
         {/* Section 1: Work Hours & Shift Rules */}
         <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm space-y-4">
           <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
-            <Clock className="w-4 h-4 text-orange-500" />
+            <Clock className="w-4 h-4 text-blue-600" />
             <h3 className="text-sm font-bold text-slate-900">Shift Schedule & Time Policies</h3>
           </div>
 
@@ -184,7 +184,7 @@ export function AttendanceSettingsPage() {
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="text-xs font-semibold text-slate-700">Cosine Similarity Threshold</label>
-                <span className="text-xs font-mono font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded border border-orange-200">
+                <span className="text-xs font-mono font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
                   {Math.round(settings.similarity_threshold * 100)}%
                 </span>
               </div>
@@ -197,7 +197,7 @@ export function AttendanceSettingsPage() {
                 onChange={(e) =>
                   setSettings({ ...settings, similarity_threshold: parseFloat(e.target.value) })
                 }
-                className="w-full accent-orange-600 cursor-pointer"
+                className="w-full accent-blue-600 cursor-pointer"
               />
               <p className="text-[11px] text-slate-400 mt-1">
                 Recommended: 78–82%. Higher values enforce stricter identity matching; lower values allow faster check-in under dim lighting.
@@ -213,7 +213,7 @@ export function AttendanceSettingsPage() {
                 type="checkbox"
                 checked={settings.liveness_strict}
                 onChange={(e) => setSettings({ ...settings, liveness_strict: e.target.checked })}
-                className="w-5 h-5 rounded text-orange-600 focus:ring-orange-500 border-slate-300 cursor-pointer"
+                className="w-5 h-5 rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
               />
             </div>
           </div>
@@ -231,7 +231,7 @@ export function AttendanceSettingsPage() {
                 type="checkbox"
                 checked={settings.geofence_enabled}
                 onChange={(e) => setSettings({ ...settings, geofence_enabled: e.target.checked })}
-                className="w-4 h-4 rounded text-orange-600 focus:ring-orange-500 border-slate-300"
+                className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300"
               />
               <span className="text-xs font-bold text-slate-700">Enforce Geofence</span>
             </label>
@@ -301,7 +301,7 @@ export function AttendanceSettingsPage() {
           <button
             type="submit"
             disabled={saving}
-            className="px-6 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold flex items-center gap-2 shadow-sm shadow-orange-500/20"
+            className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-600 text-white text-xs font-bold flex items-center gap-2 shadow-sm shadow-blue-500/20"
           >
             <Save className="w-4 h-4" />
             {saving ? 'Saving Policies…' : 'Save Attendance Policies'}

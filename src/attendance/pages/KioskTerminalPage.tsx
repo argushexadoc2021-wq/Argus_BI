@@ -233,14 +233,14 @@ export function KioskTerminalPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white flex flex-col justify-between selection:bg-orange-500 selection:text-white relative overflow-hidden">
+    <div className="min-h-screen bg-slate-900 text-white flex flex-col justify-between selection:bg-blue-600 selection:text-white relative overflow-hidden">
       {/* Hidden processing canvas */}
       <canvas ref={canvasRef} className="hidden" />
 
       {/* Top Kiosk Header */}
       <header className="px-6 py-4 flex items-center justify-between border-b border-slate-800 bg-slate-900/90 backdrop-blur-md z-20">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-orange-600 flex items-center justify-center font-bold text-lg shadow-lg shadow-orange-500/30">
+          <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center font-bold text-lg shadow-lg shadow-blue-500/30">
             A
           </div>
           <div>
@@ -251,7 +251,7 @@ export function KioskTerminalPage() {
               </span>
             </h1>
             <p className="text-xs text-slate-400 flex items-center gap-1.5">
-              <MapPin className="w-3.5 h-3.5 text-orange-400" />
+              <MapPin className="w-3.5 h-3.5 text-blue-500" />
               {(company as any)?.company_name || company?.name || 'Argus Technologies'} &bull; Terminal 01 (Main Gate)
             </p>
           </div>
@@ -261,7 +261,7 @@ export function KioskTerminalPage() {
         <div className="flex items-center gap-4">
           <div className="text-right">
             <div className="text-2xl font-mono font-bold tracking-tight text-white flex items-center gap-2 justify-end">
-              <Clock className="w-5 h-5 text-orange-400 animate-pulse" />
+              <Clock className="w-5 h-5 text-blue-500 animate-pulse" />
               {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
             </div>
             <div className="text-xs text-slate-400">
@@ -294,7 +294,7 @@ export function KioskTerminalPage() {
                     ? mode === 'CHECK_IN'
                       ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30'
                       : mode === 'CHECK_OUT'
-                      ? 'bg-orange-600 text-white shadow-lg shadow-orange-600/30'
+                      ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
                       : 'bg-white text-slate-900 shadow-lg'
                     : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
                 }`}
@@ -313,7 +313,7 @@ export function KioskTerminalPage() {
                 <p className="text-xs text-slate-400 mb-4">{cameraError}</p>
                 <button
                   onClick={startCamera}
-                  className="px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold transition-all flex items-center gap-2 mx-auto cursor-pointer"
+                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-600 text-white text-xs font-bold transition-all flex items-center gap-2 mx-auto cursor-pointer"
                 >
                   <RefreshCw className="w-3.5 h-3.5" /> Reconnect Camera
                 </button>
@@ -334,7 +334,7 @@ export function KioskTerminalPage() {
                       lastResult
                         ? 'border-emerald-400 shadow-[0_0_40px_rgba(52,211,153,0.5)] bg-emerald-500/10'
                         : isScanning
-                        ? 'border-orange-400 shadow-[0_0_30px_rgba(251,146,60,0.4)] animate-pulse'
+                        ? 'border-blue-400 shadow-[0_0_30px_rgba(251,146,60,0.4)] animate-pulse'
                         : 'border-white/40 shadow-[0_0_20px_rgba(255,255,255,0.1)]'
                     }`}
                   >
@@ -346,7 +346,7 @@ export function KioskTerminalPage() {
 
                     {/* Central scan beam */}
                     {isScanning && (
-                      <div className="absolute inset-x-4 h-0.5 bg-gradient-to-r from-transparent via-orange-400 to-transparent animate-bounce" />
+                      <div className="absolute inset-x-4 h-0.5 bg-gradient-to-r from-transparent via-cyan-400 to-transparent animate-bounce" />
                     )}
                   </div>
                 </div>
@@ -383,7 +383,7 @@ export function KioskTerminalPage() {
                       <div className="h-6 w-px bg-slate-800" />
                       <div>
                         <span className="text-slate-500 block text-[10px] uppercase">Total Today</span>
-                        <span className="font-mono font-bold text-orange-400">{lastResult.total_hours} hrs</span>
+                        <span className="font-mono font-bold text-blue-500">{lastResult.total_hours} hrs</span>
                       </div>
                       <div className="h-6 w-px bg-slate-800" />
                       <div>
@@ -442,7 +442,7 @@ export function KioskTerminalPage() {
                       className={`w-8 h-8 rounded-xl font-bold flex items-center justify-center shrink-0 text-[11px] ${
                         p.is_in
                           ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                          : 'bg-orange-500/20 text-orange-400 border border-orange-500/30'
+                          : 'bg-blue-600/20 text-blue-500 border border-blue-500/30'
                       }`}
                     >
                       {p.avatar || 'EM'}
@@ -459,7 +459,7 @@ export function KioskTerminalPage() {
                     <div className="font-mono text-[11px] text-slate-300 font-semibold">{p.time}</div>
                     <div
                       className={`text-[9px] font-bold uppercase tracking-wider ${
-                        p.is_in ? 'text-emerald-400' : 'text-orange-400'
+                        p.is_in ? 'text-emerald-400' : 'text-blue-500'
                       }`}
                     >
                       {p.operation || (p.is_in ? 'IN' : 'OUT')}

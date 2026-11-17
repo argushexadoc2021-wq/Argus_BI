@@ -97,13 +97,53 @@ header.sticky.app-topbar:not(.app-topbar-light) :is(span, p, label, h2, h3, a, d
   :not([class*="bg-"]) {
   color: #e2e8f0 !important;
 }
-aside {
+aside:not(.attendance-sidebar) {
   background: linear-gradient(180deg, rgba(30, 18, 54, .78), rgba(24, 12, 20, .74)) !important;
   -webkit-backdrop-filter: blur(24px) saturate(160%); backdrop-filter: blur(24px) saturate(160%);
   border-color: rgba(255, 255, 255, .10) !important;
 }
-aside :is(.bg-navy-950, .bg-navy-900, [class*="bg-navy-9"]) { background-color: transparent !important; }
-aside nav button:hover { background: rgba(255, 255, 255, .10) !important; }
+aside:not(.attendance-sidebar) :is(.bg-navy-950, .bg-navy-900, [class*="bg-navy-9"]) { background-color: transparent !important; }
+aside:not(.attendance-sidebar) nav button:hover { background: rgba(255, 255, 255, .10) !important; }
+
+/* AI Attendance Suite — Clean Blueprint Theme Isolation */
+.attendance-suite,
+.attendance-suite :is(div, section, aside, header, table, thead, tbody, tr, td, th, input, select) {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+.attendance-suite {
+  background-color: #f8fbff !important;
+  background-image: radial-gradient(#e2e8f0 1.2px, transparent 1.2px) !important;
+  background-size: 24px 24px !important;
+  position: relative !important;
+  z-index: 1 !important;
+}
+.attendance-suite aside.attendance-sidebar {
+  background: #ffffff !important;
+  border-right: 1px solid #e2e8f0 !important;
+  box-shadow: none !important;
+}
+.attendance-suite header {
+  background: #ffffff !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+  box-shadow: none !important;
+}
+.attendance-suite :is(.bg-white, .card) {
+  background-color: #ffffff !important;
+  background-image: none !important;
+}
+.attendance-suite table {
+  background-color: #ffffff !important;
+}
+.attendance-suite thead {
+  background-color: #f8fafc !important;
+}
+.attendance-suite tbody tr {
+  background-color: #ffffff !important;
+}
+.attendance-suite tbody tr:hover {
+  background-color: #f8fafc !important;
+}
 /* retail dark top navigation strip */
 .retail-app :is(.bg-\[\#0E0704\], .bg-\[\#180A04\]\/95) {
   background: rgba(24, 12, 30, .72) !important;

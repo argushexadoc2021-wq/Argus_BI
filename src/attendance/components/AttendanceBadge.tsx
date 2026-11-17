@@ -18,7 +18,7 @@ export function AttendanceBadge({ status, className = '' }: Props) {
     styles = 'bg-amber-50 text-amber-700 border-amber-200';
     label = 'Late Arrival';
   } else if (norm === 'HALF_DAY') {
-    styles = 'bg-orange-50 text-orange-700 border-orange-200';
+    styles = 'bg-amber-50 text-amber-800 border-amber-300';
     label = 'Half Day';
   } else if (norm === 'ABSENT') {
     styles = 'bg-rose-50 text-rose-700 border-rose-200';

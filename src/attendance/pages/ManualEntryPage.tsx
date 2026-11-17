@@ -195,7 +195,7 @@ export function ManualEntryPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">
-            <FileEdit className="w-7 h-7 text-orange-600" />
+            <FileEdit className="w-7 h-7 text-blue-600" />
             Manual Attendance Entry
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
@@ -232,7 +232,7 @@ export function ManualEntryPage() {
         <div className="lg:col-span-5 bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-sm space-y-5">
           <div className="border-b border-slate-100 pb-3">
             <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-orange-600" />
+              <ShieldCheck className="w-4 h-4 text-blue-600" />
               <span>Record Manual Adjustment</span>
             </h2>
             <p className="text-[11px] text-slate-500 mt-0.5">
@@ -250,7 +250,7 @@ export function ManualEntryPage() {
                 <button
                   type="button"
                   onClick={() => setEmployeeDropdownOpen((o) => !o)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-left text-xs font-bold text-slate-800 flex items-center justify-between hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-left text-xs font-bold text-slate-800 flex items-center justify-between hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 >
                   <span className="truncate">
                     {selectedEmp
@@ -267,7 +267,7 @@ export function ManualEntryPage() {
                       placeholder="Search employee..."
                       value={empSearchQuery}
                       onChange={(e) => setEmpSearchQuery(e.target.value)}
-                      className="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-200 mb-2 focus:outline-none focus:ring-1 focus:ring-orange-500"
+                      className="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-200 mb-2 focus:outline-none focus:ring-1 focus:ring-blue-500"
                     />
                     <div className="divide-y divide-slate-50">
                       {employees
@@ -287,7 +287,7 @@ export function ManualEntryPage() {
                               setFormData((prev) => ({ ...prev, employeeId: emp.id }));
                               setEmployeeDropdownOpen(false);
                             }}
-                            className="w-full text-left px-3 py-2 text-xs hover:bg-orange-50 rounded-lg flex items-center justify-between"
+                            className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 rounded-lg flex items-center justify-between"
                           >
                             <span className="font-semibold text-slate-800">
                               {emp.first_name} {emp.last_name}
@@ -312,7 +312,7 @@ export function ManualEntryPage() {
                 type="date"
                 value={formData.logDate}
                 onChange={(e) => setFormData((prev) => ({ ...prev, logDate: e.target.value }))}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               />
             </div>
 
@@ -326,7 +326,7 @@ export function ManualEntryPage() {
                   type="time"
                   value={formData.shiftStart}
                   onChange={(e) => setFormData((prev) => ({ ...prev, shiftStart: e.target.value }))}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
               <div>
@@ -337,7 +337,7 @@ export function ManualEntryPage() {
                   type="time"
                   value={formData.shiftEnd}
                   onChange={(e) => setFormData((prev) => ({ ...prev, shiftEnd: e.target.value }))}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
             </div>
@@ -351,7 +351,7 @@ export function ManualEntryPage() {
                 <select
                   value={formData.status}
                   onChange={(e) => setFormData((prev) => ({ ...prev, status: e.target.value }))}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20 bg-white"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 bg-white"
                 >
                   <option value="PRESENT">Present</option>
                   <option value="Permission">Permission</option>
@@ -369,7 +369,7 @@ export function ManualEntryPage() {
                   step="0.5"
                   value={formData.hours}
                   onChange={(e) => setFormData((prev) => ({ ...prev, hours: parseFloat(e.target.value) || 0 }))}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
             </div>
@@ -384,14 +384,14 @@ export function ManualEntryPage() {
                 placeholder="e.g. Field customer site visit, forgotten optical badge..."
                 value={formData.reason}
                 onChange={(e) => setFormData((prev) => ({ ...prev, reason: e.target.value }))}
-                className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               />
             </div>
 
             <button
               type="submit"
               disabled={submitting}
-              className="w-full py-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold shadow-md shadow-orange-500/25 transition-all disabled:opacity-50"
+              className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-600 text-white text-xs font-bold shadow-md shadow-blue-500/25 transition-all disabled:opacity-50"
             >
               {submitting ? 'Submitting Override...' : 'Save & Sync Attendance'}
             </button>
@@ -403,7 +403,7 @@ export function ManualEntryPage() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
             <div>
               <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <Clock className="w-4 h-4 text-orange-600" />
+                <Clock className="w-4 h-4 text-blue-600" />
                 <span>Recent Manual Adjustments</span>
               </h2>
               <p className="text-[11px] text-slate-500">
@@ -418,7 +418,7 @@ export function ManualEntryPage() {
                 placeholder="Search staff or code..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-8 pr-3 py-1.5 text-xs rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-orange-500 w-44 sm:w-56"
+                className="pl-8 pr-3 py-1.5 text-xs rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 w-44 sm:w-56"
               />
             </div>
           </div>
