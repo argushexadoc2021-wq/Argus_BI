@@ -429,6 +429,7 @@ const ROUTE_RULES: RouteRule[] = [
   { prefix: 'quality', theme: { gradient: 'linear-gradient(135deg, #174667 0%, #1d5780 50%, #123650 100%)', label: 'Deep Cerulean (Quality)' } },
   { prefix: 'maintenance', theme: { gradient: 'linear-gradient(135deg, #61301a 0%, #773b20 50%, #4b2514 100%)', label: 'Deep Rust Leather (Maintenance)' } },
   { prefix: 'reports', theme: { gradient: 'linear-gradient(135deg, #253250 0%, #2e3e64 50%, #1c263e 100%)', label: 'Deep Slate Cobalt (Reports)' } },
+  { prefix: 'admin/email-integration', theme: { gradient: '#f8fafc', label: 'Crisp White Slate (Email Hub)' } },
   { prefix: 'admin', theme: { gradient: 'linear-gradient(135deg, #41214c 0%, #51295f 50%, #32193b 100%)', label: 'Deep Eggplant Mauve (Admin)' } },
 ];
 

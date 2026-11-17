@@ -7,7 +7,6 @@ import {
   Sliders, Check, X, Shield, ArrowUpDown, ChevronDown, ChevronRight, FileText,
   BadgeAlert, Info
 } from 'lucide-react';
-import { PageHeader } from '@/components/ui/PageHeader';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   mailIntegrationApi,
@@ -134,7 +133,7 @@ export function EmailIntegrationPage() {
   const receivingCount = useMemo(() => accounts.filter((a) => a.type === 'receiving' || a.type === 'both').length, [accounts]);
 
   // ------------------------------------------------------------------------------------
-  // SUB-COMPONENT: TAB 1 - CONNECTED MAILBOXES
+  // TAB 1: CONNECTED MAILBOXES STATE
   // ------------------------------------------------------------------------------------
   const [accountFilter, setAccountFilter] = useState<'all' | 'sending' | 'receiving' | 'both'>('all');
   const [accountSearch, setAccountSearch] = useState('');
@@ -177,7 +176,7 @@ export function EmailIntegrationPage() {
   };
 
   // ------------------------------------------------------------------------------------
-  // SUB-COMPONENT: TAB 2 - CONNECT NEW MAILBOX FORM
+  // TAB 2: CONNECT NEW MAILBOX FORM STATE
   // ------------------------------------------------------------------------------------
   const [connProvider, setConnProvider] = useState<MailProviderType>('gmail');
   const [connType, setConnType] = useState<MailIntegrationType>('both');
@@ -194,7 +193,6 @@ export function EmailIntegrationPage() {
   const [connAssignedUsers, setConnAssignedUsers] = useState<string[]>([]);
   const [connecting, setConnecting] = useState(false);
 
-  // When editing an account, load its details into the form
   useEffect(() => {
     if (editingAccount) {
       setConnProvider(editingAccount.provider);
@@ -250,7 +248,6 @@ export function EmailIntegrationPage() {
       });
 
       setFeedback({ type: 'success', message: res.message || 'Mailbox connected successfully!' });
-      // Reset form
       setConnEmail('');
       setConnPass('');
       setConnName('');
@@ -265,7 +262,7 @@ export function EmailIntegrationPage() {
   };
 
   // ------------------------------------------------------------------------------------
-  // SUB-COMPONENT: TAB 3 - AI EMAIL COMPOSER & SENDING HUB
+  // TAB 3: AI EMAIL COMPOSER STATE
   // ------------------------------------------------------------------------------------
   const sendingAccounts = useMemo(() => accounts.filter((a) => a.type === 'sending' || a.type === 'both'), [accounts]);
   const [composerAccountId, setComposerAccountId] = useState<string>('');
@@ -343,7 +340,7 @@ export function EmailIntegrationPage() {
   };
 
   // ------------------------------------------------------------------------------------
-  // SUB-COMPONENT: TAB 4 - INBOUND MAIL / MAILBOX VIEWER
+  // TAB 4: INBOUND MAIL VIEWER STATE
   // ------------------------------------------------------------------------------------
   const receivingAccounts = useMemo(() => accounts.filter((a) => a.type === 'receiving' || a.type === 'both'), [accounts]);
   const [inboundAccountId, setInboundAccountId] = useState<string>('all');
@@ -390,7 +387,7 @@ export function EmailIntegrationPage() {
   };
 
   // ------------------------------------------------------------------------------------
-  // SUB-COMPONENT: TAB 5 - USER PERMISSIONS MATRIX (Admin / Super Admin)
+  // TAB 5: USER PERMISSIONS STATE
   // ------------------------------------------------------------------------------------
   const [savingPermUserId, setSavingPermUserId] = useState<string | null>(null);
 
@@ -398,11 +395,7 @@ export function EmailIntegrationPage() {
     const usr = userPermissions.find((u) => u.user_id === userId);
     if (!usr) return;
 
-    const updated = {
-      ...usr,
-      [key]: val,
-    };
-
+    const updated = { ...usr, [key]: val };
     setUserPermissions((prev) => prev.map((u) => (u.user_id === userId ? updated : u)));
     setSavingPermUserId(userId);
 
@@ -417,7 +410,6 @@ export function EmailIntegrationPage() {
       setFeedback({ type: 'success', message: `Permissions updated for ${usr.full_name}.` });
     } catch (e: any) {
       setFeedback({ type: 'error', message: e.message });
-      // Revert
       setUserPermissions((prev) => prev.map((u) => (u.user_id === userId ? usr : u)));
     } finally {
       setSavingPermUserId(null);
@@ -455,54 +447,87 @@ export function EmailIntegrationPage() {
   };
 
   // ------------------------------------------------------------------------------------
-  // RENDER
+  // RENDER (CLEAN CRISP LIGHT THEME - ZERO MURKY SILVER)
   // ------------------------------------------------------------------------------------
   return (
-    <div className="p-4 lg:p-6 bg-grid min-h-full space-y-6 text-slate-100">
-      {/* Page Header */}
-      <PageHeader
-        title="Email Integration & Mailbox Hub"
-        description="Connect multiple sending and receiving mailboxes, assign access user-wise or company-wide, draft emails with AI, and manage permissions."
-      />
+    <div className="min-h-full p-4 lg:p-6 space-y-6 bg-[#f8fafc] text-slate-800">
+      {/* Top Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-2 border-b border-slate-200">
+        <div className="flex items-center gap-3">
+          <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-orange-500 to-amber-500 text-white flex items-center justify-center shadow-md shadow-orange-500/20">
+            <Mail size={22} />
+          </div>
+          <div>
+            <h1 className="text-2xl font-black text-slate-800 tracking-tight">
+              Email Integration & Mailbox Hub
+            </h1>
+            <p className="text-xs text-slate-500 font-medium">
+              Connect multiple mailboxes, assign access user-wise or company-wide, draft emails with AI, and manage permissions.
+            </p>
+          </div>
+        </div>
 
-      {/* KPI Highlights Bar */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div className="p-4 rounded-xl border border-white/10 bg-slate-900/70 backdrop-blur-md shadow-sm">
-          <div className="flex items-center justify-between text-xs font-semibold text-slate-400">
+        {(isSuperAdmin || isCompanyAdmin || callerPerms.can_connect_sending || callerPerms.can_connect_receiving) && (
+          <button
+            type="button"
+            onClick={() => {
+              setEditingAccount(null);
+              setActiveTab('connect');
+            }}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-orange-500 hover:bg-orange-600 font-bold text-xs text-white shadow-md shadow-orange-500/20 transition-all cursor-pointer self-start md:self-auto"
+          >
+            <Plus size={15} />
+            <span>Connect New Mailbox</span>
+          </button>
+        )}
+      </div>
+
+      {/* KPI Highlights Cards (Clean Crisp White with Vibrant Badges) */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
+        <div className="p-4 rounded-2xl border border-slate-200 bg-white shadow-xs hover:shadow-sm transition-all flex flex-col justify-between">
+          <div className="flex items-center justify-between text-xs font-bold text-slate-500">
             <span>Total Mailboxes</span>
-            <Mail size={16} className="text-orange-400" />
+            <div className="w-7 h-7 rounded-lg bg-orange-50 border border-orange-200 flex items-center justify-center text-orange-600">
+              <Mail size={14} />
+            </div>
           </div>
-          <div className="mt-2 text-2xl font-bold text-white">{accounts.length}</div>
-          <p className="text-[11px] text-slate-400 mt-1">Multi-mailbox connections</p>
+          <div className="mt-3 text-2xl font-black text-slate-900">{accounts.length}</div>
+          <p className="text-[11px] text-slate-500 font-medium mt-0.5">Multi-mailbox connections</p>
         </div>
 
-        <div className="p-4 rounded-xl border border-white/10 bg-slate-900/70 backdrop-blur-md shadow-sm">
-          <div className="flex items-center justify-between text-xs font-semibold text-slate-400">
+        <div className="p-4 rounded-2xl border border-slate-200 bg-white shadow-xs hover:shadow-sm transition-all flex flex-col justify-between">
+          <div className="flex items-center justify-between text-xs font-bold text-slate-500">
             <span>Sending (Outbound & AI)</span>
-            <Send size={16} className="text-emerald-400" />
+            <div className="w-7 h-7 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600">
+              <Send size={14} />
+            </div>
           </div>
-          <div className="mt-2 text-2xl font-bold text-emerald-400">{sendingCount}</div>
-          <p className="text-[11px] text-slate-400 mt-1">Ready for AI dispatch</p>
+          <div className="mt-3 text-2xl font-black text-emerald-600">{sendingCount}</div>
+          <p className="text-[11px] text-slate-500 font-medium mt-0.5">Ready for AI dispatch</p>
         </div>
 
-        <div className="p-4 rounded-xl border border-white/10 bg-slate-900/70 backdrop-blur-md shadow-sm">
-          <div className="flex items-center justify-between text-xs font-semibold text-slate-400">
+        <div className="p-4 rounded-2xl border border-slate-200 bg-white shadow-xs hover:shadow-sm transition-all flex flex-col justify-between">
+          <div className="flex items-center justify-between text-xs font-bold text-slate-500">
             <span>Receiving (Inbound)</span>
-            <Inbox size={16} className="text-blue-400" />
+            <div className="w-7 h-7 rounded-lg bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600">
+              <Inbox size={14} />
+            </div>
           </div>
-          <div className="mt-2 text-2xl font-bold text-blue-400">{receivingCount}</div>
-          <p className="text-[11px] text-slate-400 mt-1">IMAP synced mailboxes</p>
+          <div className="mt-3 text-2xl font-black text-blue-600">{receivingCount}</div>
+          <p className="text-[11px] text-slate-500 font-medium mt-0.5">IMAP synced mailboxes</p>
         </div>
 
-        <div className="p-4 rounded-xl border border-white/10 bg-slate-900/70 backdrop-blur-md shadow-sm">
-          <div className="flex items-center justify-between text-xs font-semibold text-slate-400">
+        <div className="p-4 rounded-2xl border border-slate-200 bg-white shadow-xs hover:shadow-sm transition-all flex flex-col justify-between">
+          <div className="flex items-center justify-between text-xs font-bold text-slate-500">
             <span>Access Mode</span>
-            <Shield size={16} className="text-purple-400" />
+            <div className="w-7 h-7 rounded-lg bg-purple-50 border border-purple-200 flex items-center justify-center text-purple-600">
+              <Shield size={14} />
+            </div>
           </div>
-          <div className="mt-2 text-base font-bold text-purple-300">
+          <div className="mt-3 text-base font-black text-purple-700">
             {isSuperAdmin ? 'Super Admin' : isCompanyAdmin ? 'Company Admin' : 'Assigned User'}
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">
+          <p className="text-[11px] text-slate-500 font-medium mt-0.5">
             {callerPerms.can_connect_sending && callerPerms.can_connect_receiving
               ? 'Self-setup enabled'
               : 'Admin-managed permissions'}
@@ -510,39 +535,39 @@ export function EmailIntegrationPage() {
         </div>
       </div>
 
-      {/* Global Feedback Banner */}
+      {/* Global Feedback Alert Banner */}
       {feedback && (
         <div
-          className={`flex items-center justify-between p-3 rounded-xl border text-xs font-medium ${
+          className={`flex items-center justify-between p-3.5 rounded-xl border text-xs font-medium shadow-xs ${
             feedback.type === 'success'
-              ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-200'
-              : 'bg-red-950/60 border-red-500/40 text-red-200'
+              ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+              : 'bg-red-50 border-red-300 text-red-900'
           }`}
         >
           <div className="flex items-center gap-2">
-            {feedback.type === 'success' ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
+            {feedback.type === 'success' ? <CheckCircle2 size={16} className="text-emerald-600" /> : <AlertCircle size={16} className="text-red-600" />}
             <span>{feedback.message}</span>
           </div>
-          <button type="button" onClick={() => setFeedback(null)} className="opacity-70 hover:opacity-100">
+          <button type="button" onClick={() => setFeedback(null)} className="opacity-70 hover:opacity-100 cursor-pointer">
             <X size={14} />
           </button>
         </div>
       )}
 
-      {/* Tab Navigation Navigation */}
-      <div className="head-bar flex flex-wrap gap-2 rounded-xl p-2 bg-slate-900/80 border border-white/10 shadow-sm">
+      {/* Modern Navigation Tabs (Clean Crisp White/Slate Bar) */}
+      <div className="flex flex-wrap gap-1.5 p-1.5 rounded-2xl bg-white border border-slate-200 shadow-xs">
         <button
           type="button"
           onClick={() => setActiveTab('accounts')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
             activeTab === 'accounts'
-              ? 'bg-orange-500 text-white shadow-md'
-              : 'text-slate-300 hover:bg-white/10'
+              ? 'bg-orange-500 text-white shadow-sm'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
           }`}
         >
           <Mail size={15} />
           <span>Connected Mailboxes</span>
-          <span className="ml-1 rounded-full bg-white/20 px-1.5 py-0.5 text-[10px] font-bold">
+          <span className={`ml-1 rounded-full px-1.5 py-0.2 text-[10px] font-bold ${activeTab === 'accounts' ? 'bg-white/25 text-white' : 'bg-slate-200 text-slate-700'}`}>
             {accounts.length}
           </span>
         </button>
@@ -554,10 +579,10 @@ export function EmailIntegrationPage() {
               setEditingAccount(null);
               setActiveTab('connect');
             }}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
               activeTab === 'connect'
-                ? 'bg-orange-500 text-white shadow-md'
-                : 'text-slate-300 hover:bg-white/10'
+                ? 'bg-orange-500 text-white shadow-sm'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
             }`}
           >
             <Plus size={15} />
@@ -568,26 +593,26 @@ export function EmailIntegrationPage() {
         <button
           type="button"
           onClick={() => setActiveTab('composer')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
             activeTab === 'composer'
-              ? 'bg-orange-500 text-white shadow-md'
-              : 'text-slate-300 hover:bg-white/10'
+              ? 'bg-orange-500 text-white shadow-sm'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
           }`}
         >
-          <Sparkles size={15} className="text-amber-300" />
+          <Sparkles size={15} className={activeTab === 'composer' ? 'text-amber-200' : 'text-orange-500'} />
           <span>AI Email Composer & Send</span>
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab('inbound')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
             activeTab === 'inbound'
-              ? 'bg-orange-500 text-white shadow-md'
-              : 'text-slate-300 hover:bg-white/10'
+              ? 'bg-orange-500 text-white shadow-sm'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
           }`}
         >
-          <Inbox size={15} />
+          <Inbox size={15} className={activeTab === 'inbound' ? 'text-white' : 'text-blue-500'} />
           <span>Inbound Mail Viewer</span>
         </button>
 
@@ -595,13 +620,13 @@ export function EmailIntegrationPage() {
           <button
             type="button"
             onClick={() => setActiveTab('permissions')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
               activeTab === 'permissions'
-                ? 'bg-orange-500 text-white shadow-md'
-                : 'text-slate-300 hover:bg-white/10'
+                ? 'bg-orange-500 text-white shadow-sm'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
             }`}
           >
-            <ShieldCheck size={15} className="text-emerald-400" />
+            <ShieldCheck size={15} className={activeTab === 'permissions' ? 'text-white' : 'text-emerald-500'} />
             <span>User Permissions</span>
           </button>
         )}
@@ -609,10 +634,10 @@ export function EmailIntegrationPage() {
         <button
           type="button"
           onClick={() => setActiveTab('logs')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
             activeTab === 'logs'
-              ? 'bg-orange-500 text-white shadow-md'
-              : 'text-slate-300 hover:bg-white/10'
+              ? 'bg-orange-500 text-white shadow-sm'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
           }`}
         >
           <Clock size={15} />
@@ -626,7 +651,7 @@ export function EmailIntegrationPage() {
       {activeTab === 'accounts' && (
         <div className="space-y-4">
           {/* Controls Bar */}
-          <div className="flex flex-col md:flex-row gap-3 items-center justify-between p-3 rounded-xl bg-slate-900/60 border border-white/10">
+          <div className="flex flex-col md:flex-row gap-3 items-center justify-between p-3.5 rounded-2xl bg-white border border-slate-200 shadow-xs">
             <div className="flex items-center gap-2 w-full md:w-auto">
               <div className="relative flex-1 md:w-72">
                 <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -635,18 +660,18 @@ export function EmailIntegrationPage() {
                   placeholder="Search mailboxes by email, name..."
                   value={accountSearch}
                   onChange={(e) => setAccountSearch(e.target.value)}
-                  className="w-full pl-9 pr-3 py-1.5 text-xs rounded-lg bg-slate-800/80 border border-white/10 text-white placeholder-slate-400 focus:outline-none focus:border-orange-500"
+                  className="w-full pl-9 pr-3 py-1.5 text-xs rounded-xl bg-slate-50 border border-slate-200 text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-orange-500"
                 />
               </div>
 
-              <div className="flex gap-1 bg-slate-800/90 p-1 rounded-lg border border-white/10 text-xs">
+              <div className="flex gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs">
                 {(['all', 'sending', 'receiving', 'both'] as const).map((t) => (
                   <button
                     key={t}
                     type="button"
                     onClick={() => setAccountFilter(t)}
-                    className={`px-2.5 py-1 rounded capitalize font-medium text-[11px] ${
-                      accountFilter === t ? 'bg-orange-500 text-white' : 'text-slate-400 hover:text-white'
+                    className={`px-3 py-1 rounded-lg capitalize font-bold text-[11px] cursor-pointer transition-all ${
+                      accountFilter === t ? 'bg-orange-500 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
                     {t}
@@ -660,7 +685,7 @@ export function EmailIntegrationPage() {
                 type="button"
                 onClick={loadData}
                 disabled={loading}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/15 bg-white/5 text-xs text-slate-300 hover:bg-white/10 transition-colors"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 transition-colors shadow-xs cursor-pointer"
               >
                 <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
                 <span>Refresh</span>
@@ -673,7 +698,7 @@ export function EmailIntegrationPage() {
                     setEditingAccount(null);
                     setActiveTab('connect');
                   }}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 font-bold text-xs text-white transition-colors shadow-sm"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-orange-500 hover:bg-orange-600 font-bold text-xs text-white transition-colors shadow-sm cursor-pointer"
                 >
                   <Plus size={14} />
                   <span>Connect Mailbox</span>
@@ -682,12 +707,14 @@ export function EmailIntegrationPage() {
             </div>
           </div>
 
-          {/* Accounts Grid */}
+          {/* Accounts Grid or Clean White Empty State */}
           {filteredAccounts.length === 0 ? (
-            <div className="p-12 text-center rounded-2xl border border-dashed border-white/15 bg-slate-900/40 space-y-3">
-              <Mail size={40} className="mx-auto text-slate-500 opacity-60" />
-              <h3 className="text-base font-bold text-white">No Connected Mailboxes Found</h3>
-              <p className="text-xs text-slate-400 max-w-md mx-auto">
+            <div className="p-12 text-center rounded-2xl border border-slate-200 bg-white shadow-xs space-y-3">
+              <div className="w-16 h-16 rounded-3xl bg-orange-50 border border-orange-200 text-orange-500 flex items-center justify-center mx-auto mb-3 shadow-xs">
+                <Mail size={32} />
+              </div>
+              <h3 className="text-base font-bold text-slate-800">No Connected Mailboxes Found</h3>
+              <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
                 Connect your business or personal mailbox (Gmail, Outlook, Zoho, Custom SMTP/IMAP) to enable AI email dispatch and inbound message synchronization.
               </p>
               {(isSuperAdmin || isCompanyAdmin || callerPerms.can_connect_sending || callerPerms.can_connect_receiving) && (
@@ -697,7 +724,7 @@ export function EmailIntegrationPage() {
                     setEditingAccount(null);
                     setActiveTab('connect');
                   }}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-orange-500 hover:bg-orange-600 font-bold text-xs text-white shadow-lg transition-all"
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 font-bold text-xs text-white shadow-md shadow-orange-500/20 transition-all cursor-pointer"
                 >
                   <Plus size={15} />
                   <span>Connect Your First Mailbox</span>
@@ -716,61 +743,61 @@ export function EmailIntegrationPage() {
                 return (
                   <div
                     key={acc.id}
-                    className="p-5 rounded-2xl border border-white/10 bg-slate-900/80 backdrop-blur-md hover:border-orange-500/40 transition-all flex flex-col justify-between shadow-sm space-y-4"
+                    className="p-5 rounded-2xl border border-slate-200 bg-white hover:border-orange-300 hover:shadow-md transition-all flex flex-col justify-between shadow-xs space-y-4"
                   >
                     <div>
                       {/* Top Row: Provider & Status */}
-                      <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center justify-between mb-2.5">
                         <div className="flex items-center gap-2">
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-800 text-orange-400 border border-orange-500/30">
+                          <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-orange-50 text-orange-700 border border-orange-200">
                             {acc.provider}
                           </span>
                           <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                            className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase ${
                               acc.type === 'both'
-                                ? 'bg-emerald-950 text-emerald-400 border border-emerald-500/40'
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                                 : acc.type === 'sending'
-                                ? 'bg-purple-950 text-purple-400 border border-purple-500/40'
-                                : 'bg-blue-950 text-blue-400 border border-blue-500/40'
+                                ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                                : 'bg-blue-50 text-blue-700 border border-blue-200'
                             }`}
                           >
                             {acc.type === 'both' ? 'Send & Receive' : acc.type === 'sending' ? 'Sending Only' : 'Receiving Only'}
                           </span>
                         </div>
 
-                        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-400">
-                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                        <div className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                           <span>Connected</span>
                         </div>
                       </div>
 
                       {/* Name & Email */}
-                      <h4 className="text-sm font-bold text-white truncate">{acc.name}</h4>
-                      <p className="text-xs text-slate-300 font-mono truncate">{acc.email}</p>
+                      <h4 className="text-sm font-bold text-slate-800 truncate">{acc.name}</h4>
+                      <p className="text-xs text-slate-500 font-mono truncate">{acc.email}</p>
 
                       {/* Display name */}
                       {acc.from_name && (
-                        <p className="text-[11px] text-slate-400 mt-1">
-                          Display Name: <span className="text-slate-200">{acc.from_name}</span>
+                        <p className="text-[11px] text-slate-500 mt-1">
+                          Display Name: <span className="font-semibold text-slate-700">{acc.from_name}</span>
                         </p>
                       )}
 
                       {/* Server Details */}
-                      <div className="mt-3 p-2.5 rounded-xl bg-slate-950/60 border border-white/5 space-y-1 text-[11px] text-slate-400">
+                      <div className="mt-3 p-2.5 rounded-xl bg-slate-50 border border-slate-200/60 space-y-1 text-[11px] text-slate-600">
                         {(acc.type === 'sending' || acc.type === 'both') && (
                           <div className="flex items-center justify-between">
-                            <span className="flex items-center gap-1.5 text-slate-300">
-                              <Send size={11} className="text-purple-400" /> SMTP Outbound
+                            <span className="flex items-center gap-1.5 text-slate-700 font-medium">
+                              <Send size={11} className="text-purple-600" /> SMTP Outbound
                             </span>
-                            <span className="font-mono text-slate-400">{acc.smtp_host}:{acc.smtp_port}</span>
+                            <span className="font-mono text-slate-500">{acc.smtp_host}:{acc.smtp_port}</span>
                           </div>
                         )}
                         {(acc.type === 'receiving' || acc.type === 'both') && (
                           <div className="flex items-center justify-between">
-                            <span className="flex items-center gap-1.5 text-slate-300">
-                              <Inbox size={11} className="text-blue-400" /> IMAP Inbound
+                            <span className="flex items-center gap-1.5 text-slate-700 font-medium">
+                              <Inbox size={11} className="text-blue-600" /> IMAP Inbound
                             </span>
-                            <span className="font-mono text-slate-400">{acc.imap_host}:{acc.imap_port}</span>
+                            <span className="font-mono text-slate-500">{acc.imap_host}:{acc.imap_port}</span>
                           </div>
                         )}
                       </div>
@@ -778,13 +805,13 @@ export function EmailIntegrationPage() {
                       {/* Assignment Badge */}
                       <div className="mt-3 text-[11px]">
                         {acc.is_shared ? (
-                          <div className="flex items-center gap-1.5 text-emerald-300 bg-emerald-950/40 px-2 py-1 rounded-lg border border-emerald-500/20">
-                            <Building2 size={12} />
+                          <div className="flex items-center gap-1.5 text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 font-medium">
+                            <Building2 size={12} className="text-emerald-600" />
                             <span>Company Shared Mailbox (All Authorized Users)</span>
                           </div>
                         ) : (
-                          <div className="flex items-center gap-1.5 text-slate-300 bg-slate-800/60 px-2 py-1 rounded-lg border border-white/5">
-                            <Users size={12} className="text-orange-400" />
+                          <div className="flex items-center gap-1.5 text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200 font-medium">
+                            <Users size={12} className="text-orange-500" />
                             <span className="truncate">
                               Assigned to:{' '}
                               {assignedNames.length > 0 ? assignedNames.join(', ') : 'Personal Account'}
@@ -795,14 +822,14 @@ export function EmailIntegrationPage() {
                     </div>
 
                     {/* Actions Row */}
-                    <div className="pt-3 border-t border-white/10 flex flex-wrap gap-1.5 items-center justify-between text-xs">
+                    <div className="pt-3 border-t border-slate-100 flex flex-wrap gap-1.5 items-center justify-between text-xs">
                       <div className="flex gap-1.5">
                         {(acc.type === 'sending' || acc.type === 'both') && (
                           <button
                             type="button"
                             disabled={isTestingSmtp}
                             onClick={() => handleTestAccount(acc, 'smtp')}
-                            className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold border border-white/10 transition-colors inline-flex items-center gap-1"
+                            className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold border border-slate-200 transition-colors inline-flex items-center gap-1 cursor-pointer"
                             title="Test SMTP Handshake"
                           >
                             {isTestingSmtp ? <Loader2 size={11} className="animate-spin" /> : <Server size={11} />}
@@ -815,7 +842,7 @@ export function EmailIntegrationPage() {
                             type="button"
                             disabled={isTestingImap}
                             onClick={() => handleTestAccount(acc, 'imap')}
-                            className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold border border-white/10 transition-colors inline-flex items-center gap-1"
+                            className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold border border-slate-200 transition-colors inline-flex items-center gap-1 cursor-pointer"
                             title="Test IMAP Handshake"
                           >
                             {isTestingImap ? <Loader2 size={11} className="animate-spin" /> : <Inbox size={11} />}
@@ -832,7 +859,7 @@ export function EmailIntegrationPage() {
                               setComposerAccountId(acc.id);
                               setActiveTab('composer');
                             }}
-                            className="p-1.5 rounded hover:bg-orange-500/20 text-orange-400 hover:text-orange-300"
+                            className="p-1.5 rounded-lg bg-orange-50 hover:bg-orange-100 text-orange-600 transition-colors cursor-pointer"
                             title="Compose with AI"
                           >
                             <Sparkles size={14} />
@@ -846,7 +873,7 @@ export function EmailIntegrationPage() {
                               setInboundAccountId(acc.id);
                               setActiveTab('inbound');
                             }}
-                            className="p-1.5 rounded hover:bg-blue-500/20 text-blue-400 hover:text-blue-300"
+                            className="p-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 transition-colors cursor-pointer"
                             title="View Synced Inbox"
                           >
                             <Inbox size={14} />
@@ -861,7 +888,7 @@ export function EmailIntegrationPage() {
                                 setEditingAccount(acc);
                                 setActiveTab('connect');
                               }}
-                              className="p-1.5 rounded hover:bg-white/10 text-slate-400 hover:text-white"
+                              className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 transition-colors cursor-pointer"
                               title="Edit Mailbox Details"
                             >
                               <Edit2 size={14} />
@@ -869,7 +896,7 @@ export function EmailIntegrationPage() {
                             <button
                               type="button"
                               onClick={() => handleDeleteAccount(acc.id, acc.email)}
-                              className="p-1.5 rounded hover:bg-red-500/20 text-red-400 hover:text-red-300"
+                              className="p-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 transition-colors cursor-pointer"
                               title="Disconnect Mailbox"
                             >
                               <Trash2 size={14} />
@@ -890,13 +917,13 @@ export function EmailIntegrationPage() {
       {/* TAB 2: CONNECT NEW MAILBOX FORM                                               */}
       {/* ----------------------------------------------------------------------------- */}
       {activeTab === 'connect' && (
-        <div className="max-w-4xl mx-auto p-6 rounded-2xl border border-white/10 bg-slate-900/90 backdrop-blur-xl shadow-xl space-y-6">
-          <div className="flex items-center justify-between pb-4 border-b border-white/10">
+        <div className="max-w-4xl mx-auto p-6 md:p-8 rounded-2xl border border-slate-200 bg-white shadow-sm space-y-6">
+          <div className="flex items-center justify-between pb-4 border-b border-slate-200">
             <div>
-              <h3 className="text-lg font-bold text-white">
+              <h3 className="text-lg font-bold text-slate-800">
                 {editingAccount ? `Edit Mailbox: ${editingAccount.name}` : 'Connect New Mailbox'}
               </h3>
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-slate-500">
                 Configure SMTP for AI outbound dispatch, IMAP for inbound sync, and assign user permissions.
               </p>
             </div>
@@ -907,7 +934,7 @@ export function EmailIntegrationPage() {
                   setEditingAccount(null);
                   setActiveTab('accounts');
                 }}
-                className="px-3 py-1.5 rounded-lg border border-white/10 text-xs text-slate-300 hover:bg-white/10"
+                className="px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-xs font-semibold text-slate-700 cursor-pointer"
               >
                 Cancel Edit
               </button>
@@ -916,25 +943,25 @@ export function EmailIntegrationPage() {
 
           <form onSubmit={handleSaveConnection} className="space-y-6">
             {/* 1. Integration Purpose / Type Selector */}
-            <div className="space-y-2">
-              <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider">
+            <div className="space-y-2.5">
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
                 1. Select Integration Capability
               </label>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <button
                   type="button"
                   onClick={() => setConnType('both')}
-                  className={`p-4 rounded-xl border text-left transition-all ${
+                  className={`p-4 rounded-2xl border text-left transition-all cursor-pointer ${
                     connType === 'both'
-                      ? 'border-orange-500 bg-orange-500/10 text-white shadow-md ring-1 ring-orange-500'
-                      : 'border-white/10 bg-slate-800/40 text-slate-400 hover:bg-slate-800'
+                      ? 'border-orange-500 bg-orange-50/60 text-slate-900 ring-2 ring-orange-500/20 shadow-xs'
+                      : 'border-slate-200 bg-slate-50/60 text-slate-600 hover:bg-white hover:border-slate-300'
                   }`}
                 >
-                  <div className="flex items-center gap-2 font-bold text-sm text-white mb-1">
-                    <ArrowUpDown size={16} className="text-orange-400" />
+                  <div className="flex items-center gap-2 font-bold text-sm text-slate-800 mb-1">
+                    <ArrowUpDown size={16} className="text-orange-500" />
                     <span>Both (Sending & Receiving)</span>
                   </div>
-                  <p className="text-[11px] text-slate-400">
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
                     Full dual integration: AI outbound dispatch via SMTP + mailbox sync & reading via IMAP.
                   </p>
                 </button>
@@ -942,17 +969,17 @@ export function EmailIntegrationPage() {
                 <button
                   type="button"
                   onClick={() => setConnType('sending')}
-                  className={`p-4 rounded-xl border text-left transition-all ${
+                  className={`p-4 rounded-2xl border text-left transition-all cursor-pointer ${
                     connType === 'sending'
-                      ? 'border-purple-500 bg-purple-500/10 text-white shadow-md ring-1 ring-purple-500'
-                      : 'border-white/10 bg-slate-800/40 text-slate-400 hover:bg-slate-800'
+                      ? 'border-purple-500 bg-purple-50/60 text-slate-900 ring-2 ring-purple-500/20 shadow-xs'
+                      : 'border-slate-200 bg-slate-50/60 text-slate-600 hover:bg-white hover:border-slate-300'
                   }`}
                 >
-                  <div className="flex items-center gap-2 font-bold text-sm text-white mb-1">
-                    <Send size={16} className="text-purple-400" />
+                  <div className="flex items-center gap-2 font-bold text-sm text-slate-800 mb-1">
+                    <Send size={16} className="text-purple-600" />
                     <span>Sending Mail Only (SMTP & AI)</span>
                   </div>
-                  <p className="text-[11px] text-slate-400">
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
                     Outbound email dispatch only. Send quotations, invoices, and AI drafted emails.
                   </p>
                 </button>
@@ -960,17 +987,17 @@ export function EmailIntegrationPage() {
                 <button
                   type="button"
                   onClick={() => setConnType('receiving')}
-                  className={`p-4 rounded-xl border text-left transition-all ${
+                  className={`p-4 rounded-2xl border text-left transition-all cursor-pointer ${
                     connType === 'receiving'
-                      ? 'border-blue-500 bg-blue-500/10 text-white shadow-md ring-1 ring-blue-500'
-                      : 'border-white/10 bg-slate-800/40 text-slate-400 hover:bg-slate-800'
+                      ? 'border-blue-500 bg-blue-50/60 text-slate-900 ring-2 ring-blue-500/20 shadow-xs'
+                      : 'border-slate-200 bg-slate-50/60 text-slate-600 hover:bg-white hover:border-slate-300'
                   }`}
                 >
-                  <div className="flex items-center gap-2 font-bold text-sm text-white mb-1">
-                    <Inbox size={16} className="text-blue-400" />
+                  <div className="flex items-center gap-2 font-bold text-sm text-slate-800 mb-1">
+                    <Inbox size={16} className="text-blue-600" />
                     <span>Receiving Mail Only (IMAP)</span>
                   </div>
-                  <p className="text-[11px] text-slate-400">
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
                     Connect existing mailbox to sync and review incoming supplier and customer emails.
                   </p>
                 </button>
@@ -978,8 +1005,8 @@ export function EmailIntegrationPage() {
             </div>
 
             {/* 2. Provider Preset Selector */}
-            <div className="space-y-2">
-              <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider">
+            <div className="space-y-2.5">
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
                 2. Choose Email Service Provider
               </label>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -988,10 +1015,10 @@ export function EmailIntegrationPage() {
                     key={p}
                     type="button"
                     onClick={() => selectProvider(p)}
-                    className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all text-center ${
+                    className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all text-center cursor-pointer ${
                       connProvider === p
-                        ? 'border-orange-500 bg-orange-500 text-white shadow-sm'
-                        : 'border-white/10 bg-slate-800/60 text-slate-300 hover:bg-slate-800'
+                        ? 'border-orange-500 bg-orange-500 text-white shadow-xs'
+                        : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 hover:border-slate-300'
                     }`}
                   >
                     {PROVIDER_PRESETS[p].name}
@@ -1000,8 +1027,8 @@ export function EmailIntegrationPage() {
               </div>
 
               {/* Provider Guide Info Box */}
-              <div className="p-3 rounded-xl bg-slate-800/60 border border-white/5 text-xs text-slate-300 flex items-start gap-2.5">
-                <Info size={16} className="text-orange-400 shrink-0 mt-0.5" />
+              <div className="p-3.5 rounded-xl bg-orange-50/80 border border-orange-200 text-xs text-slate-700 flex items-start gap-2.5">
+                <Info size={16} className="text-orange-600 shrink-0 mt-0.5" />
                 <div className="flex-1 text-[11px] leading-relaxed">
                   <span>{PROVIDER_PRESETS[connProvider].guide}</span>
                   {PROVIDER_PRESETS[connProvider].guideUrl && (
@@ -1009,7 +1036,7 @@ export function EmailIntegrationPage() {
                       href={PROVIDER_PRESETS[connProvider].guideUrl}
                       target="_blank"
                       rel="noreferrer"
-                      className="ml-2 inline-flex items-center gap-1 font-bold text-orange-400 underline hover:text-orange-300"
+                      className="ml-2 inline-flex items-center gap-1 font-bold text-orange-600 underline hover:text-orange-700"
                     >
                       Open Security Settings <ExternalLink size={10} />
                     </a>
@@ -1020,39 +1047,39 @@ export function EmailIntegrationPage() {
 
             {/* 3. Credentials & Details */}
             <div className="space-y-4 pt-2">
-              <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider">
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
                 3. Mailbox Credentials
               </label>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Mailbox Label / Name</label>
+                  <label className="block text-xs font-bold text-slate-600 mb-1">Mailbox Label / Name</label>
                   <input
                     type="text"
                     required
                     placeholder="e.g. Sales Inquiries, Operations Dispatch"
                     value={connName}
                     onChange={(e) => setConnName(e.target.value)}
-                    className="w-full px-3 py-2 text-xs rounded-xl bg-slate-800 border border-white/10 text-white placeholder-slate-500 focus:outline-none focus:border-orange-500"
+                    className="w-full px-3.5 py-2 text-xs rounded-xl bg-white border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 shadow-2xs"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Email Address</label>
+                  <label className="block text-xs font-bold text-slate-600 mb-1">Email Address</label>
                   <input
                     type="email"
                     required
                     placeholder="name@company.com"
                     value={connEmail}
                     onChange={(e) => setConnEmail(e.target.value)}
-                    className="w-full px-3 py-2 text-xs rounded-xl bg-slate-800 border border-white/10 text-white placeholder-slate-500 focus:outline-none focus:border-orange-500 font-mono"
+                    className="w-full px-3.5 py-2 text-xs rounded-xl bg-white border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 shadow-2xs font-mono"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">
+                  <label className="block text-xs font-bold text-slate-600 mb-1">
                     {PROVIDER_PRESETS[connProvider].pwHint}
-                    {editingAccount && <span className="ml-1 text-[10px] text-slate-500">(Leave blank to keep saved)</span>}
+                    {editingAccount && <span className="ml-1 text-[10px] text-slate-400 font-normal">(Leave blank to keep saved)</span>}
                   </label>
                   <input
                     type="password"
@@ -1060,28 +1087,28 @@ export function EmailIntegrationPage() {
                     placeholder={editingAccount ? '•••••••••••••••• (blank = keep)' : 'Enter password / app password'}
                     value={connPass}
                     onChange={(e) => setConnPass(e.target.value)}
-                    className="w-full px-3 py-2 text-xs rounded-xl bg-slate-800 border border-white/10 text-white placeholder-slate-500 focus:outline-none focus:border-orange-500"
+                    className="w-full px-3.5 py-2 text-xs rounded-xl bg-white border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 shadow-2xs"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Sender Display Name (Receivers See This)</label>
+                  <label className="block text-xs font-bold text-slate-600 mb-1">Sender Display Name (Receivers See This)</label>
                   <input
                     type="text"
                     placeholder="e.g. Argus Technologies Sales"
                     value={connFromName}
                     onChange={(e) => setConnFromName(e.target.value)}
-                    className="w-full px-3 py-2 text-xs rounded-xl bg-slate-800 border border-white/10 text-white placeholder-slate-500 focus:outline-none focus:border-orange-500"
+                    className="w-full px-3.5 py-2 text-xs rounded-xl bg-white border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 shadow-2xs"
                   />
                 </div>
               </div>
 
               {/* Advanced Server Settings for SMTP/IMAP */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 rounded-xl bg-slate-950/40 border border-white/5 text-xs">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs">
                 {(connType === 'sending' || connType === 'both') && (
                   <div className="space-y-2">
-                    <span className="font-bold text-slate-300 flex items-center gap-1.5">
-                      <Send size={12} className="text-purple-400" /> Outbound SMTP Server
+                    <span className="font-bold text-slate-700 flex items-center gap-1.5">
+                      <Send size={12} className="text-purple-600" /> Outbound SMTP Server
                     </span>
                     <div className="flex gap-2">
                       <input
@@ -1089,14 +1116,14 @@ export function EmailIntegrationPage() {
                         placeholder="smtp.example.com"
                         value={connSmtpHost}
                         onChange={(e) => setConnSmtpHost(e.target.value)}
-                        className="flex-1 px-3 py-1.5 text-xs rounded-lg bg-slate-800 border border-white/10 text-white font-mono"
+                        className="flex-1 px-3 py-1.5 text-xs rounded-lg bg-white border border-slate-300 text-slate-900 font-mono focus:border-orange-500 focus:outline-none"
                       />
                       <input
                         type="text"
                         placeholder="587"
                         value={connSmtpPort}
                         onChange={(e) => setConnSmtpPort(e.target.value)}
-                        className="w-16 px-2 py-1.5 text-xs rounded-lg bg-slate-800 border border-white/10 text-white font-mono text-center"
+                        className="w-16 px-2 py-1.5 text-xs rounded-lg bg-white border border-slate-300 text-slate-900 font-mono text-center focus:border-orange-500 focus:outline-none"
                       />
                     </div>
                   </div>
@@ -1104,8 +1131,8 @@ export function EmailIntegrationPage() {
 
                 {(connType === 'receiving' || connType === 'both') && (
                   <div className="space-y-2">
-                    <span className="font-bold text-slate-300 flex items-center gap-1.5">
-                      <Inbox size={12} className="text-blue-400" /> Inbound IMAP Server
+                    <span className="font-bold text-slate-700 flex items-center gap-1.5">
+                      <Inbox size={12} className="text-blue-600" /> Inbound IMAP Server
                     </span>
                     <div className="flex gap-2">
                       <input
@@ -1113,14 +1140,14 @@ export function EmailIntegrationPage() {
                         placeholder="imap.example.com"
                         value={connImapHost}
                         onChange={(e) => setConnImapHost(e.target.value)}
-                        className="flex-1 px-3 py-1.5 text-xs rounded-lg bg-slate-800 border border-white/10 text-white font-mono"
+                        className="flex-1 px-3 py-1.5 text-xs rounded-lg bg-white border border-slate-300 text-slate-900 font-mono focus:border-orange-500 focus:outline-none"
                       />
                       <input
                         type="text"
                         placeholder="993"
                         value={connImapPort}
                         onChange={(e) => setConnImapPort(e.target.value)}
-                        className="w-16 px-2 py-1.5 text-xs rounded-lg bg-slate-800 border border-white/10 text-white font-mono text-center"
+                        className="w-16 px-2 py-1.5 text-xs rounded-lg bg-white border border-slate-300 text-slate-900 font-mono text-center focus:border-orange-500 focus:outline-none"
                       />
                     </div>
                   </div>
@@ -1130,40 +1157,40 @@ export function EmailIntegrationPage() {
 
             {/* 4. Assignment & Access Scope (Admins only) */}
             {(isSuperAdmin || isCompanyAdmin) && (
-              <div className="space-y-3 pt-2 border-t border-white/10">
-                <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider">
+              <div className="space-y-3 pt-2 border-t border-slate-200">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
                   4. User-Wise Assignment & Sharing
                 </label>
 
-                <div className="p-4 rounded-xl bg-slate-800/40 border border-white/5 space-y-3">
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
                   <label className="flex items-center gap-3 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={connIsShared}
                       onChange={(e) => setConnIsShared(e.target.checked)}
-                      className="w-4 h-4 rounded text-orange-500 bg-slate-900 border-white/20 focus:ring-orange-500"
+                      className="w-4 h-4 rounded text-orange-500 bg-white border-slate-300 focus:ring-orange-500 cursor-pointer"
                     />
                     <div>
-                      <span className="text-xs font-bold text-white">Company Shared Mailbox</span>
-                      <p className="text-[11px] text-slate-400">
+                      <span className="text-xs font-bold text-slate-800">Company Shared Mailbox</span>
+                      <p className="text-[11px] text-slate-500">
                         Allow all authorized team members in your company to view and send via this mailbox.
                       </p>
                     </div>
                   </label>
 
                   {!connIsShared && (
-                    <div className="pt-3 border-t border-white/5 space-y-2">
-                      <span className="text-xs font-medium text-slate-300">
+                    <div className="pt-3 border-t border-slate-200 space-y-2">
+                      <span className="text-xs font-bold text-slate-700">
                         Assign to Specific Colleagues:
                       </span>
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-48 overflow-y-auto p-2 bg-slate-900/60 rounded-xl border border-white/5">
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-48 overflow-y-auto p-2 bg-white rounded-xl border border-slate-200">
                         {colleagues.map((usr) => {
                           const isAssigned = connAssignedUsers.includes(usr.id);
                           return (
                             <label
                               key={usr.id}
                               className={`flex items-center gap-2 p-2 rounded-lg text-xs cursor-pointer transition-colors ${
-                                isAssigned ? 'bg-orange-500/20 border border-orange-500/40 text-white' : 'hover:bg-white/5 text-slate-400'
+                                isAssigned ? 'bg-orange-50 border border-orange-300 text-orange-900 font-semibold' : 'hover:bg-slate-50 text-slate-600'
                               }`}
                             >
                               <input
@@ -1187,16 +1214,16 @@ export function EmailIntegrationPage() {
             )}
 
             {/* Submit Button */}
-            <div className="pt-4 flex items-center justify-between border-t border-white/10">
-              <span className="text-[11px] text-slate-400 flex items-center gap-1.5">
-                <Lock size={12} className="text-emerald-400" />
+            <div className="pt-4 flex items-center justify-between border-t border-slate-200">
+              <span className="text-[11px] text-slate-500 flex items-center gap-1.5 font-medium">
+                <Lock size={12} className="text-emerald-600" />
                 Passwords are encrypted via AES-256-GCM and never displayed again.
               </span>
 
               <button
                 type="submit"
                 disabled={connecting || !connEmail}
-                className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 font-bold text-xs text-white transition-all shadow-lg disabled:opacity-50"
+                className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 font-bold text-xs text-white transition-all shadow-md shadow-orange-500/20 disabled:opacity-50 cursor-pointer"
               >
                 {connecting ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
                 <span>{editingAccount ? 'Save Changes & Verify' : 'Verify & Connect Mailbox'}</span>
@@ -1212,63 +1239,63 @@ export function EmailIntegrationPage() {
       {activeTab === 'composer' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left Column: AI Assistant Prompter & Preset Cards */}
-          <div className="lg:col-span-1 p-5 rounded-2xl border border-white/10 bg-slate-900/80 backdrop-blur-md space-y-4">
-            <div className="flex items-center gap-2 text-sm font-bold text-white">
-              <Sparkles size={16} className="text-orange-400" />
+          <div className="lg:col-span-1 p-5 rounded-2xl border border-slate-200 bg-white shadow-xs space-y-4">
+            <div className="flex items-center gap-2 text-sm font-bold text-slate-800">
+              <Sparkles size={16} className="text-orange-500" />
               <span>AI Writing Assistant</span>
             </div>
-            <p className="text-xs text-slate-400 leading-relaxed">
+            <p className="text-xs text-slate-500 leading-relaxed font-medium">
               Generate tailored commercial emails for precision CNC machining, quotations, invoice reminders, and supplier requisitions.
             </p>
 
             {/* Quick 1-Click Prompt Chips */}
             <div className="space-y-2">
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
                 Instant Industry Templates
               </span>
               <div className="space-y-1.5">
                 <button
                   type="button"
                   onClick={() => handleGenerateAi('Follow up politely on the quotation proposal.', 'quotation_followup')}
-                  className="w-full text-left p-2.5 rounded-xl border border-white/5 bg-slate-800/40 hover:bg-orange-500/10 hover:border-orange-500/30 text-xs text-slate-300 hover:text-white transition-all flex items-center justify-between"
+                  className="w-full text-left p-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-orange-50 hover:border-orange-300 text-xs font-semibold text-slate-700 hover:text-orange-900 transition-all flex items-center justify-between cursor-pointer"
                 >
                   <span>📋 Quotation Follow-Up</span>
-                  <ArrowRight size={12} className="opacity-60" />
+                  <ArrowRight size={12} className="opacity-50" />
                 </button>
 
                 <button
                   type="button"
                   onClick={() => handleGenerateAi('Send a polite payment reminder for the pending tax invoice.', 'payment_reminder')}
-                  className="w-full text-left p-2.5 rounded-xl border border-white/5 bg-slate-800/40 hover:bg-orange-500/10 hover:border-orange-500/30 text-xs text-slate-300 hover:text-white transition-all flex items-center justify-between"
+                  className="w-full text-left p-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-orange-50 hover:border-orange-300 text-xs font-semibold text-slate-700 hover:text-orange-900 transition-all flex items-center justify-between cursor-pointer"
                 >
                   <span>💳 Payment & Invoice Reminder</span>
-                  <ArrowRight size={12} className="opacity-60" />
+                  <ArrowRight size={12} className="opacity-50" />
                 </button>
 
                 <button
                   type="button"
                   onClick={() => handleGenerateAi('Send dispatch confirmation and delivery challan tracking details.', 'delivery_update')}
-                  className="w-full text-left p-2.5 rounded-xl border border-white/5 bg-slate-800/40 hover:bg-orange-500/10 hover:border-orange-500/30 text-xs text-slate-300 hover:text-white transition-all flex items-center justify-between"
+                  className="w-full text-left p-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-orange-50 hover:border-orange-300 text-xs font-semibold text-slate-700 hover:text-orange-900 transition-all flex items-center justify-between cursor-pointer"
                 >
                   <span>🚚 Production Dispatch Notice</span>
-                  <ArrowRight size={12} className="opacity-60" />
+                  <ArrowRight size={12} className="opacity-50" />
                 </button>
 
                 <button
                   type="button"
                   onClick={() => handleGenerateAi('Request quotation for raw material bar stock with test certificates.', 'rfq_dispatch')}
-                  className="w-full text-left p-2.5 rounded-xl border border-white/5 bg-slate-800/40 hover:bg-orange-500/10 hover:border-orange-500/30 text-xs text-slate-300 hover:text-white transition-all flex items-center justify-between"
+                  className="w-full text-left p-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-orange-50 hover:border-orange-300 text-xs font-semibold text-slate-700 hover:text-orange-900 transition-all flex items-center justify-between cursor-pointer"
                 >
                   <span>📦 Material Supplier RFQ</span>
-                  <ArrowRight size={12} className="opacity-60" />
+                  <ArrowRight size={12} className="opacity-50" />
                 </button>
               </div>
             </div>
 
             {/* Custom AI Instructions */}
-            <div className="space-y-3 pt-3 border-t border-white/10">
+            <div className="space-y-3 pt-3 border-t border-slate-200">
               <div>
-                <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
                   Recipient Name / Company
                 </label>
                 <input
@@ -1276,18 +1303,18 @@ export function EmailIntegrationPage() {
                   placeholder="e.g. David Vance (AeroParts Global)"
                   value={composerRecipientName}
                   onChange={(e) => setComposerRecipientName(e.target.value)}
-                  className="w-full px-3 py-1.5 text-xs rounded-xl bg-slate-800 border border-white/10 text-white placeholder-slate-500 focus:outline-none focus:border-orange-500"
+                  className="w-full px-3 py-1.5 text-xs rounded-xl bg-slate-50 border border-slate-200 text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-orange-500"
                 />
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
                   Tone of Voice
                 </label>
                 <select
                   value={composerTone}
                   onChange={(e) => setComposerTone(e.target.value as any)}
-                  className="w-full px-3 py-1.5 text-xs rounded-xl bg-slate-800 border border-white/10 text-white focus:outline-none focus:border-orange-500 capitalize"
+                  className="w-full px-3 py-1.5 text-xs rounded-xl bg-slate-50 border border-slate-200 text-slate-900 focus:bg-white focus:outline-none focus:border-orange-500 capitalize font-medium"
                 >
                   <option value="professional">Professional & Technical</option>
                   <option value="formal">Formal Executive</option>
@@ -1298,7 +1325,7 @@ export function EmailIntegrationPage() {
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
                   Custom AI Instructions
                 </label>
                 <textarea
@@ -1306,7 +1333,7 @@ export function EmailIntegrationPage() {
                   placeholder="e.g. Write a follow-up about the 10mm milling inserts quote sent last Monday. Offer a 5% discount if order confirmed by Friday."
                   value={composerPrompt}
                   onChange={(e) => setComposerPrompt(e.target.value)}
-                  className="w-full p-2.5 text-xs rounded-xl bg-slate-800 border border-white/10 text-white placeholder-slate-500 focus:outline-none focus:border-orange-500"
+                  className="w-full p-2.5 text-xs rounded-xl bg-slate-50 border border-slate-200 text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-orange-500"
                 />
               </div>
 
@@ -1314,7 +1341,7 @@ export function EmailIntegrationPage() {
                 type="button"
                 disabled={generatingAi}
                 onClick={() => handleGenerateAi()}
-                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 font-bold text-xs text-white shadow-md transition-all flex items-center justify-center gap-2"
+                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 font-bold text-xs text-white shadow-md shadow-orange-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
                 {generatingAi ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
                 <span>Draft with AI Assistant</span>
@@ -1323,30 +1350,30 @@ export function EmailIntegrationPage() {
           </div>
 
           {/* Right Column: Outbound Compose Form & Live Preview */}
-          <div className="lg:col-span-2 p-6 rounded-2xl border border-white/10 bg-slate-900/90 backdrop-blur-md shadow-xl space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-white/10">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <Send size={16} className="text-emerald-400" />
+          <div className="lg:col-span-2 p-6 rounded-2xl border border-slate-200 bg-white shadow-sm space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+              <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                <Send size={16} className="text-emerald-600" />
                 <span>Outbound Mail Dispatch</span>
               </h3>
-              <span className="text-[11px] text-slate-400">
+              <span className="text-[11px] text-slate-500 font-medium">
                 Emails are sent directly from your connected mail server.
               </span>
             </div>
 
-            <form onSubmit={handleSendEmail} className="space-y-3">
+            <form onSubmit={handleSendEmail} className="space-y-3.5">
               {/* Sending Mailbox Selector */}
               <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1">Send From (Connected Mailbox)</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Send From (Connected Mailbox)</label>
                 {sendingAccounts.length === 0 ? (
-                  <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-500/30 text-xs text-amber-200">
+                  <div className="p-3 rounded-xl bg-amber-50 border border-amber-300 text-xs text-amber-900 font-medium">
                     No sending accounts available. Please connect a sending mailbox first.
                   </div>
                 ) : (
                   <select
                     value={composerAccountId}
                     onChange={(e) => setComposerAccountId(e.target.value)}
-                    className="w-full px-3 py-2 text-xs rounded-xl bg-slate-800 border border-white/10 text-white focus:outline-none focus:border-orange-500 font-mono"
+                    className="w-full px-3.5 py-2 text-xs font-medium rounded-xl bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white focus:outline-none focus:border-orange-500 font-mono shadow-2xs"
                   >
                     {sendingAccounts.map((a) => (
                       <option key={a.id} value={a.id}>
@@ -1360,76 +1387,76 @@ export function EmailIntegrationPage() {
               {/* To, Cc, Bcc */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div className="md:col-span-2">
-                  <label className="block text-xs font-semibold text-slate-400 mb-1">To (Recipients)</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">To (Recipients)</label>
                   <input
                     type="text"
                     required
                     placeholder="client@aeroparts.com, buyer@precision.in (comma separated)"
                     value={composerTo}
                     onChange={(e) => setComposerTo(e.target.value)}
-                    className="w-full px-3 py-2 text-xs rounded-xl bg-slate-800 border border-white/10 text-white placeholder-slate-500 focus:outline-none focus:border-orange-500"
+                    className="w-full px-3.5 py-2 text-xs rounded-xl bg-slate-50 border border-slate-300 text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-orange-500 shadow-2xs"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-400 mb-1">Cc (Optional)</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Cc (Optional)</label>
                   <input
                     type="text"
                     placeholder="manager@company.com"
                     value={composerCc}
                     onChange={(e) => setComposerCc(e.target.value)}
-                    className="w-full px-3 py-2 text-xs rounded-xl bg-slate-800 border border-white/10 text-white placeholder-slate-500 focus:outline-none focus:border-orange-500"
+                    className="w-full px-3.5 py-2 text-xs rounded-xl bg-slate-50 border border-slate-300 text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-orange-500 shadow-2xs"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-400 mb-1">Bcc (Optional)</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Bcc (Optional)</label>
                   <input
                     type="text"
                     placeholder="records@arguscnc.com"
                     value={composerBcc}
                     onChange={(e) => setComposerBcc(e.target.value)}
-                    className="w-full px-3 py-2 text-xs rounded-xl bg-slate-800 border border-white/10 text-white placeholder-slate-500 focus:outline-none focus:border-orange-500"
+                    className="w-full px-3.5 py-2 text-xs rounded-xl bg-slate-50 border border-slate-300 text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-orange-500 shadow-2xs"
                   />
                 </div>
               </div>
 
               {/* Subject */}
               <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1">Subject Line</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Subject Line</label>
                 <input
                   type="text"
                   required
                   placeholder="Enter email subject..."
                   value={composerSubject}
                   onChange={(e) => setComposerSubject(e.target.value)}
-                  className="w-full px-3 py-2 text-xs font-bold rounded-xl bg-slate-800 border border-white/10 text-white placeholder-slate-500 focus:outline-none focus:border-orange-500"
+                  className="w-full px-3.5 py-2 text-xs font-bold rounded-xl bg-slate-50 border border-slate-300 text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-orange-500 shadow-2xs"
                 />
               </div>
 
               {/* Body */}
               <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1">Email Body Content</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Email Body Content</label>
                 <textarea
                   rows={10}
                   required
                   placeholder="Write your email or generate it using the AI Assistant on the left..."
                   value={composerBody}
                   onChange={(e) => setComposerBody(e.target.value)}
-                  className="w-full p-3 text-xs leading-relaxed font-sans rounded-xl bg-slate-800 border border-white/10 text-white placeholder-slate-500 focus:outline-none focus:border-orange-500"
+                  className="w-full p-3.5 text-xs leading-relaxed font-sans rounded-xl bg-slate-50 border border-slate-300 text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-orange-500 shadow-2xs"
                 />
               </div>
 
               {/* Action Buttons */}
               <div className="pt-2 flex items-center justify-between">
-                <span className="text-[11px] text-slate-400">
+                <span className="text-[11px] text-slate-500 font-medium">
                   Ready to send via {sendingAccounts.find((a) => a.id === composerAccountId)?.email || 'connected mailbox'}
                 </span>
 
                 <button
                   type="submit"
                   disabled={sendingEmail || !composerTo || !composerSubject || !composerBody}
-                  className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 font-bold text-xs text-white transition-all shadow-lg disabled:opacity-50"
+                  className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 font-bold text-xs text-white transition-all shadow-md shadow-emerald-600/20 disabled:opacity-50 cursor-pointer"
                 >
                   {sendingEmail ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
                   <span>Dispatch Email Now</span>
@@ -1446,13 +1473,13 @@ export function EmailIntegrationPage() {
       {activeTab === 'inbound' && (
         <div className="space-y-4">
           {/* Controls Bar */}
-          <div className="flex flex-col md:flex-row gap-3 items-center justify-between p-3 rounded-xl bg-slate-900/60 border border-white/10">
+          <div className="flex flex-col md:flex-row gap-3 items-center justify-between p-3.5 rounded-2xl bg-white border border-slate-200 shadow-xs">
             <div className="flex items-center gap-2 w-full md:w-auto">
-              <label className="text-xs text-slate-400 font-medium">Mailbox:</label>
+              <label className="text-xs text-slate-600 font-bold">Mailbox:</label>
               <select
                 value={inboundAccountId}
                 onChange={(e) => setInboundAccountId(e.target.value)}
-                className="px-3 py-1.5 text-xs rounded-lg bg-slate-800 border border-white/10 text-white font-mono focus:outline-none focus:border-orange-500"
+                className="px-3.5 py-1.5 text-xs font-medium rounded-xl bg-slate-50 border border-slate-300 text-slate-800 font-mono focus:bg-white focus:outline-none focus:border-orange-500"
               >
                 <option value="all">All Receiving Mailboxes</option>
                 {receivingAccounts.map((a) => (
@@ -1468,7 +1495,7 @@ export function EmailIntegrationPage() {
                 type="button"
                 disabled={syncingInbox}
                 onClick={handleSyncInbound}
-                className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 font-bold text-xs text-white shadow-sm transition-colors disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 font-bold text-xs text-white shadow-md shadow-blue-600/20 transition-colors disabled:opacity-50 cursor-pointer"
               >
                 <RefreshCw size={13} className={syncingInbox ? 'animate-spin' : ''} />
                 <span>{syncingInbox ? 'Syncing...' : 'Sync Mailbox'}</span>
@@ -1478,17 +1505,19 @@ export function EmailIntegrationPage() {
 
           {/* 2-Pane Split Email Client */}
           {filteredInbound.length === 0 ? (
-            <div className="p-12 text-center rounded-2xl border border-dashed border-white/15 bg-slate-900/40 space-y-3">
-              <Inbox size={40} className="mx-auto text-slate-500 opacity-60" />
-              <h3 className="text-base font-bold text-white">No Received Emails Yet</h3>
-              <p className="text-xs text-slate-400 max-w-md mx-auto">
+            <div className="p-12 text-center rounded-2xl border border-slate-200 bg-white shadow-xs space-y-3">
+              <div className="w-16 h-16 rounded-3xl bg-blue-50 border border-blue-200 text-blue-500 flex items-center justify-center mx-auto mb-3 shadow-xs">
+                <Inbox size={32} />
+              </div>
+              <h3 className="text-base font-bold text-slate-800">No Received Emails Yet</h3>
+              <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
                 Connect an IMAP receiving mailbox and click &quot;Sync Mailbox&quot; to fetch your latest inquiries, purchase orders, and payment advices.
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-4 h-[600px] border border-white/10 rounded-2xl overflow-hidden bg-slate-900/90">
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-0 h-[620px] border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-xs">
               {/* Left Column: Email List (5 cols) */}
-              <div className="md:col-span-5 border-r border-white/10 overflow-y-auto divide-y divide-white/5">
+              <div className="md:col-span-5 border-r border-slate-200 overflow-y-auto divide-y divide-slate-100">
                 {filteredInbound.map((email) => {
                   const isSelected = selectedInboundEmail?.id === email.id;
                   return (
@@ -1496,20 +1525,20 @@ export function EmailIntegrationPage() {
                       key={email.id}
                       type="button"
                       onClick={() => setSelectedInboundEmail(email)}
-                      className={`w-full p-4 text-left transition-colors flex flex-col gap-1.5 ${
-                        isSelected ? 'bg-orange-500/15 border-l-4 border-l-orange-500' : 'hover:bg-white/5'
+                      className={`w-full p-4 text-left transition-colors flex flex-col gap-1.5 cursor-pointer ${
+                        isSelected ? 'bg-orange-50/70 border-l-4 border-l-orange-500' : 'hover:bg-slate-50'
                       }`}
                     >
                       <div className="flex items-center justify-between text-[11px]">
-                        <span className="font-bold text-white truncate max-w-[180px]">
+                        <span className="font-bold text-slate-900 truncate max-w-[180px]">
                           {email.from_name || email.from_address}
                         </span>
                         <span className="text-slate-400 font-mono text-[10px]">
                           {new Date(email.received_at).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })}
                         </span>
                       </div>
-                      <h5 className="text-xs font-semibold text-slate-200 truncate">{email.subject}</h5>
-                      <p className="text-[11px] text-slate-400 line-clamp-2 leading-relaxed">
+                      <h5 className="text-xs font-bold text-slate-800 truncate">{email.subject}</h5>
+                      <p className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed">
                         {email.snippet || email.body_text}
                       </p>
                     </button>
@@ -1518,47 +1547,47 @@ export function EmailIntegrationPage() {
               </div>
 
               {/* Right Column: Email Reader (7 cols) */}
-              <div className="md:col-span-7 p-6 overflow-y-auto flex flex-col justify-between space-y-4">
+              <div className="md:col-span-7 p-6 overflow-y-auto flex flex-col justify-between space-y-4 bg-slate-50/30">
                 {selectedInboundEmail ? (
                   <div className="space-y-4">
                     {/* Header */}
-                    <div className="pb-4 border-b border-white/10 space-y-2">
+                    <div className="pb-4 border-b border-slate-200 space-y-2.5">
                       <div className="flex items-start justify-between gap-4">
-                        <h3 className="text-base font-bold text-white leading-snug">
+                        <h3 className="text-base font-bold text-slate-900 leading-snug">
                           {selectedInboundEmail.subject}
                         </h3>
                         <button
                           type="button"
                           onClick={() => handleReplyWithAi(selectedInboundEmail)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-orange-500 hover:bg-orange-600 font-bold text-xs text-white shrink-0 shadow-sm"
+                          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-orange-500 hover:bg-orange-600 font-bold text-xs text-white shrink-0 shadow-sm cursor-pointer"
                         >
                           <CornerUpLeft size={13} />
                           <span>Reply with AI</span>
                         </button>
                       </div>
 
-                      <div className="flex flex-wrap items-center justify-between text-xs text-slate-400">
+                      <div className="flex flex-wrap items-center justify-between text-xs text-slate-500">
                         <div>
-                          From: <span className="font-semibold text-slate-200">{selectedInboundEmail.from_name}</span>{' '}
-                          <span className="font-mono text-[11px] text-slate-400">&lt;{selectedInboundEmail.from_address}&gt;</span>
+                          From: <span className="font-bold text-slate-800">{selectedInboundEmail.from_name}</span>{' '}
+                          <span className="font-mono text-[11px] text-slate-500">&lt;{selectedInboundEmail.from_address}&gt;</span>
                         </div>
                         <div className="font-mono text-[11px] text-slate-400">
                           {new Date(selectedInboundEmail.received_at).toLocaleString()}
                         </div>
                       </div>
 
-                      <div className="text-xs text-slate-400">
-                        To: <span className="font-mono text-[11px] text-slate-300">{selectedInboundEmail.to_address}</span>
+                      <div className="text-xs text-slate-500">
+                        To: <span className="font-mono text-[11px] text-slate-700 font-semibold">{selectedInboundEmail.to_address}</span>
                       </div>
                     </div>
 
                     {/* Email Body */}
-                    <div className="text-xs text-slate-200 leading-relaxed whitespace-pre-line font-sans p-2">
+                    <div className="text-xs text-slate-700 leading-relaxed whitespace-pre-line font-sans p-2">
                       {selectedInboundEmail.body_text}
                     </div>
                   </div>
                 ) : (
-                  <div className="h-full flex items-center justify-center text-slate-500 text-xs">
+                  <div className="h-full flex items-center justify-center text-slate-400 text-xs">
                     Select an email from the left to read its contents.
                   </div>
                 )}
@@ -1572,13 +1601,13 @@ export function EmailIntegrationPage() {
       {/* TAB 5: USER PERMISSIONS MATRIX (Super Admin / Company Admin only)             */}
       {/* ----------------------------------------------------------------------------- */}
       {activeTab === 'permissions' && (isSuperAdmin || isCompanyAdmin) && (
-        <div className="p-6 rounded-2xl border border-white/10 bg-slate-900/90 backdrop-blur-md shadow-xl space-y-4">
-          <div className="pb-4 border-b border-white/10">
-            <h3 className="text-base font-bold text-white flex items-center gap-2">
-              <ShieldCheck size={18} className="text-emerald-400" />
+        <div className="p-6 rounded-2xl border border-slate-200 bg-white shadow-xs space-y-4">
+          <div className="pb-4 border-b border-slate-200">
+            <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+              <ShieldCheck size={18} className="text-emerald-600" />
               <span>User Email Setup & Capability Permissions</span>
             </h3>
-            <p className="text-xs text-slate-400 mt-0.5">
+            <p className="text-xs text-slate-500 mt-0.5">
               Control whether employees can connect their own personal/work mailboxes (Sending, Receiving, or Both), or must strictly use company-assigned mailboxes.
             </p>
           </div>
@@ -1586,7 +1615,7 @@ export function EmailIntegrationPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
-                <tr className="border-b border-white/10 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                <tr className="border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider bg-slate-50">
                   <th className="py-3 px-4">Employee / Colleague</th>
                   <th className="py-3 px-4">Role</th>
                   <th className="py-3 px-4 text-center">Can Connect Sending Mail</th>
@@ -1595,20 +1624,20 @@ export function EmailIntegrationPage() {
                   <th className="py-3 px-4 text-center">AI Email Composer</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5">
+              <tbody className="divide-y divide-slate-100">
                 {userPermissions.map((usr) => {
                   const isSaving = savingPermUserId === usr.user_id;
                   const isBoth = usr.can_connect_sending && usr.can_connect_receiving;
 
                   return (
-                    <tr key={usr.user_id} className="hover:bg-white/5 transition-colors">
+                    <tr key={usr.user_id} className="hover:bg-slate-50/80 transition-colors">
                       <td className="py-3 px-4">
-                        <div className="font-bold text-white">{usr.full_name}</div>
-                        <div className="text-[11px] font-mono text-slate-400">{usr.email}</div>
+                        <div className="font-bold text-slate-900">{usr.full_name}</div>
+                        <div className="text-[11px] font-mono text-slate-500">{usr.email}</div>
                       </td>
 
                       <td className="py-3 px-4">
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-slate-800 text-slate-300">
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase bg-slate-100 text-slate-700 border border-slate-200">
                           {usr.role}
                         </span>
                       </td>
@@ -1620,7 +1649,7 @@ export function EmailIntegrationPage() {
                           disabled={usr.is_admin || isSaving}
                           checked={usr.can_connect_sending}
                           onChange={(e) => handleTogglePerm(usr.user_id, 'can_connect_sending', e.target.checked)}
-                          className="w-4 h-4 rounded text-orange-500 bg-slate-800 border-white/20 focus:ring-orange-500 cursor-pointer disabled:opacity-50"
+                          className="w-4 h-4 rounded text-orange-500 bg-white border-slate-300 focus:ring-orange-500 cursor-pointer disabled:opacity-50"
                         />
                       </td>
 
@@ -1631,7 +1660,7 @@ export function EmailIntegrationPage() {
                           disabled={usr.is_admin || isSaving}
                           checked={usr.can_connect_receiving}
                           onChange={(e) => handleTogglePerm(usr.user_id, 'can_connect_receiving', e.target.checked)}
-                          className="w-4 h-4 rounded text-orange-500 bg-slate-800 border-white/20 focus:ring-orange-500 cursor-pointer disabled:opacity-50"
+                          className="w-4 h-4 rounded text-orange-500 bg-white border-slate-300 focus:ring-orange-500 cursor-pointer disabled:opacity-50"
                         />
                       </td>
 
@@ -1642,7 +1671,7 @@ export function EmailIntegrationPage() {
                           disabled={usr.is_admin || isSaving}
                           checked={isBoth}
                           onChange={(e) => handleToggleBothPerms(usr.user_id, e.target.checked)}
-                          className="w-4 h-4 rounded text-emerald-500 bg-slate-800 border-white/20 focus:ring-emerald-500 cursor-pointer disabled:opacity-50"
+                          className="w-4 h-4 rounded text-emerald-600 bg-white border-slate-300 focus:ring-emerald-500 cursor-pointer disabled:opacity-50"
                         />
                       </td>
 
@@ -1653,7 +1682,7 @@ export function EmailIntegrationPage() {
                           disabled={usr.is_admin || isSaving}
                           checked={usr.can_use_ai_composer}
                           onChange={(e) => handleTogglePerm(usr.user_id, 'can_use_ai_composer', e.target.checked)}
-                          className="w-4 h-4 rounded text-purple-500 bg-slate-800 border-white/20 focus:ring-purple-500 cursor-pointer disabled:opacity-50"
+                          className="w-4 h-4 rounded text-purple-600 bg-white border-slate-300 focus:ring-purple-500 cursor-pointer disabled:opacity-50"
                         />
                       </td>
                     </tr>
@@ -1669,14 +1698,14 @@ export function EmailIntegrationPage() {
       {/* TAB 6: DISPATCH & AUDIT LOGS                                                  */}
       {/* ----------------------------------------------------------------------------- */}
       {activeTab === 'logs' && (
-        <div className="p-6 rounded-2xl border border-white/10 bg-slate-900/90 backdrop-blur-md shadow-xl space-y-4">
-          <div className="pb-4 border-b border-white/10 flex items-center justify-between">
+        <div className="p-6 rounded-2xl border border-slate-200 bg-white shadow-xs space-y-4">
+          <div className="pb-4 border-b border-slate-200 flex items-center justify-between">
             <div>
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <Clock size={16} className="text-orange-400" />
+              <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                <Clock size={16} className="text-orange-500" />
                 <span>Email Activity & Transmission Logs</span>
               </h3>
-              <p className="text-xs text-slate-400 mt-0.5">
+              <p className="text-xs text-slate-500 mt-0.5">
                 Audit trail of all sent messages, AI prompts, and received notifications.
               </p>
             </div>
@@ -1690,7 +1719,7 @@ export function EmailIntegrationPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
-                  <tr className="border-b border-white/10 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                  <tr className="border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider bg-slate-50">
                     <th className="py-2.5 px-3">Timestamp</th>
                     <th className="py-2.5 px-3">Type</th>
                     <th className="py-2.5 px-3">From</th>
@@ -1700,43 +1729,43 @@ export function EmailIntegrationPage() {
                     <th className="py-2.5 px-3">Status</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/5">
+                <tbody className="divide-y divide-slate-100">
                   {logs.map((log) => (
-                    <tr key={log.id} className="hover:bg-white/5">
-                      <td className="py-2.5 px-3 text-slate-400 font-mono text-[11px]">
+                    <tr key={log.id} className="hover:bg-slate-50/70">
+                      <td className="py-2.5 px-3 text-slate-500 font-mono text-[11px]">
                         {new Date(log.created_at || log.received_at).toLocaleString()}
                       </td>
                       <td className="py-2.5 px-3">
                         <span
                           className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
                             log.direction === 'outbound'
-                              ? 'bg-purple-950 text-purple-400 border border-purple-500/30'
-                              : 'bg-blue-950 text-blue-400 border border-blue-500/30'
+                              ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                              : 'bg-blue-50 text-blue-700 border border-blue-200'
                           }`}
                         >
                           {log.direction}
                         </span>
                       </td>
-                      <td className="py-2.5 px-3 font-mono text-[11px] text-slate-300">
+                      <td className="py-2.5 px-3 font-mono text-[11px] text-slate-700 font-semibold">
                         {log.from_address}
                       </td>
-                      <td className="py-2.5 px-3 font-mono text-[11px] text-slate-300">
+                      <td className="py-2.5 px-3 font-mono text-[11px] text-slate-600">
                         {Array.isArray(log.to_addresses) ? log.to_addresses.join(', ') : log.to_address}
                       </td>
-                      <td className="py-2.5 px-3 font-medium text-white max-w-xs truncate">
+                      <td className="py-2.5 px-3 font-bold text-slate-800 max-w-xs truncate">
                         {log.subject}
                       </td>
                       <td className="py-2.5 px-3">
                         {log.ai_generated ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-400 bg-amber-950/60 px-2 py-0.5 rounded border border-amber-500/30">
-                            <Sparkles size={10} /> AI Generated
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                            <Sparkles size={10} className="text-amber-500" /> AI Generated
                           </span>
                         ) : (
-                          <span className="text-slate-500 text-[10px]">—</span>
+                          <span className="text-slate-400 text-[10px]">—</span>
                         )}
                       </td>
                       <td className="py-2.5 px-3">
-                        <span className="text-emerald-400 font-semibold text-[11px]">
+                        <span className="text-emerald-700 font-bold text-[11px] bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
                           {log.status || 'Delivered'}
                         </span>
                       </td>
