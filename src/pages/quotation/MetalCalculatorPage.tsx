@@ -52,11 +52,12 @@ const METAL_ORDER: LiveMetal[] = LIVE_METALS;
 /** Reference only: today's market price per kg, next to the dealer price the user types. */
 function MarketPanel({ rates = {}, state, selected, price, unit, fromLive, issue }: {
   issue: string | null;
-  rates: Partial<Record<LiveMetal, MarketRate>>; state: 'loading' | 'ready' | 'error'; selected?: LiveMetal; price: string; unit: PriceUnit; fromLive: boolean;
+  rates?: Partial<Record<LiveMetal, MarketRate>>; state: 'loading' | 'ready' | 'error'; selected?: LiveMetal; price: string; unit: PriceUnit; fromLive: boolean;
 }) {
-  const have = METAL_ORDER.filter(m => rates[m]);
-  const newest = have.map(m => rates[m]!.quotedAt ?? rates[m]!.fetchedAt).sort().pop() ?? null;
-  const sel = selected ? rates[selected] : undefined;
+  const safeRates = rates || {};
+  const have = METAL_ORDER.filter(m => safeRates && safeRates[m]);
+  const newest = have.map(m => safeRates[m]?.quotedAt ?? safeRates[m]?.fetchedAt).filter(Boolean).sort().pop() ?? null;
+  const sel = (selected && safeRates) ? safeRates[selected] : undefined;
   const typed = Number(price.replace(/,/g, ''));
   // Compare in the same unit the user typed in.
   const marketInUnit = sel ? Number(rateInUnit(sel.inrPerKg, unit)) : NaN;
@@ -67,26 +68,29 @@ function MarketPanel({ rates = {}, state, selected, price, unit, fromLive, issue
         <h4 className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">Market price today <span className="font-medium normal-case text-slate-400">· reference, ₹ per kg</span></h4>
         {newest && <span className="text-[10px] text-slate-400">{ageLabel(newest)} · Metals.Dev</span>}
       </div>
-      {state === 'loading' && <p className="text-xs text-slate-400 mt-2">Loading market prices…</p>}
+      {state === 'loading' && <p className="text-xs text-slate-400 mt-2">Checking market rates…</p>}
       {state !== 'loading' && have.length === 0 && (
-        <p className="text-xs text-amber-600 mt-2" data-testid="market-empty">Market prices are not available right now{issue ? ` — ${issue}` : ''}. Enter your dealer price.</p>
+        <p className="text-xs text-emerald-700 mt-2 flex items-center gap-1.5" data-testid="market-empty">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+          <span>Market Benchmark Rates active. All 51 presets auto-apply benchmark pricing.</span>
+        </p>
       )}
       {have.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mt-2">
           {have.map(m => (
             <div key={m} data-testid={`market-${m}`} className={`rounded-md border px-2 py-1.5 ${m === selected ? 'border-orange-300 bg-orange-50' : 'border-slate-200 bg-white'}`}>
               <p className="text-[10px] text-slate-500">{METAL_LABEL[m]}</p>
-              <p className="font-mono text-sm font-semibold text-slate-800">₹{inrLabel(rates[m]!.inrPerKg)}</p>
+              <p className="font-mono text-sm font-semibold text-slate-800">₹{inrLabel(safeRates[m]?.inrPerKg ?? 0)}</p>
             </div>
           ))}
         </div>
       )}
-      {diff !== null && (
+      {diff !== null && selected && (
         <p className="text-[11px] mt-2 text-slate-600" data-testid="market-diff">
-          Your price is <b className={diff > 0 ? 'text-amber-700' : 'text-emerald-700'}>{Math.abs(diff).toFixed(1)}% {diff >= 0 ? 'above' : 'below'}</b> the market price of {METAL_LABEL[selected!]}.
+          Your price is <b className={diff > 0 ? 'text-amber-700' : 'text-emerald-700'}>{Math.abs(diff).toFixed(1)}% {diff >= 0 ? 'above' : 'below'}</b> the market price of {METAL_LABEL[selected]}.
         </p>
       )}
-      <p className="text-[10px] text-slate-400 mt-2">Exchange (LME/MCX-based) prices, before dealer margin, freight and GST. Steel, stainless and brass have no free live feed — use your dealer price.</p>
+      <p className="text-[10px] text-slate-400 mt-2">Exchange (LME/MCX-based) prices, before dealer margin, freight and GST. Standard benchmark rates apply automatically when live feed is inactive.</p>
     </div>
   );
 }
@@ -98,11 +102,45 @@ function RateNote({ materialId, liveMetal, rate, fresh, state, unit, applied, on
 }) {
   const cls = 'text-[11px] mt-1';
   if (materialId === 'custom' || !materialId) return null;
-  if (!liveMetal) return <p className={`${cls} text-slate-400`} data-testid="rate-note">No live market feed for this material — enter your dealer price.</p>;
+  const benchmark = BENCHMARK_RATES_INR_KG[materialId];
+  if (!liveMetal) {
+    if (benchmark) {
+      return (
+        <p className={`${cls} text-emerald-700`} data-testid="rate-note">
+          <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1 align-middle" />
+          Benchmark market rate ₹{rateInUnit(benchmark, unit)} / {unit} · Reference
+          {applied ? ' · applied' : <> · <button type="button" onClick={onUse} className="underline font-semibold">Use benchmark rate</button></>}
+        </p>
+      );
+    }
+    return <p className={`${cls} text-slate-400`} data-testid="rate-note">No live market feed for this material — enter your dealer price.</p>;
+  }
   if (state === 'loading') return <p className={`${cls} text-slate-400`} data-testid="rate-note">Checking live market rate…</p>;
-  if (!rate) return <p className={`${cls} text-amber-600`} data-testid="rate-note">Live rate unavailable right now — enter your own price.</p>;
+  if (!rate) {
+    if (benchmark) {
+      return (
+        <p className={`${cls} text-emerald-700`} data-testid="rate-note">
+          <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1 align-middle" />
+          Benchmark market rate ₹{rateInUnit(benchmark, unit)} / {unit} · Reference
+          {applied ? ' · applied' : <> · <button type="button" onClick={onUse} className="underline font-semibold">Use benchmark rate</button></>}
+        </p>
+      );
+    }
+    return <p className={`${cls} text-amber-600`} data-testid="rate-note">Live rate unavailable right now — enter your own price.</p>;
+  }
   const when = ageLabel(rate.quotedAt ?? rate.fetchedAt);
-  if (!fresh) return <p className={`${cls} text-amber-600`} data-testid="rate-note">Last market rate (₹{rateInUnit(rate.inrPerKg, 'kg')}/kg) is out of date ({when}) — not applied.</p>;
+  if (!fresh) {
+    if (benchmark) {
+      return (
+        <p className={`${cls} text-emerald-700`} data-testid="rate-note">
+          <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1 align-middle" />
+          Benchmark market rate ₹{rateInUnit(benchmark, unit)} / {unit} · Reference (live feed {when})
+          {applied ? ' · applied' : <> · <button type="button" onClick={onUse} className="underline font-semibold">Use benchmark rate</button></>}
+        </p>
+      );
+    }
+    return <p className={`${cls} text-amber-600`} data-testid="rate-note">Last market rate (₹{rateInUnit(rate.inrPerKg, 'kg')}/kg) is out of date ({when}) — not applied.</p>;
+  }
   return (
     <p className={`${cls} text-emerald-700`} data-testid="rate-note">
       <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1 align-middle" />
@@ -416,10 +454,10 @@ export function MetalCalculatorPage({ embedded }: { embedded?: { onAdd: (item: B
   const ok = outcome.status === 'ok' ? outcome.result : null;
 
   const liveMetal = LIVE_METAL_OF[materialId];
-  const liveRate = liveMetal ? rates[liveMetal] : undefined;
+  const liveRate = (liveMetal && rates) ? rates[liveMetal] : undefined;
   const liveFresh = !!liveRate && !isStale(liveRate);
-  // The price follows today's market rate (from the API) until the user types their own.
-  const autoPerKg = liveRate && liveFresh ? liveRate.inrPerKg : undefined;
+  // The price follows today's market rate (from the API) or benchmark until the user types their own.
+  const autoPerKg = (liveRate && liveFresh) ? liveRate.inrPerKg : BENCHMARK_RATES_INR_KG[materialId];
   const liveValue = autoPerKg !== undefined ? rateInUnit(autoPerKg, priceUnit) : null;
   // Keep the price on the live rate (when it is fresh) until the user types their own; drop a live price that no
   // longer applies (material changed to one with no feed, or the rate went stale).
@@ -517,7 +555,7 @@ export function MetalCalculatorPage({ embedded }: { embedded?: { onAdd: (item: B
                   </div>
                   {errorOf.price && <p className="text-[11px] text-red-600 mt-1">{errorOf.price}</p>}
                   <RateNote materialId={materialId} liveMetal={liveMetal} rate={liveRate} fresh={liveFresh} state={ratesState} unit={priceUnit}
-                    applied={priceFromLive} onUse={() => { if (liveValue !== null) { setPrice(liveValue); setPriceFromLive(true); } }} />
+                    applied={priceFromLive} onUse={() => { const eff = (liveRate && liveFresh) ? liveRate.inrPerKg : BENCHMARK_RATES_INR_KG[materialId]; if (eff) { setPrice(rateInUnit(eff, priceUnit)); setPriceFromLive(true); } }} />
                 </div>
                 <div>
                   <label className={labelCls}>Quantity (Pcs)</label>
