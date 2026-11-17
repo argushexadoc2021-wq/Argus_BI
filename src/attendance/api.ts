@@ -223,4 +223,109 @@ export const attendanceApi = {
       method: 'POST',
       body: JSON.stringify(kiosk),
     }),
+
+  getKioskStream: (companyId?: string) =>
+    fetchJSON<{ ok: boolean; data: any[] }>(
+      `/api/attendance/kiosk-stream${companyId ? `?company_id=${companyId}` : ''}`
+    ),
+
+  getManualRecords: (companyId?: string) =>
+    fetchJSON<{ ok: boolean; data: any[] }>(
+      `/api/attendance/manual${companyId ? `?company_id=${companyId}` : ''}`
+    ),
+
+  submitManualEntry: (payload: {
+    employee_id: string;
+    log_date: string;
+    shift?: string;
+    shift_start?: string;
+    shift_end?: string;
+    punch_in?: string;
+    punch_out?: string;
+    hours?: number;
+    mode?: string;
+    manual_salary?: number;
+    status?: string;
+    reason?: string;
+    company_id?: string;
+  }) =>
+    fetchJSON<{ ok: boolean; data: any }>('/api/attendance/manual', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  getLeaves: (companyId?: string) =>
+    fetchJSON<{ ok: boolean; data: any[] }>(
+      `/api/attendance/leaves${companyId ? `?company_id=${companyId}` : ''}`
+    ),
+
+  applyLeave: (payload: {
+    employee_id: string;
+    leave_category: string;
+    duration_mode: string;
+    from_date: string;
+    to_date: string;
+    reason: string;
+    contact_phone?: string;
+    company_id?: string;
+  }) =>
+    fetchJSON<{ ok: boolean; data: any }>('/api/attendance/leaves', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  updateLeaveStatus: (leaveId: string, status: 'APPROVED' | 'REJECTED') =>
+    fetchJSON<{ ok: boolean; data: any }>(`/api/attendance/leaves/${leaveId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    }),
+
+  getFinancialEntries: (companyId?: string) =>
+    fetchJSON<{ ok: boolean; data: any[] }>(
+      `/api/attendance/financial-entries${companyId ? `?company_id=${companyId}` : ''}`
+    ),
+
+  createFinancialEntry: (payload: {
+    employee_id: string;
+    date: string;
+    amount: number;
+    payment_type?: string;
+    reason?: string;
+    bank?: string;
+    company_id?: string;
+  }) =>
+    fetchJSON<{ ok: boolean; data: any }>('/api/attendance/financial-entries', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  deleteFinancialEntry: (id: string) =>
+    fetchJSON<{ ok: boolean; deleted: string }>(`/api/attendance/financial-entries/${id}`, {
+      method: 'DELETE',
+    }),
+
+  getPayslip: (employeeId: string, cycle?: string, companyId?: string) => {
+    const params = new URLSearchParams();
+    params.append('employee_id', employeeId);
+    if (cycle) params.append('cycle', cycle);
+    if (companyId) params.append('company_id', companyId);
+    return fetchJSON<{ ok: boolean; data: any }>(`/api/attendance/payroll/payslip?${params.toString()}`);
+  },
+
+  disbursePayslip: (payload: { employee_ids: string[]; cycle: string }) =>
+    fetchJSON<{ ok: boolean; message: string }>('/api/attendance/payroll/disburse', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  getGeofence: (companyId?: string) =>
+    fetchJSON<{ ok: boolean; data: any }>(
+      `/api/attendance/geofence${companyId ? `?company_id=${companyId}` : ''}`
+    ),
+
+  saveGeofence: (payload: any) =>
+    fetchJSON<{ ok: boolean; message: string }>('/api/attendance/geofence', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
 };

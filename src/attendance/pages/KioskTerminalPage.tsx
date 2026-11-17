@@ -1,5 +1,21 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Camera, CheckCircle2, AlertCircle, RefreshCw, Clock, ArrowRight, ShieldCheck, MapPin, Maximize2, Minimize2, Sparkles } from 'lucide-react';
+import {
+  Camera,
+  CheckCircle2,
+  AlertCircle,
+  RefreshCw,
+  Clock,
+  ArrowRight,
+  ShieldCheck,
+  MapPin,
+  Maximize2,
+  Minimize2,
+  Sparkles,
+  UserCheck,
+  Building2,
+  Activity,
+} from 'lucide-react';
+import confetti from 'canvas-confetti';
 import { attendanceApi, KioskPunchResult } from '../api';
 import { extract128VectorFromCanvas } from '../engine/faceMeshEngine';
 import { getRandomChallenge, LivenessChallenge, evaluateLivenessQuality } from '../engine/livenessDetector';
@@ -19,9 +35,10 @@ export function KioskTerminalPage() {
   const [punchMode, setPunchMode] = useState<'AUTO' | 'CHECK_IN' | 'CHECK_OUT'>('AUTO');
   const [isScanning, setIsScanning] = useState(false);
   const [lastResult, setLastResult] = useState<KioskPunchResult | null>(null);
+  const [recentPunches, setRecentPunches] = useState<any[]>([]);
   const [feedbackMsg, setFeedbackMsg] = useState<{ type: 'info' | 'success' | 'error'; text: string } | null>({
     type: 'info',
-    text: 'Center your face inside the green oval to clock in or out.',
+    text: 'Center your face inside the guide oval to clock in or out.',
   });
   const [challenge, setChallenge] = useState<LivenessChallenge>(getRandomChallenge());
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -32,6 +49,24 @@ export function KioskTerminalPage() {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  const fetchRecentPunches = useCallback(async () => {
+    if (!companyId) return;
+    try {
+      const res = await attendanceApi.getKioskStream(companyId);
+      if (res.data && Array.isArray(res.data)) {
+        setRecentPunches(res.data);
+      }
+    } catch {
+      // silent
+    }
+  }, [companyId]);
+
+  useEffect(() => {
+    fetchRecentPunches();
+    const interval = setInterval(fetchRecentPunches, 8000);
+    return () => clearInterval(interval);
+  }, [fetchRecentPunches]);
 
   // Web camera initialization
   const startCamera = useCallback(async () => {
@@ -63,7 +98,7 @@ export function KioskTerminalPage() {
       setCameraError(
         err.name === 'NotAllowedError'
           ? 'Camera permission denied. Please allow camera access in your browser settings.'
-          : 'Could not access web camera. Please ensure a camera is connected.'
+          : 'Could not access optical camera. Please ensure a webcam or camera is connected.'
       );
       setCameraActive(false);
     }
@@ -133,11 +168,32 @@ export function KioskTerminalPage() {
       playSuccessChime();
       speakGreeting(`Welcome ${punchRes.employee.first_name}, ${punchRes.action === 'CHECK_IN' ? 'Check In' : 'Check Out'} confirmed.`);
 
+      confetti({
+        particleCount: 50,
+        spread: 60,
+        origin: { y: 0.6 },
+      });
+
       setLastResult(punchRes);
       setFeedbackMsg({
         type: 'success',
         text: punchRes.message,
       });
+
+      // Add to recent punches
+      const newEntry = {
+        id: 'p-' + Date.now(),
+        employee_name: `${punchRes.employee.first_name} ${punchRes.employee.last_name}`,
+        employee_code: punchRes.employee.employee_code,
+        department: punchRes.employee.department || 'Operations',
+        time: punchRes.time,
+        operation: punchRes.action === 'CHECK_IN' ? 'PUNCH [IN]' : 'PUNCH [OUT]',
+        is_in: punchRes.action === 'CHECK_IN',
+        avatar: `${punchRes.employee.first_name[0]}${punchRes.employee.last_name[0] || ''}`.toUpperCase(),
+        entry_distance: '0m (On-Site)',
+        distance_meters: 0,
+      };
+      setRecentPunches((prev) => [newEntry, ...prev.slice(0, 9)]);
 
       // 4-second cooldown before next scan
       setScanCooldown(true);
@@ -146,6 +202,7 @@ export function KioskTerminalPage() {
         setScanCooldown(false);
         setChallenge(getRandomChallenge());
         setFeedbackMsg({ type: 'info', text: 'Next employee: Please face the camera to clock in or out.' });
+        fetchRecentPunches();
       }, 4000);
     } catch (err: any) {
       playWarningChime();
@@ -154,9 +211,9 @@ export function KioskTerminalPage() {
     } finally {
       setIsScanning(false);
     }
-  }, [cameraActive, companyId, isScanning, punchMode, scanCooldown]);
+  }, [cameraActive, companyId, isScanning, punchMode, scanCooldown, fetchRecentPunches]);
 
-  // Automated scanning loop every 1.5 seconds when active
+  // Automated scanning loop every 1.8 seconds when active
   useEffect(() => {
     if (!cameraActive || scanCooldown || isScanning) return;
     const interval = setInterval(() => {
@@ -195,7 +252,7 @@ export function KioskTerminalPage() {
             </h1>
             <p className="text-xs text-slate-400 flex items-center gap-1.5">
               <MapPin className="w-3.5 h-3.5 text-orange-400" />
-              {company?.name || 'Argus Technologies'} &bull; Terminal 01 (Main Gate)
+              {(company as any)?.company_name || company?.name || 'Argus Technologies'} &bull; Terminal 01 (Main Gate)
             </p>
           </div>
         </div>
@@ -222,9 +279,10 @@ export function KioskTerminalPage() {
         </div>
       </header>
 
-      {/* Main Kiosk Center Area */}
-      <main className="flex-1 flex flex-col items-center justify-center p-4 relative z-10">
-        <div className="w-full max-w-2xl flex flex-col items-center">
+      {/* Main Kiosk Center Area with Split View: Camera (Left) + Recent Stream (Right) */}
+      <main className="flex-1 flex flex-col xl:flex-row items-center justify-center p-4 xl:p-8 gap-6 relative z-10 max-w-7xl mx-auto w-full">
+        {/* Left: Camera Scanner Box */}
+        <div className="w-full max-w-xl flex flex-col items-center">
           {/* Mode Switcher Tabs */}
           <div className="mb-4 inline-flex items-center gap-1.5 p-1 rounded-2xl bg-slate-800/80 border border-slate-700/60 shadow-xl backdrop-blur-md">
             {(['AUTO', 'CHECK_IN', 'CHECK_OUT'] as const).map((mode) => (
@@ -247,7 +305,7 @@ export function KioskTerminalPage() {
           </div>
 
           {/* Camera Viewfinder Box with Target Reticle */}
-          <div className="relative w-full max-w-lg aspect-[4/3] rounded-3xl overflow-hidden bg-slate-950 border-2 border-slate-800 shadow-2xl flex items-center justify-center">
+          <div className="relative w-full aspect-[4/3] rounded-3xl overflow-hidden bg-slate-950 border-2 border-slate-800 shadow-2xl flex items-center justify-center">
             {cameraError ? (
               <div className="p-6 text-center max-w-sm">
                 <AlertCircle className="w-12 h-12 text-rose-500 mx-auto mb-3" />
@@ -255,7 +313,7 @@ export function KioskTerminalPage() {
                 <p className="text-xs text-slate-400 mb-4">{cameraError}</p>
                 <button
                   onClick={startCamera}
-                  className="px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold transition-all flex items-center gap-2 mx-auto"
+                  className="px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold transition-all flex items-center gap-2 mx-auto cursor-pointer"
                 >
                   <RefreshCw className="w-3.5 h-3.5" /> Reconnect Camera
                 </button>
@@ -342,7 +400,7 @@ export function KioskTerminalPage() {
           </div>
 
           {/* Bottom Live Feedback Bar */}
-          <div className="mt-4 w-full max-w-lg">
+          <div className="mt-4 w-full">
             <div
               className={`p-3 rounded-2xl border text-xs font-medium text-center transition-all ${
                 feedbackMsg?.type === 'success'
@@ -354,6 +412,62 @@ export function KioskTerminalPage() {
             >
               {feedbackMsg?.text}
             </div>
+          </div>
+        </div>
+
+        {/* Right: Recent Punches Stream Box */}
+        <div className="w-full xl:w-80 bg-slate-800/70 border border-slate-700/80 rounded-3xl p-4 shadow-xl backdrop-blur-md flex flex-col h-full max-h-[500px]">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-700/70">
+            <div className="flex items-center gap-2">
+              <Activity className="w-4 h-4 text-emerald-400" />
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">
+                Live Punch Stream
+              </h3>
+            </div>
+            <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+              Real-time
+            </span>
+          </div>
+
+          <div className="flex-1 overflow-y-auto divide-y divide-slate-700/50 mt-2 pr-1 space-y-1">
+            {recentPunches.length === 0 ? (
+              <div className="text-center py-12 text-slate-500 text-xs italic">
+                Awaiting first biometric punch today...
+              </div>
+            ) : (
+              recentPunches.map((p) => (
+                <div key={p.id} className="py-2.5 flex items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div
+                      className={`w-8 h-8 rounded-xl font-bold flex items-center justify-center shrink-0 text-[11px] ${
+                        p.is_in
+                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                          : 'bg-orange-500/20 text-orange-400 border border-orange-500/30'
+                      }`}
+                    >
+                      {p.avatar || 'EM'}
+                    </div>
+                    <div className="min-w-0 truncate">
+                      <div className="font-bold text-slate-200 truncate">{p.employee_name}</div>
+                      <div className="text-[10px] text-slate-400 font-mono">
+                        {p.employee_code} &bull; {p.department}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="text-right shrink-0">
+                    <div className="font-mono text-[11px] text-slate-300 font-semibold">{p.time}</div>
+                    <div
+                      className={`text-[9px] font-bold uppercase tracking-wider ${
+                        p.is_in ? 'text-emerald-400' : 'text-orange-400'
+                      }`}
+                    >
+                      {p.operation || (p.is_in ? 'IN' : 'OUT')}
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </main>
