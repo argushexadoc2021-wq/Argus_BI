@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Eye, Edit, Edit2, Trash2, Users as UsersIcon, Building2, ShieldCheck, Settings as SettingsIcon, FileText, ChevronDown, ChevronRight, Search, Lock, KeyRound, Plus, Download, Upload, Power, Briefcase, Store, CheckSquare, Square, Check, X, Layers, SlidersHorizontal, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Eye, Edit, Edit2, Trash2, Users as UsersIcon, Building2, ShieldCheck, Settings as SettingsIcon, FileText, ChevronDown, ChevronRight, Search, Lock, KeyRound, Plus, Download, Upload, Power, Briefcase, Store, Camera, CheckSquare, Square, Check, X, Layers, SlidersHorizontal, CheckCircle2, AlertCircle } from 'lucide-react';
 import { fetchJobDescriptions, createJobDescription, EMPTY_JD, type JobDescription } from '@/lib/jdBuild';
 import { fetchUserJdMap, saveUserJd, getUserJdId } from '@/lib/userJd';
 import { JobDescriptionModal, JobDescriptionViewModal, JobDescriptionFormFields, toDraft, fromDraft, type JdDraft } from '@/components/admin/JobDescriptionModal';
@@ -899,6 +899,7 @@ export function CompaniesPage() {
   // platform switches of the company: BI off -> its users go straight to the Retail Store; Retail off -> Retail Store and the pages linked to it are hidden
   const [biOn, setBiOn] = useState(true);
   const [retailOn, setRetailOn] = useState(true);
+  const [attendanceOn, setAttendanceOn] = useState(true);
   const [accessSearch, setAccessSearch] = useState('');
   const [loadingAccess, setLoadingAccess] = useState(false);
   const [globalDisabledBi, setGlobalDisabledBi] = useState<Set<string>>(new Set());
@@ -1074,7 +1075,7 @@ export function CompaniesPage() {
   }, [companies]);
 
   const openCreate = async () => {
-    setBiOn(true); setRetailOn(true);
+    setBiOn(true); setRetailOn(true); setAttendanceOn(true);
     setForm(emptyCompanyForm);
     setFormError(null);
     setAccessTab('bi');
@@ -1123,9 +1124,9 @@ export function CompaniesPage() {
   };
 
   const openEdit = async (r: CompanyRow) => {
-    setBiOn(true); setRetailOn(true);
-    supabase.from('companies').select('bi_enabled, retail_enabled').eq('id', r.id).maybeSingle().then(({ data }) => {
-      if (data) { setBiOn((data as any).bi_enabled !== false); setRetailOn((data as any).retail_enabled !== false); }
+    setBiOn(true); setRetailOn(true); setAttendanceOn(true);
+    supabase.from('companies').select('bi_enabled, retail_enabled, attendance_enabled').eq('id', r.id).maybeSingle().then(({ data }) => {
+      if (data) { setBiOn((data as any).bi_enabled !== false); setRetailOn((data as any).retail_enabled !== false); setAttendanceOn((data as any).attendance_enabled !== false); }
     });
     setForm({ ...emptyCompanyForm, id: r.id, company_name: r.company_name, code: r.code ?? '', status: r.status });
     // company details are read separately: a failed read (migration not applied yet) just leaves them empty
@@ -1300,7 +1301,8 @@ export function CompaniesPage() {
 
     // 4. Platform switches (BI / Retail Store)
     try {
-      const { error: pErr } = await supabase.rpc('erp_set_company_platforms', { p_company_id: targetCompanyId, p_bi: biOn, p_retail: retailOn });
+      const { error: pErr } = await supabase.rpc('erp_set_company_platforms', { p_company_id: targetCompanyId, p_bi: biOn, p_retail: retailOn, p_attendance: attendanceOn });
+      if (pErr) await supabase.from('companies').update({ bi_enabled: biOn, retail_enabled: retailOn, attendance_enabled: attendanceOn }).eq('id', targetCompanyId);
       if (pErr && (!biOn || !retailOn || !/erp_set_company_platforms|schema cache/i.test(pErr.message))) window.alert('The company was saved, but the Argus BI / Retail platform switches were not: ' + pErr.message + ' (If it mentions a missing function, apply database update 20261110060000_company_platforms.sql.)');
     } catch { /* the company is saved; the switches can be set again */ }
 
@@ -1614,20 +1616,22 @@ export function CompaniesPage() {
             </div>
 
             {/* Platform switches: whole BI app / whole Retail Store for this company */}
-            <div className="grid gap-2 sm:grid-cols-2 px-3 py-2.5 border-b border-slate-200 bg-white">
+            <div className="grid gap-2 sm:grid-cols-3 px-3 py-2.5 border-b border-slate-200 bg-white">
               {([
                 { key: 'bi', title: 'Argus Business Intelligence (Argus BI)', on: biOn, set: setBiOn, other: retailOn, icon: Building2, tone: 'brand',
                   hint: biOn ? 'On: users of this company can open Argus BI.' : 'Off: users cannot open Argus BI. When they sign in they go straight to the Retail Store.' },
                 { key: 'retail', title: 'Retail Store', on: retailOn, set: setRetailOn, other: biOn, icon: Store, tone: 'emerald',
                   hint: retailOn ? 'On: users of this company can open the Retail Store.' : 'Off: the Retail Store is hidden, and so are the pages linked to it (Digital Store, Retail Orders, Partner & Online Sales).' },
+                { key: 'attendance', title: 'AI Face Attendance', on: attendanceOn, set: setAttendanceOn, other: true, icon: Camera, tone: 'orange',
+                  hint: attendanceOn ? 'On: AI biometric facial recognition attendance kiosk and roster are active for this company.' : 'Off: the AI Attendance module and tablet kiosk are disabled for this company.' },
               ] as const).map((p) => (
-                <label key={p.key} className={`flex items-start gap-3 rounded-lg border px-3 py-2 cursor-pointer select-none transition-colors ${p.on ? (p.tone === 'brand' ? 'border-brand-200 bg-brand-50/50' : 'border-emerald-200 bg-emerald-50/50') : 'border-red-200 bg-red-50/60'}`}>
+                <label key={p.key} className={`flex items-start gap-3 rounded-lg border px-3 py-2 cursor-pointer select-none transition-colors ${p.on ? (p.tone === 'brand' ? 'border-brand-200 bg-brand-50/50' : p.tone === 'orange' ? 'border-orange-200 bg-orange-50/50' : 'border-emerald-200 bg-emerald-50/50') : 'border-red-200 bg-red-50/60'}`}>
                   <button
                     type="button"
                     role="switch"
                     aria-checked={p.on}
                     onClick={() => { if (p.on && !p.other) { setFormError('Keep at least one platform (Argus BI or Retail Store) on for the company.'); return; } setFormError(null); p.set(!p.on); }}
-                    className={`relative mt-0.5 h-5 w-9 shrink-0 rounded-full transition-colors ${p.on ? (p.tone === 'brand' ? 'bg-brand-600' : 'bg-emerald-600') : 'bg-slate-300'}`}
+                    className={`relative mt-0.5 h-5 w-9 shrink-0 rounded-full transition-colors ${p.on ? (p.tone === 'brand' ? 'bg-brand-600' : p.tone === 'orange' ? 'bg-orange-600' : 'bg-emerald-600') : 'bg-slate-300'}`}
                   >
                     <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${p.on ? 'left-[18px]' : 'left-0.5'}`} />
                   </button>

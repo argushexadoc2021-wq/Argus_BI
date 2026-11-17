@@ -119,6 +119,7 @@ import { UpdatesSettingsPage } from './components/desktop/UpdatesSettingsPage';
 import { DesktopToasts } from './lib/desktop/toast';
 // @ts-ignore
 import { RetailApp } from './retail/app';
+import { AttendanceApp } from './attendance/AttendanceApp';
 
 // Placeholder Component for unbuilt pages
 function PlaceholderPage({ title }: { title: string }) {
@@ -447,6 +448,10 @@ const isRetailRoute = (path: string) =>
   path.startsWith('/admin/invoice-profile') ||
   path.startsWith('/admin/settings-retail');
 
+const isAttendanceRoute = (path: string) =>
+  path.startsWith('/attendance') ||
+  path.startsWith('/kiosk');
+
 // "/" opens the first page this user can actually see (Sales Pipelines when allowed, as before), not a lock screen.
 function HomeRedirect() {
   const { canView, permissions } = useAuth();
@@ -458,6 +463,9 @@ function HomeRedirect() {
 
 function RootRoutes() {
   const location = useLocation();
+  if (isAttendanceRoute(location.pathname)) {
+    return <AttendanceApp />;
+  }
   if (isRetailRoute(location.pathname)) {
     return <RetailApp />;
   }

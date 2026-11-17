@@ -963,6 +963,7 @@ app.post('/api/adviser-mail/remove', async (req, res) => {
 const adviserMailHits = new Map();   // person -> send times (a small limit against mistakes / runaway use)
 // Mount enterprise multi-mailbox integration handler
 require('./mailIntegrationHandler.cjs')({ app, SB, db, save, mailEnc, mailDec, mailTransport, mailProblem, uid });
+require('./attendanceHandler.cjs')({ app, SB, db, save, uid });
 
 app.post('/api/adviser-mail/send', async (req, res) => {
   try {

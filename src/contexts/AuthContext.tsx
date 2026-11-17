@@ -56,6 +56,7 @@ interface AuthContextValue {
   /** Platform switches of the company (Company Management). A Super Admin always has both. */
   biEnabled: boolean;
   retailEnabled: boolean;
+  attendanceEnabled: boolean;
   /** False until the switches have been read, so a company with BI off never flashes the BI screens. */
   platformsReady: boolean;
   canView: (moduleKey: string) => boolean;
@@ -90,20 +91,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [permissions, setPermissions] = useState<PermMatrix | null>(null);
   const [permsLoading, setPermsLoading] = useState(false);
   const loadedForUser = useRef<string | null>(null);
-  const [platforms, setPlatforms] = useState({ bi: true, retail: true, ready: false });
-  const platformsRef = useRef({ bi: true, retail: true });
+  const [platforms, setPlatforms] = useState({ bi: true, retail: true, attendance: true, ready: false });
+  const platformsRef = useRef({ bi: true, retail: true, attendance: true });
 
   // Which platforms (BI / Retail Store) the user's company has switched on. Unknown or unreadable = on (nothing is hidden by mistake).
   const loadPlatforms = useCallback(async (companyId: string | null | undefined, role: ErpRole | null | undefined) => {
-    let bi = true, retail = true;
+    let bi = true, retail = true, attendance = true;
     if (role && role !== 'SUPER_ADMIN' && companyId) {
       try {
-        const { data, error } = await supabase.from('companies').select('bi_enabled, retail_enabled').eq('id', companyId).maybeSingle();
-        if (!error && data) { bi = (data as { bi_enabled?: boolean | null }).bi_enabled !== false; retail = (data as { retail_enabled?: boolean | null }).retail_enabled !== false; }
+        const { data, error } = await supabase.from('companies').select('bi_enabled, retail_enabled, attendance_enabled').eq('id', companyId).maybeSingle();
+        if (!error && data) { bi = (data as any).bi_enabled !== false; retail = (data as any).retail_enabled !== false; attendance = (data as any).attendance_enabled !== false; }
       } catch { /* the switches are optional until the database script is applied */ }
     }
-    platformsRef.current = { bi, retail };
-    setPlatforms({ bi, retail, ready: true });
+    platformsRef.current = { bi, retail, attendance };
+    setPlatforms({ bi, retail, attendance, ready: true });
   }, []);
 
   const clear = useCallback(() => {
@@ -302,6 +303,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     permsLoading,
     biEnabled: platforms.bi,
     retailEnabled: platforms.retail,
+    attendanceEnabled: platforms.attendance,
     platformsReady: platforms.ready,
     canView,
     canDo,

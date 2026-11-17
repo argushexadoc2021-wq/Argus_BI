@@ -30,6 +30,7 @@ import {
   Wrench,
   Briefcase,
   MessageSquare,
+  Camera,
   type LucideIcon,
 } from 'lucide-react';
 import type { ErpRole } from '@/contexts/AuthContext';
@@ -132,6 +133,7 @@ export const navSections: NavSection[] = [
       { label: 'Technical Support', icon: LifeBuoy, page: 'support/technical', iconClass: 'text-cyan-400', module: 'support' },
       { label: 'On-site Support', icon: Wrench, page: 'support/onsite', iconClass: 'text-emerald-400', module: 'onsite-support' },
       { label: 'Retail Store', icon: Store, page: 'store/home', iconClass: 'text-orange-400' },
+      { label: 'AI Attendance', icon: Camera, page: 'attendance/dashboard', iconClass: 'text-orange-500' },
     ],
   },
 ];
@@ -244,6 +246,11 @@ export const pageTitles: Record<string, string> = {
   'super/catalog': 'Master Catalog',
   'super/companies': 'Retail Company Hub',
   'super/access': 'Menu Access Control',
+  'attendance/dashboard': 'AI Attendance Dashboard',
+  'attendance/enroll': 'Face Biometric Enrollment',
+  'attendance/reports': 'Attendance & Payroll Reports',
+  'attendance/settings': 'Shift & Attendance Settings',
+  'attendance/kiosk': 'Attendance Kiosk Terminal',
 };
 
 export function getBreadcrumbs(page: string): { label: string; page?: string }[] {
