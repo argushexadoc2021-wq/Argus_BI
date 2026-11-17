@@ -461,10 +461,33 @@ function HomeRedirect() {
   return <Navigate to={first ? `/${first.pages[0]}` : '/dashboard'} replace />;
 }
 
+function AttendanceGate() {
+  const { status, platformsReady } = useAuth();
+
+  if (status === 'loading' || (status === 'authorized' && !platformsReady)) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+  if (status === 'signed_out') return <LoginScreen />;
+  if (status !== 'authorized') return <AccessDenied />;
+  return <AttendanceApp />;
+}
+
+function AttendanceSubsystem() {
+  return (
+    <AuthProvider>
+      <AttendanceGate />
+    </AuthProvider>
+  );
+}
+
 function RootRoutes() {
   const location = useLocation();
   if (isAttendanceRoute(location.pathname)) {
-    return <AttendanceApp />;
+    return <AttendanceSubsystem />;
   }
   if (isRetailRoute(location.pathname)) {
     return <RetailApp />;

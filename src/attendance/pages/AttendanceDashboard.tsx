@@ -127,7 +127,7 @@ export function AttendanceDashboard() {
             <h1 className="text-xl font-bold text-slate-900 tracking-tight">AI Face Attendance Dashboard</h1>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            Real-time biometric attendance monitoring, roster status, and shift management for {company?.name || 'Argus'}.
+            Real-time biometric attendance monitoring, roster status, and shift management for {(company as any)?.company_name || (company as any)?.name || 'Argus'}.
           </p>
         </div>
 

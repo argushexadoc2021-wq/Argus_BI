@@ -116,8 +116,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setPermissions(null);
     setPermsLoading(false);
     setErrorMessage(null);
-    platformsRef.current = { bi: true, retail: true };
-    setPlatforms({ bi: true, retail: true, ready: false });
+    platformsRef.current = { bi: true, retail: true, attendance: true };
+    setPlatforms({ bi: true, retail: true, attendance: true, ready: false });
   }, []);
 
   // Effective permissions always come from the database (erp_get_permissions),

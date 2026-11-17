@@ -7,7 +7,6 @@ import {
   Settings,
   Camera,
   ExternalLink,
-  ShieldCheck,
   Building2,
 } from 'lucide-react';
 import { KioskTerminalPage } from './pages/KioskTerminalPage';
@@ -20,6 +19,7 @@ import { useAuth } from '@/contexts/AuthContext';
 export function AttendanceApp() {
   const location = useLocation();
   const { company, attendanceEnabled, isSuperAdmin } = useAuth();
+  const companyName = (company as any)?.company_name || (company as any)?.name || 'Argus Technologies';
 
   // Fullscreen Kiosk Mode (no top bar chrome)
   if (location.pathname === '/attendance/kiosk' || location.pathname === '/kiosk') {
@@ -36,7 +36,7 @@ export function AttendanceApp() {
           </div>
           <h2 className="text-lg font-bold text-slate-800">AI Attendance is Disabled</h2>
           <p className="mt-2 text-xs text-slate-600">
-            Biometric Facial Recognition Attendance is not enabled for {company?.name || 'your company'}. Please contact your administrator.
+            Biometric Facial Recognition Attendance is not enabled for {companyName}. Please contact your administrator.
           </p>
           <div className="mt-5">
             <button
@@ -75,7 +75,7 @@ export function AttendanceApp() {
                 </span>
               </div>
               <div className="text-[11px] text-slate-500 font-medium">
-                {company?.name || 'Argus Technologies'} &bull; Workplace Timekeeping
+                {companyName} &bull; Workplace Timekeeping
               </div>
             </div>
           </div>
@@ -83,7 +83,10 @@ export function AttendanceApp() {
           <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
             {navLinks.map((tab) => {
               const Icon = tab.icon;
-              const isActive = location.pathname === tab.path;
+              const isActive =
+                location.pathname === tab.path ||
+                (tab.path === '/attendance/dashboard' &&
+                  (location.pathname === '/attendance' || location.pathname === '/dashboard'));
               return (
                 <Link
                   key={tab.path}
@@ -112,6 +115,14 @@ export function AttendanceApp() {
               <span>Launch Kiosk</span>
               <ExternalLink className="w-3 h-3 opacity-75" />
             </a>
+
+            <a
+              href="/dashboard"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-600 hover:text-slate-900 text-xs font-bold transition-all shrink-0"
+            >
+              <Building2 className="w-3.5 h-3.5" />
+              <span>Back to BI</span>
+            </a>
           </div>
         </div>
       </header>
@@ -120,10 +131,17 @@ export function AttendanceApp() {
       <main className="flex-1">
         <Routes>
           <Route path="/" element={<Navigate to="/attendance/dashboard" replace />} />
+          <Route path="/attendance" element={<Navigate to="/attendance/dashboard" replace />} />
+          <Route path="/attendance/dashboard" element={<AttendanceDashboard />} />
           <Route path="/dashboard" element={<AttendanceDashboard />} />
+          <Route path="/attendance/enroll" element={<FaceEnrollmentPage />} />
           <Route path="/enroll" element={<FaceEnrollmentPage />} />
+          <Route path="/attendance/reports" element={<AttendanceReportsPage />} />
           <Route path="/reports" element={<AttendanceReportsPage />} />
+          <Route path="/attendance/settings" element={<AttendanceSettingsPage />} />
           <Route path="/settings" element={<AttendanceSettingsPage />} />
+          <Route path="/attendance/kiosk" element={<KioskTerminalPage />} />
+          <Route path="/kiosk" element={<KioskTerminalPage />} />
           <Route path="*" element={<Navigate to="/attendance/dashboard" replace />} />
         </Routes>
       </main>
