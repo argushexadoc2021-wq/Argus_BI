@@ -1,19 +1,34 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import {
-  Mail, Send, Inbox, Sparkles, ShieldCheck, CheckCircle2, AlertCircle,
-  Loader2, RefreshCw, Trash2, Edit2, Plus, ExternalLink, Lock, Users,
-  Search, Building2, Server, Key, ArrowRight, Clock, CornerUpLeft,
-  Sliders, Check, X, Shield, ArrowUpDown, ChevronDown, ChevronRight, FileText,
-  BadgeAlert, Info
+  Mail,
+  Send,
+  Inbox,
+  CheckCircle2,
+  AlertCircle,
+  Loader2,
+  RefreshCw,
+  Trash2,
+  Edit2,
+  Plus,
+  ExternalLink,
+  Users,
+  Search,
+  Building2,
+  Server,
+  Key,
+  Clock,
+  X,
+  Shield,
+  Check,
+  ChevronDown,
+  Info,
+  UserCheck,
+  UserX,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   mailIntegrationApi,
   type EmailAccount,
-  type UserMailPermission,
-  type InboundEmail,
-  type SentEmailLog,
   type MailProviderType,
   type MailIntegrationType,
   type CallerPermissions,
@@ -31,8 +46,8 @@ const PROVIDER_PRESETS: Record<
     port: 587,
     imapHost: 'imap.gmail.com',
     imapPort: 993,
-    pwHint: '16-letter App Password',
-    guide: 'Open Google Account → Security → 2-Step Verification → App passwords. Create one named "Argus CNC" and paste the 16 letters here.',
+    pwHint: '16-letter Google App Password',
+    guide: 'Open Google Account → Security → 2-Step Verification → App passwords. Create one named "Argus ERP" and paste the 16 letters here.',
     guideUrl: 'https://myaccount.google.com/apppasswords',
   },
   outlook: {
@@ -42,7 +57,7 @@ const PROVIDER_PRESETS: Record<
     imapHost: 'outlook.office365.com',
     imapPort: 993,
     pwHint: 'Account password or App Password',
-    guide: 'Open Microsoft Account → Security → Advanced Security Options → App Passwords. For Microsoft 365 Exchange, ensure SMTP AUTH is enabled by IT.',
+    guide: 'Open Microsoft Account → Security → Advanced Security Options → App Passwords. For Microsoft 365, ensure SMTP AUTH is enabled.',
     guideUrl: 'https://account.live.com/proofs/AppPassword',
   },
   zoho: {
@@ -52,7 +67,7 @@ const PROVIDER_PRESETS: Record<
     imapHost: 'imap.zoho.in',
     imapPort: 993,
     pwHint: 'Application-specific Password',
-    guide: 'Open Zoho Accounts → Security → App Passwords → Generate New. For non-India regions use smtp.zoho.com and imap.zoho.com.',
+    guide: 'Open Zoho Accounts → Security → App Passwords → Generate New. For global accounts use smtp.zoho.com.',
     guideUrl: 'https://accounts.zoho.in/home#security/app_password',
   },
   other: {
@@ -62,19 +77,12 @@ const PROVIDER_PRESETS: Record<
     imapHost: '',
     imapPort: 993,
     pwHint: 'Mailbox Password or App Password',
-    guide: 'Obtain outgoing (SMTP) and incoming (IMAP) host names and ports from your IT administrator or hosting control panel.',
+    guide: 'Enter SMTP outgoing and IMAP incoming host names and ports provided by your hosting provider or IT administrator.',
   },
 };
 
 export function EmailIntegrationPage() {
   const { profile, company, isSuperAdmin, isCompanyAdmin } = useAuth();
-  const [searchParams, setSearchParams] = useSearchParams();
-
-  // Active tab: 'accounts' | 'connect' | 'composer' | 'inbound' | 'permissions' | 'logs'
-  const activeTab = searchParams.get('tab') || 'accounts';
-  const setActiveTab = (tab: string) => {
-    setSearchParams({ tab }, { replace: true });
-  };
 
   // State
   const [loading, setLoading] = useState(true);
@@ -86,14 +94,44 @@ export function EmailIntegrationPage() {
     is_admin: true,
   });
   const [colleagues, setColleagues] = useState<{ id: string; full_name: string; email: string; role: string }[]>([]);
-  const [inboundEmails, setInboundEmails] = useState<InboundEmail[]>([]);
-  const [userPermissions, setUserPermissions] = useState<UserMailPermission[]>([]);
-  const [logs, setLogs] = useState<any[]>([]);
 
-  // Feedback banner
+  // Search & Filter
+  const [searchQuery, setSearchQuery] = useState('');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'both' | 'sending' | 'receiving'>('all');
+
+  // Testing & Action feedback
+  const [testingId, setTestingId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  // Load Accounts & Colleagues
+  // Modal State for Connecting / Editing
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingAccount, setEditingAccount] = useState<EmailAccount | null>(null);
+
+  // Modal State for Direct User Assignment
+  const [assignModalAccount, setAssignModalAccount] = useState<EmailAccount | null>(null);
+  const [assignIsShared, setAssignIsShared] = useState(false);
+  const [assignUserIds, setAssignUserIds] = useState<string[]>([]);
+  const [assignUserSearch, setAssignUserSearch] = useState('');
+  const [savingAssignment, setSavingAssignment] = useState(false);
+
+  // Connection Form State
+  const [connProvider, setConnProvider] = useState<MailProviderType>('gmail');
+  const [connType, setConnType] = useState<MailIntegrationType>('both');
+  const [connName, setConnName] = useState('');
+  const [connEmail, setConnEmail] = useState('');
+  const [connPass, setConnPass] = useState('');
+  const [connFromName, setConnFromName] = useState(profile?.full_name || '');
+  const [connSmtpHost, setConnSmtpHost] = useState(PROVIDER_PRESETS.gmail.host);
+  const [connSmtpPort, setConnSmtpPort] = useState('587');
+  const [connImapHost, setConnImapHost] = useState(PROVIDER_PRESETS.gmail.imapHost);
+  const [connImapPort, setConnImapPort] = useState('993');
+  const [connImapSsl, setConnImapSsl] = useState(true);
+  const [connIsShared, setConnIsShared] = useState(true);
+  const [connAssignedUsers, setConnAssignedUsers] = useState<string[]>([]);
+  const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+
+  // Load Data
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
@@ -117,99 +155,44 @@ export function EmailIntegrationPage() {
     loadData();
   }, [loadData]);
 
-  // Load Tab specific data
-  useEffect(() => {
-    if (activeTab === 'inbound') {
-      mailIntegrationApi.getInbound().then((r) => setInboundEmails(r.emails || [])).catch(() => {});
-    } else if (activeTab === 'permissions' && (isSuperAdmin || isCompanyAdmin)) {
-      mailIntegrationApi.getPermissions(company?.id).then((r) => setUserPermissions(r.users || [])).catch(() => {});
-    } else if (activeTab === 'logs') {
-      mailIntegrationApi.getLogs().then((r) => setLogs(r.logs || [])).catch(() => {});
-    }
-  }, [activeTab, company?.id, isSuperAdmin, isCompanyAdmin]);
-
-  // KPIs
-  const sendingCount = useMemo(() => accounts.filter((a) => a.type === 'sending' || a.type === 'both').length, [accounts]);
-  const receivingCount = useMemo(() => accounts.filter((a) => a.type === 'receiving' || a.type === 'both').length, [accounts]);
-
-  // ------------------------------------------------------------------------------------
-  // TAB 1: CONNECTED MAILBOXES STATE
-  // ------------------------------------------------------------------------------------
-  const [accountFilter, setAccountFilter] = useState<'all' | 'sending' | 'receiving' | 'both'>('all');
-  const [accountSearch, setAccountSearch] = useState('');
-  const [testingId, setTestingId] = useState<string | null>(null);
-  const [editingAccount, setEditingAccount] = useState<EmailAccount | null>(null);
-
-  const filteredAccounts = useMemo(() => {
-    return accounts.filter((a) => {
-      if (accountFilter !== 'all' && a.type !== accountFilter) return false;
-      if (accountSearch) {
-        const q = accountSearch.toLowerCase();
-        return a.name.toLowerCase().includes(q) || a.email.toLowerCase().includes(q) || a.provider.toLowerCase().includes(q);
-      }
-      return true;
-    });
-  }, [accounts, accountFilter, accountSearch]);
-
-  const handleTestAccount = async (acc: EmailAccount, testType: 'smtp' | 'imap') => {
-    setTestingId(`${acc.id}-${testType}`);
+  // Open Connect Modal
+  const handleOpenConnect = (acc?: EmailAccount) => {
     setFeedback(null);
-    try {
-      const res = await mailIntegrationApi.testConnection({ id: acc.id, test_type: testType });
-      setFeedback({ type: 'success', message: `✅ ${acc.email} (${testType.toUpperCase()}): ${res.message}` });
-    } catch (e: any) {
-      setFeedback({ type: 'error', message: `❌ ${acc.email} (${testType.toUpperCase()}): ${e.message}` });
-    } finally {
-      setTestingId(null);
-    }
-  };
-
-  const handleDeleteAccount = async (id: string, email: string) => {
-    if (!window.confirm(`Disconnect mailbox ${email}? Outgoing AI dispatch and inbound sync for this account will stop.`)) return;
-    try {
-      await mailIntegrationApi.deleteAccount(id);
-      setFeedback({ type: 'success', message: `Mailbox ${email} disconnected.` });
-      loadData();
-    } catch (e: any) {
-      setFeedback({ type: 'error', message: e.message });
-    }
-  };
-
-  // ------------------------------------------------------------------------------------
-  // TAB 2: CONNECT NEW MAILBOX FORM STATE
-  // ------------------------------------------------------------------------------------
-  const [connProvider, setConnProvider] = useState<MailProviderType>('gmail');
-  const [connType, setConnType] = useState<MailIntegrationType>('both');
-  const [connName, setConnName] = useState('');
-  const [connEmail, setConnEmail] = useState('');
-  const [connPass, setConnPass] = useState('');
-  const [connFromName, setConnFromName] = useState(profile?.full_name || '');
-  const [connSmtpHost, setConnSmtpHost] = useState(PROVIDER_PRESETS.gmail.host);
-  const [connSmtpPort, setConnSmtpPort] = useState('587');
-  const [connImapHost, setConnImapHost] = useState(PROVIDER_PRESETS.gmail.imapHost);
-  const [connImapPort, setConnImapPort] = useState('993');
-  const [connImapSsl, setConnImapSsl] = useState(true);
-  const [connIsShared, setConnIsShared] = useState(true);
-  const [connAssignedUsers, setConnAssignedUsers] = useState<string[]>([]);
-  const [connecting, setConnecting] = useState(false);
-
-  useEffect(() => {
-    if (editingAccount) {
-      setConnProvider(editingAccount.provider);
-      setConnType(editingAccount.type);
-      setConnName(editingAccount.name);
-      setConnEmail(editingAccount.email);
+    if (acc) {
+      setEditingAccount(acc);
+      setConnProvider(acc.provider || 'gmail');
+      setConnType(acc.type || 'both');
+      setConnName(acc.name || '');
+      setConnEmail(acc.email || '');
       setConnPass('');
-      setConnFromName(editingAccount.from_name || '');
-      setConnSmtpHost(editingAccount.smtp_host || PROVIDER_PRESETS[editingAccount.provider].host);
-      setConnSmtpPort(String(editingAccount.smtp_port || 587));
-      setConnImapHost(editingAccount.imap_host || PROVIDER_PRESETS[editingAccount.provider].imapHost);
-      setConnImapPort(String(editingAccount.imap_port || 993));
-      setConnImapSsl(editingAccount.imap_ssl !== false);
-      setConnIsShared(editingAccount.is_shared);
-      setConnAssignedUsers(editingAccount.assigned_user_ids || []);
+      setConnFromName(acc.from_name || profile?.full_name || '');
+      setConnSmtpHost(acc.smtp_host || PROVIDER_PRESETS[acc.provider]?.host || '');
+      setConnSmtpPort(String(acc.smtp_port || 587));
+      setConnImapHost(acc.imap_host || PROVIDER_PRESETS[acc.provider]?.imapHost || '');
+      setConnImapPort(String(acc.imap_port || 993));
+      setConnImapSsl(acc.imap_ssl !== false);
+      setConnIsShared(acc.is_shared !== false);
+      setConnAssignedUsers(acc.assigned_user_ids || []);
+      setShowAdvancedSettings(acc.provider === 'other');
+    } else {
+      setEditingAccount(null);
+      setConnProvider('gmail');
+      setConnType('both');
+      setConnName('');
+      setConnEmail('');
+      setConnPass('');
+      setConnFromName(profile?.full_name || '');
+      setConnSmtpHost(PROVIDER_PRESETS.gmail.host);
+      setConnSmtpPort('587');
+      setConnImapHost(PROVIDER_PRESETS.gmail.imapHost);
+      setConnImapPort('993');
+      setConnImapSsl(true);
+      setConnIsShared(true);
+      setConnAssignedUsers([]);
+      setShowAdvancedSettings(false);
     }
-  }, [editingAccount]);
+    setModalOpen(true);
+  };
 
   const selectProvider = (p: MailProviderType) => {
     setConnProvider(p);
@@ -218,8 +201,10 @@ export function EmailIntegrationPage() {
     setConnSmtpPort(String(preset.port));
     setConnImapHost(preset.imapHost);
     setConnImapPort(String(preset.imapPort));
+    if (p === 'other') setShowAdvancedSettings(true);
   };
 
+  // Submit Connect / Edit Form
   const handleSaveConnection = async (e: React.FormEvent) => {
     e.preventDefault();
     setConnecting(true);
@@ -247,1443 +232,438 @@ export function EmailIntegrationPage() {
         company_id: company?.id,
       });
 
-      setFeedback({ type: 'success', message: res.message || 'Mailbox connected successfully!' });
-      setConnEmail('');
-      setConnPass('');
-      setConnName('');
-      setEditingAccount(null);
-      await loadData();
-      setActiveTab('accounts');
+      setFeedback({ type: 'success', message: res.message || 'Mail ID connected and verified successfully!' });
+      setModalOpen(false);
+      loadData();
     } catch (err: any) {
-      setFeedback({ type: 'error', message: err.message || 'Connection test failed.' });
+      setFeedback({ type: 'error', message: err.message || 'Failed to connect mail account.' });
     } finally {
       setConnecting(false);
     }
   };
 
-  // ------------------------------------------------------------------------------------
-  // TAB 3: AI EMAIL COMPOSER STATE
-  // ------------------------------------------------------------------------------------
-  const sendingAccounts = useMemo(() => accounts.filter((a) => a.type === 'sending' || a.type === 'both'), [accounts]);
-  const [composerAccountId, setComposerAccountId] = useState<string>('');
+  // Open Direct User Assignment Popover/Modal
+  const handleOpenAssignModal = (acc: EmailAccount) => {
+    setAssignModalAccount(acc);
+    setAssignIsShared(acc.is_shared);
+    setAssignUserIds(acc.assigned_user_ids || []);
+    setAssignUserSearch('');
+  };
 
-  useEffect(() => {
-    if (sendingAccounts.length > 0 && !composerAccountId) {
-      setComposerAccountId(sendingAccounts[0].id);
-    }
-  }, [sendingAccounts, composerAccountId]);
-
-  const [composerTo, setComposerTo] = useState('');
-  const [composerCc, setComposerCc] = useState('');
-  const [composerBcc, setComposerBcc] = useState('');
-  const [composerSubject, setComposerSubject] = useState('');
-  const [composerBody, setComposerBody] = useState('');
-  const [composerPrompt, setComposerPrompt] = useState('');
-  const [composerRecipientName, setComposerRecipientName] = useState('');
-  const [composerTone, setComposerTone] = useState<'professional' | 'formal' | 'friendly' | 'urgent' | 'persuasive'>('professional');
-  const [generatingAi, setGeneratingAi] = useState(false);
-  const [sendingEmail, setSendingEmail] = useState(false);
-
-  const handleGenerateAi = async (customPrompt?: string, purpose?: any) => {
-    setGeneratingAi(true);
-    setFeedback(null);
+  // Save Direct User Assignment
+  const handleSaveUserAssignment = async () => {
+    if (!assignModalAccount) return;
+    setSavingAssignment(true);
     try {
-      const res = await mailIntegrationApi.aiCompose({
-        prompt: customPrompt || composerPrompt || 'Follow up politely on the quotation proposal.',
-        purpose: purpose || 'general',
-        tone: composerTone,
-        recipient_name: composerRecipientName || (composerTo.split('@')[0] || 'Valued Partner'),
+      await mailIntegrationApi.assignUsers({
+        id: assignModalAccount.id,
+        is_shared: assignIsShared,
+        assigned_user_ids: assignUserIds,
       });
-      setComposerSubject(res.subject);
-      setComposerBody(res.body);
-      setFeedback({ type: 'success', message: '✨ Email drafted by AI! You can review or edit before sending.' });
-    } catch (e: any) {
-      setFeedback({ type: 'error', message: e.message || 'Failed to draft email with AI.' });
+
+      setAccounts((prev) =>
+        prev.map((a) =>
+          a.id === assignModalAccount.id
+            ? { ...a, is_shared: assignIsShared, assigned_user_ids: assignUserIds }
+            : a
+        )
+      );
+
+      setFeedback({
+        type: 'success',
+        message: `Updated user assignment for ${assignModalAccount.email}.`,
+      });
+      setAssignModalAccount(null);
+    } catch (err: any) {
+      setFeedback({ type: 'error', message: err.message || 'Failed to update user assignments.' });
     } finally {
-      setGeneratingAi(false);
+      setSavingAssignment(false);
     }
   };
 
-  const handleSendEmail = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!composerAccountId) {
-      setFeedback({ type: 'error', message: 'Please select a connected sending mailbox.' });
+  // Toggle user in direct assignment
+  const toggleAssignUser = (userId: string) => {
+    setAssignUserIds((prev) =>
+      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
+    );
+  };
+
+  // Test live connection
+  const handleTestAccount = async (acc: EmailAccount, testType: 'smtp' | 'imap') => {
+    setTestingId(`${acc.id}-${testType}`);
+    setFeedback(null);
+    try {
+      const res = await mailIntegrationApi.testConnection({ id: acc.id, test_type: testType });
+      setFeedback({ type: 'success', message: `✅ ${acc.email} (${testType.toUpperCase()}): ${res.message}` });
+    } catch (e: any) {
+      setFeedback({ type: 'error', message: `❌ ${acc.email} (${testType.toUpperCase()}): ${e.message}` });
+    } finally {
+      setTestingId(null);
+    }
+  };
+
+  // Delete / Disconnect Account
+  const handleDeleteAccount = async (id: string, email: string) => {
+    if (!window.confirm(`Disconnect mailbox "${email}"? Outgoing dispatch and inbound sync for this mail ID will stop.`)) {
       return;
     }
-    setSendingEmail(true);
-    setFeedback(null);
-
     try {
-      const res = await mailIntegrationApi.sendEmail({
-        account_id: composerAccountId,
-        to: composerTo,
-        cc: composerCc,
-        bcc: composerBcc,
-        subject: composerSubject,
-        body: composerBody,
-        is_ai_generated: true,
-        ai_prompt: composerPrompt,
-      });
-
-      setFeedback({ type: 'success', message: `🚀 ${res.message} (Message ID: ${res.messageId || 'sent'})` });
-      setComposerTo('');
-      setComposerCc('');
-      setComposerBcc('');
-      setComposerSubject('');
-      setComposerBody('');
-      setComposerPrompt('');
+      await mailIntegrationApi.deleteAccount(id);
+      setFeedback({ type: 'success', message: `Mailbox ${email} disconnected successfully.` });
+      loadData();
     } catch (e: any) {
-      setFeedback({ type: 'error', message: e.message || 'Failed to dispatch email.' });
-    } finally {
-      setSendingEmail(false);
+      setFeedback({ type: 'error', message: e.message || 'Failed to disconnect mailbox.' });
     }
   };
 
-  // ------------------------------------------------------------------------------------
-  // TAB 4: INBOUND MAIL VIEWER STATE
-  // ------------------------------------------------------------------------------------
-  const receivingAccounts = useMemo(() => accounts.filter((a) => a.type === 'receiving' || a.type === 'both'), [accounts]);
-  const [inboundAccountId, setInboundAccountId] = useState<string>('all');
-  const [syncingInbox, setSyncingInbox] = useState(false);
-  const [selectedInboundEmail, setSelectedInboundEmail] = useState<InboundEmail | null>(null);
+  // Filtered Accounts
+  const filteredAccounts = useMemo(() => {
+    return accounts.filter((acc) => {
+      if (typeFilter !== 'all' && acc.type !== typeFilter) return false;
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        const matchesEmail = acc.email.toLowerCase().includes(q);
+        const matchesName = acc.name?.toLowerCase().includes(q);
+        const matchesProvider = acc.provider?.toLowerCase().includes(q);
+        const assignedNames = (acc.assigned_user_ids || [])
+          .map((uid) => colleagues.find((c) => c.id === uid)?.full_name?.toLowerCase())
+          .filter(Boolean)
+          .join(' ');
+        const matchesUser = assignedNames.includes(q);
+        return matchesEmail || matchesName || matchesProvider || matchesUser;
+      }
+      return true;
+    });
+  }, [accounts, typeFilter, searchQuery, colleagues]);
 
-  const filteredInbound = useMemo(() => {
-    if (inboundAccountId === 'all') return inboundEmails;
-    return inboundEmails.filter((m) => m.account_id === inboundAccountId);
-  }, [inboundEmails, inboundAccountId]);
+  // Filtered colleagues inside assign modal
+  const filteredColleagues = useMemo(() => {
+    const q = assignUserSearch.toLowerCase().trim();
+    if (!q) return colleagues;
+    return colleagues.filter(
+      (c) =>
+        c.full_name?.toLowerCase().includes(q) ||
+        c.email?.toLowerCase().includes(q) ||
+        c.role?.toLowerCase().includes(q)
+    );
+  }, [colleagues, assignUserSearch]);
 
-  useEffect(() => {
-    if (filteredInbound.length > 0 && !selectedInboundEmail) {
-      setSelectedInboundEmail(filteredInbound[0]);
-    }
-  }, [filteredInbound, selectedInboundEmail]);
+  const canManage = isSuperAdmin || isCompanyAdmin || callerPerms.can_connect_sending || callerPerms.can_connect_receiving;
 
-  const handleSyncInbound = async () => {
-    const accId = inboundAccountId === 'all' ? receivingAccounts[0]?.id : inboundAccountId;
-    if (!accId) {
-      setFeedback({ type: 'error', message: 'No receiving mailbox available to sync.' });
-      return;
-    }
-    setSyncingInbox(true);
-    setFeedback(null);
-    try {
-      const res = await mailIntegrationApi.syncInbound(accId);
-      setFeedback({ type: 'success', message: res.message || 'Inbox synced successfully.' });
-      const refreshed = await mailIntegrationApi.getInbound(inboundAccountId === 'all' ? undefined : inboundAccountId);
-      setInboundEmails(refreshed.emails || []);
-    } catch (e: any) {
-      setFeedback({ type: 'error', message: e.message || 'Failed to sync inbound mailbox.' });
-    } finally {
-      setSyncingInbox(false);
-    }
-  };
-
-  const handleReplyWithAi = (email: InboundEmail) => {
-    setActiveTab('composer');
-    setComposerTo(email.from_address);
-    setComposerSubject(email.subject.startsWith('Re:') ? email.subject : `Re: ${email.subject}`);
-    setComposerRecipientName(email.from_name || email.from_address.split('@')[0]);
-    handleGenerateAi(`Reply addressing the inquiry: "${email.snippet || email.body_text.slice(0, 200)}"`, 'reply_inquiry');
-  };
-
-  // ------------------------------------------------------------------------------------
-  // TAB 5: USER PERMISSIONS STATE
-  // ------------------------------------------------------------------------------------
-  const [savingPermUserId, setSavingPermUserId] = useState<string | null>(null);
-
-  const handleTogglePerm = async (userId: string, key: 'can_connect_sending' | 'can_connect_receiving' | 'can_use_ai_composer', val: boolean) => {
-    const usr = userPermissions.find((u) => u.user_id === userId);
-    if (!usr) return;
-
-    const updated = { ...usr, [key]: val };
-    setUserPermissions((prev) => prev.map((u) => (u.user_id === userId ? updated : u)));
-    setSavingPermUserId(userId);
-
-    try {
-      await mailIntegrationApi.savePermission({
-        user_id: userId,
-        company_id: company?.id,
-        can_connect_sending: updated.can_connect_sending,
-        can_connect_receiving: updated.can_connect_receiving,
-        can_use_ai_composer: updated.can_use_ai_composer,
-      });
-      setFeedback({ type: 'success', message: `Permissions updated for ${usr.full_name}.` });
-    } catch (e: any) {
-      setFeedback({ type: 'error', message: e.message });
-      setUserPermissions((prev) => prev.map((u) => (u.user_id === userId ? usr : u)));
-    } finally {
-      setSavingPermUserId(null);
-    }
-  };
-
-  const handleToggleBothPerms = async (userId: string, enable: boolean) => {
-    const usr = userPermissions.find((u) => u.user_id === userId);
-    if (!usr) return;
-
-    const updated = {
-      ...usr,
-      can_connect_sending: enable,
-      can_connect_receiving: enable,
-    };
-
-    setUserPermissions((prev) => prev.map((u) => (u.user_id === userId ? updated : u)));
-    setSavingPermUserId(userId);
-
-    try {
-      await mailIntegrationApi.savePermission({
-        user_id: userId,
-        company_id: company?.id,
-        can_connect_sending: enable,
-        can_connect_receiving: enable,
-        can_use_ai_composer: usr.can_use_ai_composer,
-      });
-      setFeedback({ type: 'success', message: `Full self-setup permissions updated for ${usr.full_name}.` });
-    } catch (e: any) {
-      setFeedback({ type: 'error', message: e.message });
-      setUserPermissions((prev) => prev.map((u) => (u.user_id === userId ? usr : u)));
-    } finally {
-      setSavingPermUserId(null);
-    }
-  };
-
-  // ------------------------------------------------------------------------------------
-  // RENDER (CLEAN CRISP LIGHT THEME - ZERO MURKY SILVER)
-  // ------------------------------------------------------------------------------------
   return (
-    <div className="min-h-full p-4 lg:p-6 space-y-6 bg-[#f8fafc] text-slate-800">
-      {/* Top Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-2 border-b border-slate-200">
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-orange-500 to-amber-500 text-white flex items-center justify-center shadow-md shadow-orange-500/20">
-            <Mail size={22} />
+    <div className="min-h-full p-4 sm:p-6 lg:p-8 space-y-6 bg-[#f8fbff] text-slate-800 font-sans">
+      {/* Top Banner Header: Title + Top Adding Button */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs">
+        <div className="flex items-center gap-3.5">
+          <div className="w-11 h-11 rounded-2xl bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center shadow-xs shrink-0">
+            <Mail className="w-6 h-6" />
           </div>
           <div>
-            <h1 className="text-2xl font-black text-slate-800 tracking-tight">
-              Email Integration & Mailbox Hub
+            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+              Email Integration
             </h1>
-            <p className="text-xs text-slate-500 font-medium">
-              Connect multiple mailboxes, assign access user-wise or company-wide, draft emails with AI, and manage permissions.
+            <p className="text-xs text-slate-500 font-medium mt-0.5">
+              Manage connected mail IDs and assign which team members each mail ID supports.
             </p>
           </div>
         </div>
 
-        {(isSuperAdmin || isCompanyAdmin || callerPerms.can_connect_sending || callerPerms.can_connect_receiving) && (
+        {canManage && (
           <button
             type="button"
-            onClick={() => {
-              setEditingAccount(null);
-              setActiveTab('connect');
-            }}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-orange-500 hover:bg-orange-600 font-bold text-xs text-white shadow-md shadow-orange-500/20 transition-all cursor-pointer self-start md:self-auto"
+            onClick={() => handleOpenConnect()}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 font-bold text-xs text-white shadow-md shadow-blue-500/25 transition-all cursor-pointer self-start sm:self-auto shrink-0"
           >
-            <Plus size={15} />
-            <span>Connect New Mailbox</span>
+            <Plus className="w-4 h-4" />
+            <span>+ Connect Mail ID</span>
           </button>
         )}
       </div>
 
-      {/* KPI Highlights Cards (Clean Crisp White with Vibrant Badges) */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
-        <div className="p-4 rounded-2xl border border-slate-200 bg-white shadow-xs hover:shadow-sm transition-all flex flex-col justify-between">
-          <div className="flex items-center justify-between text-xs font-bold text-slate-500">
-            <span>Total Mailboxes</span>
-            <div className="w-7 h-7 rounded-lg bg-orange-50 border border-orange-200 flex items-center justify-center text-orange-600">
-              <Mail size={14} />
-            </div>
-          </div>
-          <div className="mt-3 text-2xl font-black text-slate-900">{accounts.length}</div>
-          <p className="text-[11px] text-slate-500 font-medium mt-0.5">Multi-mailbox connections</p>
-        </div>
-
-        <div className="p-4 rounded-2xl border border-slate-200 bg-white shadow-xs hover:shadow-sm transition-all flex flex-col justify-between">
-          <div className="flex items-center justify-between text-xs font-bold text-slate-500">
-            <span>Sending (Outbound & AI)</span>
-            <div className="w-7 h-7 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600">
-              <Send size={14} />
-            </div>
-          </div>
-          <div className="mt-3 text-2xl font-black text-emerald-600">{sendingCount}</div>
-          <p className="text-[11px] text-slate-500 font-medium mt-0.5">Ready for AI dispatch</p>
-        </div>
-
-        <div className="p-4 rounded-2xl border border-slate-200 bg-white shadow-xs hover:shadow-sm transition-all flex flex-col justify-between">
-          <div className="flex items-center justify-between text-xs font-bold text-slate-500">
-            <span>Receiving (Inbound)</span>
-            <div className="w-7 h-7 rounded-lg bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600">
-              <Inbox size={14} />
-            </div>
-          </div>
-          <div className="mt-3 text-2xl font-black text-blue-600">{receivingCount}</div>
-          <p className="text-[11px] text-slate-500 font-medium mt-0.5">IMAP synced mailboxes</p>
-        </div>
-
-        <div className="p-4 rounded-2xl border border-slate-200 bg-white shadow-xs hover:shadow-sm transition-all flex flex-col justify-between">
-          <div className="flex items-center justify-between text-xs font-bold text-slate-500">
-            <span>Access Mode</span>
-            <div className="w-7 h-7 rounded-lg bg-purple-50 border border-purple-200 flex items-center justify-center text-purple-600">
-              <Shield size={14} />
-            </div>
-          </div>
-          <div className="mt-3 text-base font-black text-purple-700">
-            {isSuperAdmin ? 'Super Admin' : isCompanyAdmin ? 'Company Admin' : 'Assigned User'}
-          </div>
-          <p className="text-[11px] text-slate-500 font-medium mt-0.5">
-            {callerPerms.can_connect_sending && callerPerms.can_connect_receiving
-              ? 'Self-setup enabled'
-              : 'Admin-managed permissions'}
-          </p>
-        </div>
-      </div>
-
-      {/* Global Feedback Alert Banner */}
+      {/* Global Feedback Banner */}
       {feedback && (
         <div
-          className={`flex items-center justify-between p-3.5 rounded-xl border text-xs font-medium shadow-xs ${
+          className={`flex items-center justify-between p-3.5 rounded-xl border text-xs font-medium shadow-xs transition-all ${
             feedback.type === 'success'
               ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
               : 'bg-red-50 border-red-300 text-red-900'
           }`}
         >
           <div className="flex items-center gap-2">
-            {feedback.type === 'success' ? <CheckCircle2 size={16} className="text-emerald-600" /> : <AlertCircle size={16} className="text-red-600" />}
+            {feedback.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+            )}
             <span>{feedback.message}</span>
           </div>
-          <button type="button" onClick={() => setFeedback(null)} className="opacity-70 hover:opacity-100 cursor-pointer">
-            <X size={14} />
+          <button
+            type="button"
+            onClick={() => setFeedback(null)}
+            className="opacity-70 hover:opacity-100 cursor-pointer p-1"
+          >
+            <X className="w-4 h-4" />
           </button>
         </div>
       )}
 
-      {/* Modern Navigation Tabs (Clean Crisp White/Slate Bar) */}
-      <div className="flex flex-wrap gap-1.5 p-1.5 rounded-2xl bg-white border border-slate-200 shadow-xs">
-        <button
-          type="button"
-          onClick={() => setActiveTab('accounts')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            activeTab === 'accounts'
-              ? 'bg-orange-500 text-white shadow-sm'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-          }`}
-        >
-          <Mail size={15} />
-          <span>Connected Mailboxes</span>
-          <span className={`ml-1 rounded-full px-1.5 py-0.2 text-[10px] font-bold ${activeTab === 'accounts' ? 'bg-white/25 text-white' : 'bg-slate-200 text-slate-700'}`}>
-            {accounts.length}
-          </span>
-        </button>
+      {/* Controls Bar: Search & Type Filter & Refresh */}
+      <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Search Box */}
+          <div className="relative w-full md:w-80">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Search by mail ID, user, or provider..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-3 py-1.5 text-xs rounded-xl bg-slate-50 border border-slate-200 text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
 
-        {(isSuperAdmin || isCompanyAdmin || callerPerms.can_connect_sending || callerPerms.can_connect_receiving) && (
+          {/* Type Filter Pills */}
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs">
+            {(
+              [
+                { id: 'all', label: 'All Mail IDs' },
+                { id: 'both', label: 'Send & Receive' },
+                { id: 'sending', label: 'Sending' },
+                { id: 'receiving', label: 'Receiving' },
+              ] as const
+            ).map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setTypeFilter(t.id)}
+                className={`px-3 py-1 rounded-lg font-bold text-[11px] cursor-pointer transition-all ${
+                  typeFilter === t.id
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 justify-end">
           <button
             type="button"
-            onClick={() => {
-              setEditingAccount(null);
-              setActiveTab('connect');
-            }}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              activeTab === 'connect'
-                ? 'bg-orange-500 text-white shadow-sm'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-            }`}
+            onClick={loadData}
+            disabled={loading}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 transition-colors shadow-2xs cursor-pointer"
           >
-            <Plus size={15} />
-            <span>Connect New Mailbox</span>
+            <RefreshCw className={`w-3.5 h-3.5 text-blue-600 ${loading ? 'animate-spin' : ''}`} />
+            <span>Refresh</span>
           </button>
-        )}
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('composer')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            activeTab === 'composer'
-              ? 'bg-orange-500 text-white shadow-sm'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-          }`}
-        >
-          <Sparkles size={15} className={activeTab === 'composer' ? 'text-amber-200' : 'text-orange-500'} />
-          <span>AI Email Composer & Send</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('inbound')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            activeTab === 'inbound'
-              ? 'bg-orange-500 text-white shadow-sm'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-          }`}
-        >
-          <Inbox size={15} className={activeTab === 'inbound' ? 'text-white' : 'text-blue-500'} />
-          <span>Inbound Mail Viewer</span>
-        </button>
-
-        {(isSuperAdmin || isCompanyAdmin) && (
-          <button
-            type="button"
-            onClick={() => setActiveTab('permissions')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              activeTab === 'permissions'
-                ? 'bg-orange-500 text-white shadow-sm'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-            }`}
-          >
-            <ShieldCheck size={15} className={activeTab === 'permissions' ? 'text-white' : 'text-emerald-500'} />
-            <span>User Permissions</span>
-          </button>
-        )}
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('logs')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            activeTab === 'logs'
-              ? 'bg-orange-500 text-white shadow-sm'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-          }`}
-        >
-          <Clock size={15} />
-          <span>Dispatch & Audit Logs</span>
-        </button>
+        </div>
       </div>
 
-      {/* ----------------------------------------------------------------------------- */}
-      {/* TAB 1: CONNECTED MAILBOXES                                                    */}
-      {/* ----------------------------------------------------------------------------- */}
-      {activeTab === 'accounts' && (
-        <div className="space-y-4">
-          {/* Controls Bar */}
-          <div className="flex flex-col md:flex-row gap-3 items-center justify-between p-3.5 rounded-2xl bg-white border border-slate-200 shadow-xs">
-            <div className="flex items-center gap-2 w-full md:w-auto">
-              <div className="relative flex-1 md:w-72">
-                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Search mailboxes by email, name..."
-                  value={accountSearch}
-                  onChange={(e) => setAccountSearch(e.target.value)}
-                  className="w-full pl-9 pr-3 py-1.5 text-xs rounded-xl bg-slate-50 border border-slate-200 text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-orange-500"
-                />
-              </div>
-
-              <div className="flex gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs">
-                {(['all', 'sending', 'receiving', 'both'] as const).map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => setAccountFilter(t)}
-                    className={`px-3 py-1 rounded-lg capitalize font-bold text-[11px] cursor-pointer transition-all ${
-                      accountFilter === t ? 'bg-orange-500 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    {t}
-                  </button>
-                ))}
-              </div>
+      {/* Connected Mail IDs List / Table */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
+        {filteredAccounts.length === 0 ? (
+          <div className="p-12 text-center bg-white space-y-3">
+            <div className="w-16 h-16 rounded-3xl bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center mx-auto mb-3 shadow-2xs">
+              <Mail className="w-8 h-8" />
             </div>
-
-            <div className="flex items-center gap-2 w-full md:w-auto justify-end">
+            <h3 className="text-base font-bold text-slate-900">No Connected Mail IDs Found</h3>
+            <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+              Connect your business or personal mailbox (Gmail, Outlook, Zoho, Custom SMTP/IMAP) to enable AI email dispatch and team communication.
+            </p>
+            {canManage && (
               <button
                 type="button"
-                onClick={loadData}
-                disabled={loading}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 transition-colors shadow-xs cursor-pointer"
+                onClick={() => handleOpenConnect()}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 font-bold text-xs text-white shadow-md shadow-blue-500/25 transition-all cursor-pointer mt-2"
               >
-                <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
-                <span>Refresh</span>
-              </button>
-
-              {(isSuperAdmin || isCompanyAdmin || callerPerms.can_connect_sending || callerPerms.can_connect_receiving) && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditingAccount(null);
-                    setActiveTab('connect');
-                  }}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-orange-500 hover:bg-orange-600 font-bold text-xs text-white transition-colors shadow-sm cursor-pointer"
-                >
-                  <Plus size={14} />
-                  <span>Connect Mailbox</span>
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Accounts Grid or Clean White Empty State */}
-          {filteredAccounts.length === 0 ? (
-            <div className="p-12 text-center rounded-2xl border border-slate-200 bg-white shadow-xs space-y-3">
-              <div className="w-16 h-16 rounded-3xl bg-orange-50 border border-orange-200 text-orange-500 flex items-center justify-center mx-auto mb-3 shadow-xs">
-                <Mail size={32} />
-              </div>
-              <h3 className="text-base font-bold text-slate-800">No Connected Mailboxes Found</h3>
-              <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-                Connect your business or personal mailbox (Gmail, Outlook, Zoho, Custom SMTP/IMAP) to enable AI email dispatch and inbound message synchronization.
-              </p>
-              {(isSuperAdmin || isCompanyAdmin || callerPerms.can_connect_sending || callerPerms.can_connect_receiving) && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditingAccount(null);
-                    setActiveTab('connect');
-                  }}
-                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 font-bold text-xs text-white shadow-md shadow-orange-500/20 transition-all cursor-pointer"
-                >
-                  <Plus size={15} />
-                  <span>Connect Your First Mailbox</span>
-                </button>
-              )}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredAccounts.map((acc) => {
-                const isTestingSmtp = testingId === `${acc.id}-smtp`;
-                const isTestingImap = testingId === `${acc.id}-imap`;
-                const assignedNames = (acc.assigned_user_ids || [])
-                  .map((uid) => colleagues.find((c) => c.id === uid)?.full_name)
-                  .filter(Boolean);
-
-                return (
-                  <div
-                    key={acc.id}
-                    className="p-5 rounded-2xl border border-slate-200 bg-white hover:border-orange-300 hover:shadow-md transition-all flex flex-col justify-between shadow-xs space-y-4"
-                  >
-                    <div>
-                      {/* Top Row: Provider & Status */}
-                      <div className="flex items-center justify-between mb-2.5">
-                        <div className="flex items-center gap-2">
-                          <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-orange-50 text-orange-700 border border-orange-200">
-                            {acc.provider}
-                          </span>
-                          <span
-                            className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase ${
-                              acc.type === 'both'
-                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                : acc.type === 'sending'
-                                ? 'bg-purple-50 text-purple-700 border border-purple-200'
-                                : 'bg-blue-50 text-blue-700 border border-blue-200'
-                            }`}
-                          >
-                            {acc.type === 'both' ? 'Send & Receive' : acc.type === 'sending' ? 'Sending Only' : 'Receiving Only'}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                          <span>Connected</span>
-                        </div>
-                      </div>
-
-                      {/* Name & Email */}
-                      <h4 className="text-sm font-bold text-slate-800 truncate">{acc.name}</h4>
-                      <p className="text-xs text-slate-500 font-mono truncate">{acc.email}</p>
-
-                      {/* Display name */}
-                      {acc.from_name && (
-                        <p className="text-[11px] text-slate-500 mt-1">
-                          Display Name: <span className="font-semibold text-slate-700">{acc.from_name}</span>
-                        </p>
-                      )}
-
-                      {/* Server Details */}
-                      <div className="mt-3 p-2.5 rounded-xl bg-slate-50 border border-slate-200/60 space-y-1 text-[11px] text-slate-600">
-                        {(acc.type === 'sending' || acc.type === 'both') && (
-                          <div className="flex items-center justify-between">
-                            <span className="flex items-center gap-1.5 text-slate-700 font-medium">
-                              <Send size={11} className="text-purple-600" /> SMTP Outbound
-                            </span>
-                            <span className="font-mono text-slate-500">{acc.smtp_host}:{acc.smtp_port}</span>
-                          </div>
-                        )}
-                        {(acc.type === 'receiving' || acc.type === 'both') && (
-                          <div className="flex items-center justify-between">
-                            <span className="flex items-center gap-1.5 text-slate-700 font-medium">
-                              <Inbox size={11} className="text-blue-600" /> IMAP Inbound
-                            </span>
-                            <span className="font-mono text-slate-500">{acc.imap_host}:{acc.imap_port}</span>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Assignment Badge */}
-                      <div className="mt-3 text-[11px]">
-                        {acc.is_shared ? (
-                          <div className="flex items-center gap-1.5 text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 font-medium">
-                            <Building2 size={12} className="text-emerald-600" />
-                            <span>Company Shared Mailbox (All Authorized Users)</span>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-1.5 text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200 font-medium">
-                            <Users size={12} className="text-orange-500" />
-                            <span className="truncate">
-                              Assigned to:{' '}
-                              {assignedNames.length > 0 ? assignedNames.join(', ') : 'Personal Account'}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Actions Row */}
-                    <div className="pt-3 border-t border-slate-100 flex flex-wrap gap-1.5 items-center justify-between text-xs">
-                      <div className="flex gap-1.5">
-                        {(acc.type === 'sending' || acc.type === 'both') && (
-                          <button
-                            type="button"
-                            disabled={isTestingSmtp}
-                            onClick={() => handleTestAccount(acc, 'smtp')}
-                            className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold border border-slate-200 transition-colors inline-flex items-center gap-1 cursor-pointer"
-                            title="Test SMTP Handshake"
-                          >
-                            {isTestingSmtp ? <Loader2 size={11} className="animate-spin" /> : <Server size={11} />}
-                            <span>Test SMTP</span>
-                          </button>
-                        )}
-
-                        {(acc.type === 'receiving' || acc.type === 'both') && (
-                          <button
-                            type="button"
-                            disabled={isTestingImap}
-                            onClick={() => handleTestAccount(acc, 'imap')}
-                            className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold border border-slate-200 transition-colors inline-flex items-center gap-1 cursor-pointer"
-                            title="Test IMAP Handshake"
-                          >
-                            {isTestingImap ? <Loader2 size={11} className="animate-spin" /> : <Inbox size={11} />}
-                            <span>Test IMAP</span>
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="flex gap-1">
-                        {(acc.type === 'sending' || acc.type === 'both') && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setComposerAccountId(acc.id);
-                              setActiveTab('composer');
-                            }}
-                            className="p-1.5 rounded-lg bg-orange-50 hover:bg-orange-100 text-orange-600 transition-colors cursor-pointer"
-                            title="Compose with AI"
-                          >
-                            <Sparkles size={14} />
-                          </button>
-                        )}
-
-                        {(acc.type === 'receiving' || acc.type === 'both') && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setInboundAccountId(acc.id);
-                              setActiveTab('inbound');
-                            }}
-                            className="p-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 transition-colors cursor-pointer"
-                            title="View Synced Inbox"
-                          >
-                            <Inbox size={14} />
-                          </button>
-                        )}
-
-                        {(isSuperAdmin || isCompanyAdmin || acc.created_by === profile?.id) && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingAccount(acc);
-                                setActiveTab('connect');
-                              }}
-                              className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 transition-colors cursor-pointer"
-                              title="Edit Mailbox Details"
-                            >
-                              <Edit2 size={14} />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteAccount(acc.id, acc.email)}
-                              className="p-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 transition-colors cursor-pointer"
-                              title="Disconnect Mailbox"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ----------------------------------------------------------------------------- */}
-      {/* TAB 2: CONNECT NEW MAILBOX FORM                                               */}
-      {/* ----------------------------------------------------------------------------- */}
-      {activeTab === 'connect' && (
-        <div className="max-w-4xl mx-auto p-6 md:p-8 rounded-2xl border border-slate-200 bg-white shadow-sm space-y-6">
-          <div className="flex items-center justify-between pb-4 border-b border-slate-200">
-            <div>
-              <h3 className="text-lg font-bold text-slate-800">
-                {editingAccount ? `Edit Mailbox: ${editingAccount.name}` : 'Connect New Mailbox'}
-              </h3>
-              <p className="text-xs text-slate-500">
-                Configure SMTP for AI outbound dispatch, IMAP for inbound sync, and assign user permissions.
-              </p>
-            </div>
-            {editingAccount && (
-              <button
-                type="button"
-                onClick={() => {
-                  setEditingAccount(null);
-                  setActiveTab('accounts');
-                }}
-                className="px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-xs font-semibold text-slate-700 cursor-pointer"
-              >
-                Cancel Edit
+                <Plus className="w-4 h-4" />
+                <span>+ Connect Your First Mail ID</span>
               </button>
             )}
           </div>
-
-          <form onSubmit={handleSaveConnection} className="space-y-6">
-            {/* 1. Integration Purpose / Type Selector */}
-            <div className="space-y-2.5">
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-                1. Select Integration Capability
-              </label>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setConnType('both')}
-                  className={`p-4 rounded-2xl border text-left transition-all cursor-pointer ${
-                    connType === 'both'
-                      ? 'border-orange-500 bg-orange-50/60 text-slate-900 ring-2 ring-orange-500/20 shadow-xs'
-                      : 'border-slate-200 bg-slate-50/60 text-slate-600 hover:bg-white hover:border-slate-300'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 font-bold text-sm text-slate-800 mb-1">
-                    <ArrowUpDown size={16} className="text-orange-500" />
-                    <span>Both (Sending & Receiving)</span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 leading-relaxed">
-                    Full dual integration: AI outbound dispatch via SMTP + mailbox sync & reading via IMAP.
-                  </p>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setConnType('sending')}
-                  className={`p-4 rounded-2xl border text-left transition-all cursor-pointer ${
-                    connType === 'sending'
-                      ? 'border-purple-500 bg-purple-50/60 text-slate-900 ring-2 ring-purple-500/20 shadow-xs'
-                      : 'border-slate-200 bg-slate-50/60 text-slate-600 hover:bg-white hover:border-slate-300'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 font-bold text-sm text-slate-800 mb-1">
-                    <Send size={16} className="text-purple-600" />
-                    <span>Sending Mail Only (SMTP & AI)</span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 leading-relaxed">
-                    Outbound email dispatch only. Send quotations, invoices, and AI drafted emails.
-                  </p>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setConnType('receiving')}
-                  className={`p-4 rounded-2xl border text-left transition-all cursor-pointer ${
-                    connType === 'receiving'
-                      ? 'border-blue-500 bg-blue-50/60 text-slate-900 ring-2 ring-blue-500/20 shadow-xs'
-                      : 'border-slate-200 bg-slate-50/60 text-slate-600 hover:bg-white hover:border-slate-300'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 font-bold text-sm text-slate-800 mb-1">
-                    <Inbox size={16} className="text-blue-600" />
-                    <span>Receiving Mail Only (IMAP)</span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 leading-relaxed">
-                    Connect existing mailbox to sync and review incoming supplier and customer emails.
-                  </p>
-                </button>
-              </div>
-            </div>
-
-            {/* 2. Provider Preset Selector */}
-            <div className="space-y-2.5">
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-                2. Choose Email Service Provider
-              </label>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                {(['gmail', 'outlook', 'zoho', 'other'] as const).map((p) => (
-                  <button
-                    key={p}
-                    type="button"
-                    onClick={() => selectProvider(p)}
-                    className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all text-center cursor-pointer ${
-                      connProvider === p
-                        ? 'border-orange-500 bg-orange-500 text-white shadow-xs'
-                        : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 hover:border-slate-300'
-                    }`}
-                  >
-                    {PROVIDER_PRESETS[p].name}
-                  </button>
-                ))}
-              </div>
-
-              {/* Provider Guide Info Box */}
-              <div className="p-3.5 rounded-xl bg-orange-50/80 border border-orange-200 text-xs text-slate-700 flex items-start gap-2.5">
-                <Info size={16} className="text-orange-600 shrink-0 mt-0.5" />
-                <div className="flex-1 text-[11px] leading-relaxed">
-                  <span>{PROVIDER_PRESETS[connProvider].guide}</span>
-                  {PROVIDER_PRESETS[connProvider].guideUrl && (
-                    <a
-                      href={PROVIDER_PRESETS[connProvider].guideUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="ml-2 inline-flex items-center gap-1 font-bold text-orange-600 underline hover:text-orange-700"
-                    >
-                      Open Security Settings <ExternalLink size={10} />
-                    </a>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* 3. Credentials & Details */}
-            <div className="space-y-4 pt-2">
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-                3. Mailbox Credentials
-              </label>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">Mailbox Label / Name</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Sales Inquiries, Operations Dispatch"
-                    value={connName}
-                    onChange={(e) => setConnName(e.target.value)}
-                    className="w-full px-3.5 py-2 text-xs rounded-xl bg-white border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 shadow-2xs"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">Email Address</label>
-                  <input
-                    type="email"
-                    required
-                    placeholder="name@company.com"
-                    value={connEmail}
-                    onChange={(e) => setConnEmail(e.target.value)}
-                    className="w-full px-3.5 py-2 text-xs rounded-xl bg-white border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 shadow-2xs font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">
-                    {PROVIDER_PRESETS[connProvider].pwHint}
-                    {editingAccount && <span className="ml-1 text-[10px] text-slate-400 font-normal">(Leave blank to keep saved)</span>}
-                  </label>
-                  <input
-                    type="password"
-                    required={!editingAccount}
-                    placeholder={editingAccount ? '•••••••••••••••• (blank = keep)' : 'Enter password / app password'}
-                    value={connPass}
-                    onChange={(e) => setConnPass(e.target.value)}
-                    className="w-full px-3.5 py-2 text-xs rounded-xl bg-white border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 shadow-2xs"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">Sender Display Name (Receivers See This)</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Argus Technologies Sales"
-                    value={connFromName}
-                    onChange={(e) => setConnFromName(e.target.value)}
-                    className="w-full px-3.5 py-2 text-xs rounded-xl bg-white border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 shadow-2xs"
-                  />
-                </div>
-              </div>
-
-              {/* Advanced Server Settings for SMTP/IMAP */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs">
-                {(connType === 'sending' || connType === 'both') && (
-                  <div className="space-y-2">
-                    <span className="font-bold text-slate-700 flex items-center gap-1.5">
-                      <Send size={12} className="text-purple-600" /> Outbound SMTP Server
-                    </span>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        placeholder="smtp.example.com"
-                        value={connSmtpHost}
-                        onChange={(e) => setConnSmtpHost(e.target.value)}
-                        className="flex-1 px-3 py-1.5 text-xs rounded-lg bg-white border border-slate-300 text-slate-900 font-mono focus:border-orange-500 focus:outline-none"
-                      />
-                      <input
-                        type="text"
-                        placeholder="587"
-                        value={connSmtpPort}
-                        onChange={(e) => setConnSmtpPort(e.target.value)}
-                        className="w-16 px-2 py-1.5 text-xs rounded-lg bg-white border border-slate-300 text-slate-900 font-mono text-center focus:border-orange-500 focus:outline-none"
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {(connType === 'receiving' || connType === 'both') && (
-                  <div className="space-y-2">
-                    <span className="font-bold text-slate-700 flex items-center gap-1.5">
-                      <Inbox size={12} className="text-blue-600" /> Inbound IMAP Server
-                    </span>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        placeholder="imap.example.com"
-                        value={connImapHost}
-                        onChange={(e) => setConnImapHost(e.target.value)}
-                        className="flex-1 px-3 py-1.5 text-xs rounded-lg bg-white border border-slate-300 text-slate-900 font-mono focus:border-orange-500 focus:outline-none"
-                      />
-                      <input
-                        type="text"
-                        placeholder="993"
-                        value={connImapPort}
-                        onChange={(e) => setConnImapPort(e.target.value)}
-                        className="w-16 px-2 py-1.5 text-xs rounded-lg bg-white border border-slate-300 text-slate-900 font-mono text-center focus:border-orange-500 focus:outline-none"
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* 4. Assignment & Access Scope (Admins only) */}
-            {(isSuperAdmin || isCompanyAdmin) && (
-              <div className="space-y-3 pt-2 border-t border-slate-200">
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-                  4. User-Wise Assignment & Sharing
-                </label>
-
-                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
-                  <label className="flex items-center gap-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={connIsShared}
-                      onChange={(e) => setConnIsShared(e.target.checked)}
-                      className="w-4 h-4 rounded text-orange-500 bg-white border-slate-300 focus:ring-orange-500 cursor-pointer"
-                    />
-                    <div>
-                      <span className="text-xs font-bold text-slate-800">Company Shared Mailbox</span>
-                      <p className="text-[11px] text-slate-500">
-                        Allow all authorized team members in your company to view and send via this mailbox.
-                      </p>
-                    </div>
-                  </label>
-
-                  {!connIsShared && (
-                    <div className="pt-3 border-t border-slate-200 space-y-2">
-                      <span className="text-xs font-bold text-slate-700">
-                        Assign to Specific Colleagues:
-                      </span>
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-48 overflow-y-auto p-2 bg-white rounded-xl border border-slate-200">
-                        {colleagues.map((usr) => {
-                          const isAssigned = connAssignedUsers.includes(usr.id);
-                          return (
-                            <label
-                              key={usr.id}
-                              className={`flex items-center gap-2 p-2 rounded-lg text-xs cursor-pointer transition-colors ${
-                                isAssigned ? 'bg-orange-50 border border-orange-300 text-orange-900 font-semibold' : 'hover:bg-slate-50 text-slate-600'
-                              }`}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={isAssigned}
-                                onChange={(e) => {
-                                  if (e.target.checked) setConnAssignedUsers([...connAssignedUsers, usr.id]);
-                                  else setConnAssignedUsers(connAssignedUsers.filter((id) => id !== usr.id));
-                                }}
-                                className="w-3.5 h-3.5 rounded text-orange-500"
-                              />
-                              <span className="truncate">{usr.full_name || usr.email}</span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Submit Button */}
-            <div className="pt-4 flex items-center justify-between border-t border-slate-200">
-              <span className="text-[11px] text-slate-500 flex items-center gap-1.5 font-medium">
-                <Lock size={12} className="text-emerald-600" />
-                Passwords are encrypted via AES-256-GCM and never displayed again.
-              </span>
-
-              <button
-                type="submit"
-                disabled={connecting || !connEmail}
-                className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 font-bold text-xs text-white transition-all shadow-md shadow-orange-500/20 disabled:opacity-50 cursor-pointer"
-              >
-                {connecting ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
-                <span>{editingAccount ? 'Save Changes & Verify' : 'Verify & Connect Mailbox'}</span>
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* ----------------------------------------------------------------------------- */}
-      {/* TAB 3: AI EMAIL COMPOSER & SENDING HUB                                        */}
-      {/* ----------------------------------------------------------------------------- */}
-      {activeTab === 'composer' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column: AI Assistant Prompter & Preset Cards */}
-          <div className="lg:col-span-1 p-5 rounded-2xl border border-slate-200 bg-white shadow-xs space-y-4">
-            <div className="flex items-center gap-2 text-sm font-bold text-slate-800">
-              <Sparkles size={16} className="text-orange-500" />
-              <span>AI Writing Assistant</span>
-            </div>
-            <p className="text-xs text-slate-500 leading-relaxed font-medium">
-              Generate tailored commercial emails for precision CNC machining, quotations, invoice reminders, and supplier requisitions.
-            </p>
-
-            {/* Quick 1-Click Prompt Chips */}
-            <div className="space-y-2">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                Instant Industry Templates
-              </span>
-              <div className="space-y-1.5">
-                <button
-                  type="button"
-                  onClick={() => handleGenerateAi('Follow up politely on the quotation proposal.', 'quotation_followup')}
-                  className="w-full text-left p-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-orange-50 hover:border-orange-300 text-xs font-semibold text-slate-700 hover:text-orange-900 transition-all flex items-center justify-between cursor-pointer"
-                >
-                  <span>📋 Quotation Follow-Up</span>
-                  <ArrowRight size={12} className="opacity-50" />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleGenerateAi('Send a polite payment reminder for the pending tax invoice.', 'payment_reminder')}
-                  className="w-full text-left p-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-orange-50 hover:border-orange-300 text-xs font-semibold text-slate-700 hover:text-orange-900 transition-all flex items-center justify-between cursor-pointer"
-                >
-                  <span>💳 Payment & Invoice Reminder</span>
-                  <ArrowRight size={12} className="opacity-50" />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleGenerateAi('Send dispatch confirmation and delivery challan tracking details.', 'delivery_update')}
-                  className="w-full text-left p-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-orange-50 hover:border-orange-300 text-xs font-semibold text-slate-700 hover:text-orange-900 transition-all flex items-center justify-between cursor-pointer"
-                >
-                  <span>🚚 Production Dispatch Notice</span>
-                  <ArrowRight size={12} className="opacity-50" />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleGenerateAi('Request quotation for raw material bar stock with test certificates.', 'rfq_dispatch')}
-                  className="w-full text-left p-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-orange-50 hover:border-orange-300 text-xs font-semibold text-slate-700 hover:text-orange-900 transition-all flex items-center justify-between cursor-pointer"
-                >
-                  <span>📦 Material Supplier RFQ</span>
-                  <ArrowRight size={12} className="opacity-50" />
-                </button>
-              </div>
-            </div>
-
-            {/* Custom AI Instructions */}
-            <div className="space-y-3 pt-3 border-t border-slate-200">
-              <div>
-                <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
-                  Recipient Name / Company
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. David Vance (AeroParts Global)"
-                  value={composerRecipientName}
-                  onChange={(e) => setComposerRecipientName(e.target.value)}
-                  className="w-full px-3 py-1.5 text-xs rounded-xl bg-slate-50 border border-slate-200 text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-orange-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
-                  Tone of Voice
-                </label>
-                <select
-                  value={composerTone}
-                  onChange={(e) => setComposerTone(e.target.value as any)}
-                  className="w-full px-3 py-1.5 text-xs rounded-xl bg-slate-50 border border-slate-200 text-slate-900 focus:bg-white focus:outline-none focus:border-orange-500 capitalize font-medium"
-                >
-                  <option value="professional">Professional & Technical</option>
-                  <option value="formal">Formal Executive</option>
-                  <option value="friendly">Warm & Collaborative</option>
-                  <option value="urgent">Urgent / Priority</option>
-                  <option value="persuasive">Persuasive Commercial</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
-                  Custom AI Instructions
-                </label>
-                <textarea
-                  rows={3}
-                  placeholder="e.g. Write a follow-up about the 10mm milling inserts quote sent last Monday. Offer a 5% discount if order confirmed by Friday."
-                  value={composerPrompt}
-                  onChange={(e) => setComposerPrompt(e.target.value)}
-                  className="w-full p-2.5 text-xs rounded-xl bg-slate-50 border border-slate-200 text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-orange-500"
-                />
-              </div>
-
-              <button
-                type="button"
-                disabled={generatingAi}
-                onClick={() => handleGenerateAi()}
-                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 font-bold text-xs text-white shadow-md shadow-orange-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
-              >
-                {generatingAi ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                <span>Draft with AI Assistant</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Right Column: Outbound Compose Form & Live Preview */}
-          <div className="lg:col-span-2 p-6 rounded-2xl border border-slate-200 bg-white shadow-sm space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-              <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
-                <Send size={16} className="text-emerald-600" />
-                <span>Outbound Mail Dispatch</span>
-              </h3>
-              <span className="text-[11px] text-slate-500 font-medium">
-                Emails are sent directly from your connected mail server.
-              </span>
-            </div>
-
-            <form onSubmit={handleSendEmail} className="space-y-3.5">
-              {/* Sending Mailbox Selector */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Send From (Connected Mailbox)</label>
-                {sendingAccounts.length === 0 ? (
-                  <div className="p-3 rounded-xl bg-amber-50 border border-amber-300 text-xs text-amber-900 font-medium">
-                    No sending accounts available. Please connect a sending mailbox first.
-                  </div>
-                ) : (
-                  <select
-                    value={composerAccountId}
-                    onChange={(e) => setComposerAccountId(e.target.value)}
-                    className="w-full px-3.5 py-2 text-xs font-medium rounded-xl bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white focus:outline-none focus:border-orange-500 font-mono shadow-2xs"
-                  >
-                    {sendingAccounts.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.name} ({a.email})
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-
-              {/* To, Cc, Bcc */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div className="md:col-span-2">
-                  <label className="block text-xs font-bold text-slate-700 mb-1">To (Recipients)</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="client@aeroparts.com, buyer@precision.in (comma separated)"
-                    value={composerTo}
-                    onChange={(e) => setComposerTo(e.target.value)}
-                    className="w-full px-3.5 py-2 text-xs rounded-xl bg-slate-50 border border-slate-300 text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-orange-500 shadow-2xs"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Cc (Optional)</label>
-                  <input
-                    type="text"
-                    placeholder="manager@company.com"
-                    value={composerCc}
-                    onChange={(e) => setComposerCc(e.target.value)}
-                    className="w-full px-3.5 py-2 text-xs rounded-xl bg-slate-50 border border-slate-300 text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-orange-500 shadow-2xs"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Bcc (Optional)</label>
-                  <input
-                    type="text"
-                    placeholder="records@arguscnc.com"
-                    value={composerBcc}
-                    onChange={(e) => setComposerBcc(e.target.value)}
-                    className="w-full px-3.5 py-2 text-xs rounded-xl bg-slate-50 border border-slate-300 text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-orange-500 shadow-2xs"
-                  />
-                </div>
-              </div>
-
-              {/* Subject */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Subject Line</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Enter email subject..."
-                  value={composerSubject}
-                  onChange={(e) => setComposerSubject(e.target.value)}
-                  className="w-full px-3.5 py-2 text-xs font-bold rounded-xl bg-slate-50 border border-slate-300 text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-orange-500 shadow-2xs"
-                />
-              </div>
-
-              {/* Body */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Email Body Content</label>
-                <textarea
-                  rows={10}
-                  required
-                  placeholder="Write your email or generate it using the AI Assistant on the left..."
-                  value={composerBody}
-                  onChange={(e) => setComposerBody(e.target.value)}
-                  className="w-full p-3.5 text-xs leading-relaxed font-sans rounded-xl bg-slate-50 border border-slate-300 text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-orange-500 shadow-2xs"
-                />
-              </div>
-
-              {/* Action Buttons */}
-              <div className="pt-2 flex items-center justify-between">
-                <span className="text-[11px] text-slate-500 font-medium">
-                  Ready to send via {sendingAccounts.find((a) => a.id === composerAccountId)?.email || 'connected mailbox'}
-                </span>
-
-                <button
-                  type="submit"
-                  disabled={sendingEmail || !composerTo || !composerSubject || !composerBody}
-                  className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 font-bold text-xs text-white transition-all shadow-md shadow-emerald-600/20 disabled:opacity-50 cursor-pointer"
-                >
-                  {sendingEmail ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
-                  <span>Dispatch Email Now</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ----------------------------------------------------------------------------- */}
-      {/* TAB 4: INBOUND MAIL VIEWER                                                    */}
-      {/* ----------------------------------------------------------------------------- */}
-      {activeTab === 'inbound' && (
-        <div className="space-y-4">
-          {/* Controls Bar */}
-          <div className="flex flex-col md:flex-row gap-3 items-center justify-between p-3.5 rounded-2xl bg-white border border-slate-200 shadow-xs">
-            <div className="flex items-center gap-2 w-full md:w-auto">
-              <label className="text-xs text-slate-600 font-bold">Mailbox:</label>
-              <select
-                value={inboundAccountId}
-                onChange={(e) => setInboundAccountId(e.target.value)}
-                className="px-3.5 py-1.5 text-xs font-medium rounded-xl bg-slate-50 border border-slate-300 text-slate-800 font-mono focus:bg-white focus:outline-none focus:border-orange-500"
-              >
-                <option value="all">All Receiving Mailboxes</option>
-                {receivingAccounts.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name} ({a.email})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                disabled={syncingInbox}
-                onClick={handleSyncInbound}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 font-bold text-xs text-white shadow-md shadow-blue-600/20 transition-colors disabled:opacity-50 cursor-pointer"
-              >
-                <RefreshCw size={13} className={syncingInbox ? 'animate-spin' : ''} />
-                <span>{syncingInbox ? 'Syncing...' : 'Sync Mailbox'}</span>
-              </button>
-            </div>
-          </div>
-
-          {/* 2-Pane Split Email Client */}
-          {filteredInbound.length === 0 ? (
-            <div className="p-12 text-center rounded-2xl border border-slate-200 bg-white shadow-xs space-y-3">
-              <div className="w-16 h-16 rounded-3xl bg-blue-50 border border-blue-200 text-blue-500 flex items-center justify-center mx-auto mb-3 shadow-xs">
-                <Inbox size={32} />
-              </div>
-              <h3 className="text-base font-bold text-slate-800">No Received Emails Yet</h3>
-              <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-                Connect an IMAP receiving mailbox and click &quot;Sync Mailbox&quot; to fetch your latest inquiries, purchase orders, and payment advices.
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-0 h-[620px] border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-xs">
-              {/* Left Column: Email List (5 cols) */}
-              <div className="md:col-span-5 border-r border-slate-200 overflow-y-auto divide-y divide-slate-100">
-                {filteredInbound.map((email) => {
-                  const isSelected = selectedInboundEmail?.id === email.id;
-                  return (
-                    <button
-                      key={email.id}
-                      type="button"
-                      onClick={() => setSelectedInboundEmail(email)}
-                      className={`w-full p-4 text-left transition-colors flex flex-col gap-1.5 cursor-pointer ${
-                        isSelected ? 'bg-orange-50/70 border-l-4 border-l-orange-500' : 'hover:bg-slate-50'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className="font-bold text-slate-900 truncate max-w-[180px]">
-                          {email.from_name || email.from_address}
-                        </span>
-                        <span className="text-slate-400 font-mono text-[10px]">
-                          {new Date(email.received_at).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })}
-                        </span>
-                      </div>
-                      <h5 className="text-xs font-bold text-slate-800 truncate">{email.subject}</h5>
-                      <p className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed">
-                        {email.snippet || email.body_text}
-                      </p>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Right Column: Email Reader (7 cols) */}
-              <div className="md:col-span-7 p-6 overflow-y-auto flex flex-col justify-between space-y-4 bg-slate-50/30">
-                {selectedInboundEmail ? (
-                  <div className="space-y-4">
-                    {/* Header */}
-                    <div className="pb-4 border-b border-slate-200 space-y-2.5">
-                      <div className="flex items-start justify-between gap-4">
-                        <h3 className="text-base font-bold text-slate-900 leading-snug">
-                          {selectedInboundEmail.subject}
-                        </h3>
-                        <button
-                          type="button"
-                          onClick={() => handleReplyWithAi(selectedInboundEmail)}
-                          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-orange-500 hover:bg-orange-600 font-bold text-xs text-white shrink-0 shadow-sm cursor-pointer"
-                        >
-                          <CornerUpLeft size={13} />
-                          <span>Reply with AI</span>
-                        </button>
-                      </div>
-
-                      <div className="flex flex-wrap items-center justify-between text-xs text-slate-500">
-                        <div>
-                          From: <span className="font-bold text-slate-800">{selectedInboundEmail.from_name}</span>{' '}
-                          <span className="font-mono text-[11px] text-slate-500">&lt;{selectedInboundEmail.from_address}&gt;</span>
-                        </div>
-                        <div className="font-mono text-[11px] text-slate-400">
-                          {new Date(selectedInboundEmail.received_at).toLocaleString()}
-                        </div>
-                      </div>
-
-                      <div className="text-xs text-slate-500">
-                        To: <span className="font-mono text-[11px] text-slate-700 font-semibold">{selectedInboundEmail.to_address}</span>
-                      </div>
-                    </div>
-
-                    {/* Email Body */}
-                    <div className="text-xs text-slate-700 leading-relaxed whitespace-pre-line font-sans p-2">
-                      {selectedInboundEmail.body_text}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="h-full flex items-center justify-center text-slate-400 text-xs">
-                    Select an email from the left to read its contents.
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ----------------------------------------------------------------------------- */}
-      {/* TAB 5: USER PERMISSIONS MATRIX (Super Admin / Company Admin only)             */}
-      {/* ----------------------------------------------------------------------------- */}
-      {activeTab === 'permissions' && (isSuperAdmin || isCompanyAdmin) && (
-        <div className="p-6 rounded-2xl border border-slate-200 bg-white shadow-xs space-y-4">
-          <div className="pb-4 border-b border-slate-200">
-            <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
-              <ShieldCheck size={18} className="text-emerald-600" />
-              <span>User Email Setup & Capability Permissions</span>
-            </h3>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Control whether employees can connect their own personal/work mailboxes (Sending, Receiving, or Both), or must strictly use company-assigned mailboxes.
-            </p>
-          </div>
-
+        ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider bg-slate-50">
-                  <th className="py-3 px-4">Employee / Colleague</th>
-                  <th className="py-3 px-4">Role</th>
-                  <th className="py-3 px-4 text-center">Can Connect Sending Mail</th>
-                  <th className="py-3 px-4 text-center">Can Connect Receiving Mail</th>
-                  <th className="py-3 px-4 text-center">Can Connect Both</th>
-                  <th className="py-3 px-4 text-center">AI Email Composer</th>
+            <table className="w-full text-left text-xs text-slate-600 min-w-[780px]">
+              <thead className="bg-slate-50/80 text-[10px] text-slate-400 uppercase font-mono font-bold tracking-wider border-b border-slate-200">
+                <tr>
+                  <th className="p-4">CONNECTED MAIL ID</th>
+                  <th className="p-4">SUPPORTED USERS (WHO CAN USE THIS MAIL)</th>
+                  <th className="p-4">CAPABILITIES</th>
+                  <th className="p-4">SERVER PROTOCOLS</th>
+                  <th className="p-4 text-right">ACTIONS</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
-                {userPermissions.map((usr) => {
-                  const isSaving = savingPermUserId === usr.user_id;
-                  const isBoth = usr.can_connect_sending && usr.can_connect_receiving;
+              <tbody className="divide-y divide-slate-100 font-medium">
+                {filteredAccounts.map((acc) => {
+                  const isTestingSmtp = testingId === `${acc.id}-smtp`;
+                  const isTestingImap = testingId === `${acc.id}-imap`;
+                  const assignedUsers = (acc.assigned_user_ids || [])
+                    .map((uid) => colleagues.find((c) => c.id === uid))
+                    .filter(Boolean) as { id: string; full_name: string; email: string; role: string }[];
 
                   return (
-                    <tr key={usr.user_id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="py-3 px-4">
-                        <div className="font-bold text-slate-900">{usr.full_name}</div>
-                        <div className="text-[11px] font-mono text-slate-500">{usr.email}</div>
+                    <tr key={acc.id} className="hover:bg-slate-50/80 transition-colors">
+                      {/* Column 1: Connected Mail ID & Provider */}
+                      <td className="p-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs">
+                            {acc.provider === 'gmail'
+                              ? 'G'
+                              : acc.provider === 'outlook'
+                              ? 'MS'
+                              : acc.provider === 'zoho'
+                              ? 'Z'
+                              : 'M'}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-slate-900 text-xs truncate max-w-[200px]">
+                                {acc.email}
+                              </span>
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase font-mono bg-slate-100 text-slate-600 border border-slate-200">
+                                {acc.provider}
+                              </span>
+                            </div>
+                            <div className="text-[11px] text-slate-500 font-medium mt-0.5 truncate max-w-[220px]">
+                              {acc.name || acc.from_name || 'Mailbox'}
+                            </div>
+                          </div>
+                        </div>
                       </td>
 
-                      <td className="py-3 px-4">
-                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase bg-slate-100 text-slate-700 border border-slate-200">
-                          {usr.role}
+                      {/* Column 2: Supported Users (Straight to that Selecting the Users) */}
+                      <td className="p-4">
+                        <div className="flex items-center justify-between gap-2 max-w-sm">
+                          <div className="flex-1 min-w-0">
+                            {acc.is_shared ? (
+                              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-bold">
+                                <Building2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                <span>All Users (Company-wide Support)</span>
+                              </div>
+                            ) : assignedUsers.length > 0 ? (
+                              <div className="flex flex-wrap items-center gap-1">
+                                {assignedUsers.slice(0, 3).map((u) => (
+                                  <span
+                                    key={u.id}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200 text-[11px] font-semibold"
+                                  >
+                                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                                    <span className="truncate max-w-[100px]">{u.full_name || u.email}</span>
+                                  </span>
+                                ))}
+                                {assignedUsers.length > 3 && (
+                                  <span className="px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600 font-mono text-[10px] font-bold border border-slate-200">
+                                    +{assignedUsers.length - 3} more
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-slate-400 text-xs italic">
+                                No users assigned yet
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Direct Inline Selector Button */}
+                          {canManage && (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenAssignModal(acc)}
+                              className="px-2.5 py-1 rounded-lg bg-slate-50 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 hover:border-blue-300 text-[11px] font-bold transition-all flex items-center gap-1 shrink-0 cursor-pointer shadow-2xs"
+                              title="Select which users this mail ID supports"
+                            >
+                              <Users className="w-3.5 h-3.5 text-blue-600" />
+                              <span>Select Users</span>
+                              <ChevronDown className="w-3 h-3 text-slate-400" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Column 3: Capabilities */}
+                      <td className="p-4">
+                        <span
+                          className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase font-mono ${
+                            acc.type === 'both'
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : acc.type === 'sending'
+                              ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                              : 'bg-blue-50 text-blue-700 border border-blue-200'
+                          }`}
+                        >
+                          {acc.type === 'both'
+                            ? 'Send & Receive'
+                            : acc.type === 'sending'
+                            ? 'Sending Only'
+                            : 'Receiving Only'}
                         </span>
                       </td>
 
-                      {/* Can Connect Sending */}
-                      <td className="py-3 px-4 text-center">
-                        <input
-                          type="checkbox"
-                          disabled={usr.is_admin || isSaving}
-                          checked={usr.can_connect_sending}
-                          onChange={(e) => handleTogglePerm(usr.user_id, 'can_connect_sending', e.target.checked)}
-                          className="w-4 h-4 rounded text-orange-500 bg-white border-slate-300 focus:ring-orange-500 cursor-pointer disabled:opacity-50"
-                        />
+                      {/* Column 4: Server Protocols & Live Tests */}
+                      <td className="p-4">
+                        <div className="flex items-center gap-1.5">
+                          {(acc.type === 'sending' || acc.type === 'both') && (
+                            <button
+                              type="button"
+                              disabled={isTestingSmtp}
+                              onClick={() => handleTestAccount(acc, 'smtp')}
+                              className="px-2 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold border border-slate-200 transition-colors inline-flex items-center gap-1 cursor-pointer"
+                              title="Verify SMTP Outbound"
+                            >
+                              {isTestingSmtp ? (
+                                <Loader2 className="w-3 h-3 animate-spin text-blue-600" />
+                              ) : (
+                                <Server className="w-3 h-3 text-slate-500" />
+                              )}
+                              <span>SMTP</span>
+                            </button>
+                          )}
+
+                          {(acc.type === 'receiving' || acc.type === 'both') && (
+                            <button
+                              type="button"
+                              disabled={isTestingImap}
+                              onClick={() => handleTestAccount(acc, 'imap')}
+                              className="px-2 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold border border-slate-200 transition-colors inline-flex items-center gap-1 cursor-pointer"
+                              title="Verify IMAP Inbound"
+                            >
+                              {isTestingImap ? (
+                                <Loader2 className="w-3 h-3 animate-spin text-blue-600" />
+                              ) : (
+                                <Inbox className="w-3 h-3 text-slate-500" />
+                              )}
+                              <span>IMAP</span>
+                            </button>
+                          )}
+                        </div>
                       </td>
 
-                      {/* Can Connect Receiving */}
-                      <td className="py-3 px-4 text-center">
-                        <input
-                          type="checkbox"
-                          disabled={usr.is_admin || isSaving}
-                          checked={usr.can_connect_receiving}
-                          onChange={(e) => handleTogglePerm(usr.user_id, 'can_connect_receiving', e.target.checked)}
-                          className="w-4 h-4 rounded text-orange-500 bg-white border-slate-300 focus:ring-orange-500 cursor-pointer disabled:opacity-50"
-                        />
-                      </td>
-
-                      {/* Can Connect Both (Convenience Switch) */}
-                      <td className="py-3 px-4 text-center">
-                        <input
-                          type="checkbox"
-                          disabled={usr.is_admin || isSaving}
-                          checked={isBoth}
-                          onChange={(e) => handleToggleBothPerms(usr.user_id, e.target.checked)}
-                          className="w-4 h-4 rounded text-emerald-600 bg-white border-slate-300 focus:ring-emerald-500 cursor-pointer disabled:opacity-50"
-                        />
-                      </td>
-
-                      {/* AI Composer */}
-                      <td className="py-3 px-4 text-center">
-                        <input
-                          type="checkbox"
-                          disabled={usr.is_admin || isSaving}
-                          checked={usr.can_use_ai_composer}
-                          onChange={(e) => handleTogglePerm(usr.user_id, 'can_use_ai_composer', e.target.checked)}
-                          className="w-4 h-4 rounded text-purple-600 bg-white border-slate-300 focus:ring-purple-500 cursor-pointer disabled:opacity-50"
-                        />
+                      {/* Column 5: Actions */}
+                      <td className="p-4 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          {canManage && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenConnect(acc)}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
+                                title="Edit Connection"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteAccount(acc.id, acc.email)}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                                title="Disconnect Mail ID"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -1691,90 +671,489 @@ export function EmailIntegrationPage() {
               </tbody>
             </table>
           </div>
+        )}
+
+        {/* Table Footer */}
+        <div className="border-t border-slate-100 p-3.5 flex items-center justify-between text-xs text-slate-500 font-medium bg-slate-50/50">
+          <div>
+            Showing <strong className="text-slate-800">{filteredAccounts.length}</strong> connected mail IDs
+          </div>
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* DIRECT USER ASSIGNMENT MODAL ("stright to that selecting the users")      */}
+      {/* ========================================================================= */}
+      {assignModalAccount && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-150"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !savingAssignment) setAssignModalAccount(null);
+          }}
+        >
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/70 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center font-bold">
+                  <Users className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">
+                    Select Users for Mail ID
+                  </h3>
+                  <p className="text-xs text-slate-500 font-mono truncate max-w-xs">
+                    {assignModalAccount.email}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={savingAssignment}
+                onClick={() => setAssignModalAccount(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-5 space-y-4 overflow-y-auto flex-1">
+              {/* Option 1: Support All Users */}
+              <div
+                onClick={() => setAssignIsShared(!assignIsShared)}
+                className={`p-3.5 rounded-xl border transition-all cursor-pointer flex items-start gap-3 select-none ${
+                  assignIsShared
+                    ? 'bg-blue-50/70 border-blue-300 ring-2 ring-blue-100'
+                    : 'bg-slate-50 border-slate-200 hover:bg-slate-100/70'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={assignIsShared}
+                  onChange={() => {}}
+                  className="mt-0.5 w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300"
+                />
+                <div>
+                  <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                    <Building2 className="w-4 h-4 text-blue-600" />
+                    <span>Support All Users (Company-wide Shared Mailbox)</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Every active employee in {company?.name || 'the organization'} can send and receive emails through this mail ID.
+                  </p>
+                </div>
+              </div>
+
+              {/* Option 2: Individual User Picker */}
+              {!assignIsShared && (
+                <div className="space-y-3 pt-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-700">
+                      Select Specific Users ({assignUserIds.length} selected):
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setAssignUserIds(colleagues.map((c) => c.id))}
+                        className="text-[11px] font-bold text-blue-600 hover:text-blue-800 cursor-pointer"
+                      >
+                        Select All
+                      </button>
+                      <span className="text-slate-300">|</span>
+                      <button
+                        type="button"
+                        onClick={() => setAssignUserIds([])}
+                        className="text-[11px] font-bold text-slate-500 hover:text-slate-700 cursor-pointer"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Filter Colleagues Input */}
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                    <input
+                      type="text"
+                      placeholder="Search colleagues by name, email, or role..."
+                      value={assignUserSearch}
+                      onChange={(e) => setAssignUserSearch(e.target.value)}
+                      className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  {/* Colleagues Checkbox List */}
+                  <div className="max-h-60 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-xl">
+                    {filteredColleagues.length === 0 ? (
+                      <div className="p-4 text-center text-xs text-slate-400">
+                        No team members match "{assignUserSearch}"
+                      </div>
+                    ) : (
+                      filteredColleagues.map((col) => {
+                        const isChecked = assignUserIds.includes(col.id);
+                        return (
+                          <div
+                            key={col.id}
+                            onClick={() => toggleAssignUser(col.id)}
+                            className={`p-3 text-xs flex items-center justify-between cursor-pointer transition-colors ${
+                              isChecked ? 'bg-blue-50/50' : 'hover:bg-slate-50'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="w-7 h-7 rounded-full bg-slate-800 text-white font-bold text-[10px] flex items-center justify-center shrink-0">
+                                {col.full_name ? col.full_name.slice(0, 2).toUpperCase() : 'U'}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="font-bold text-slate-900 truncate">
+                                  {col.full_name || 'Staff User'}
+                                </div>
+                                <div className="text-[10px] text-slate-400 font-mono truncate">
+                                  {col.email} • <span className="capitalize">{col.role || 'Member'}</span>
+                                </div>
+                              </div>
+                            </div>
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => {}}
+                              className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300 pointer-events-none"
+                            />
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-slate-100 flex items-center justify-end gap-2 bg-slate-50/70 shrink-0">
+              <button
+                type="button"
+                disabled={savingAssignment}
+                onClick={() => setAssignModalAccount(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={savingAssignment}
+                onClick={handleSaveUserAssignment}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-sm shadow-blue-500/20 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {savingAssignment ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Saving...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Save User Assignment</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
-      {/* ----------------------------------------------------------------------------- */}
-      {/* TAB 6: DISPATCH & AUDIT LOGS                                                  */}
-      {/* ----------------------------------------------------------------------------- */}
-      {activeTab === 'logs' && (
-        <div className="p-6 rounded-2xl border border-slate-200 bg-white shadow-xs space-y-4">
-          <div className="pb-4 border-b border-slate-200 flex items-center justify-between">
-            <div>
-              <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
-                <Clock size={16} className="text-orange-500" />
-                <span>Email Activity & Transmission Logs</span>
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Audit trail of all sent messages, AI prompts, and received notifications.
-              </p>
+      {/* ========================================================================= */}
+      {/* CONNECT NEW / EDIT MAIL ID MODAL (Opened by Top Adding Button)             */}
+      {/* ========================================================================= */}
+      {modalOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-150"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !connecting) setModalOpen(false);
+          }}
+        >
+          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh] animate-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/70 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center font-bold">
+                  <Mail className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">
+                    {editingAccount ? 'Edit Connected Mail ID' : 'Connect New Mail ID'}
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Integrate your company mailbox with automated live SMTP/IMAP verification.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={connecting}
+                onClick={() => setModalOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
-          </div>
 
-          {logs.length === 0 ? (
-            <div className="p-8 text-center text-xs text-slate-400">
-              No transmission activity logged yet.
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider bg-slate-50">
-                    <th className="py-2.5 px-3">Timestamp</th>
-                    <th className="py-2.5 px-3">Type</th>
-                    <th className="py-2.5 px-3">From</th>
-                    <th className="py-2.5 px-3">To / Recipients</th>
-                    <th className="py-2.5 px-3">Subject</th>
-                    <th className="py-2.5 px-3">AI Assisting</th>
-                    <th className="py-2.5 px-3">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {logs.map((log) => (
-                    <tr key={log.id} className="hover:bg-slate-50/70">
-                      <td className="py-2.5 px-3 text-slate-500 font-mono text-[11px]">
-                        {new Date(log.created_at || log.received_at).toLocaleString()}
-                      </td>
-                      <td className="py-2.5 px-3">
-                        <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                            log.direction === 'outbound'
-                              ? 'bg-purple-50 text-purple-700 border border-purple-200'
-                              : 'bg-blue-50 text-blue-700 border border-blue-200'
-                          }`}
+            {/* Modal Form Body */}
+            <form onSubmit={handleSaveConnection} className="flex flex-col flex-1 overflow-hidden">
+              <div className="p-6 space-y-5 overflow-y-auto flex-1">
+                {/* 1. Provider Cards */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2 font-mono">
+                    Select Email Provider
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                    {(
+                      [
+                        { id: 'gmail', label: 'Gmail / Google', icon: 'Google' },
+                        { id: 'outlook', label: 'Outlook / M365', icon: 'Microsoft' },
+                        { id: 'zoho', label: 'Zoho Mail', icon: 'Zoho' },
+                        { id: 'other', label: 'Custom / Other', icon: 'SMTP/IMAP' },
+                      ] as const
+                    ).map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => selectProvider(p.id)}
+                        className={`p-3 rounded-xl border text-center transition-all cursor-pointer ${
+                          connProvider === p.id
+                            ? 'bg-blue-50 border-blue-600 text-blue-700 font-bold ring-2 ring-blue-100 shadow-xs'
+                            : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                        }`}
+                      >
+                        <div className="text-xs font-bold">{p.label}</div>
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Provider Guide Hint */}
+                  <div className="mt-2.5 p-3 rounded-xl bg-blue-50/70 border border-blue-100 text-[11px] text-blue-900 flex items-start gap-2">
+                    <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                    <div className="leading-relaxed">
+                      <span>{PROVIDER_PRESETS[connProvider].guide}</span>
+                      {PROVIDER_PRESETS[connProvider].guideUrl && (
+                        <a
+                          href={PROVIDER_PRESETS[connProvider].guideUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 font-bold text-blue-700 hover:underline ml-1"
                         >
-                          {log.direction}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3 font-mono text-[11px] text-slate-700 font-semibold">
-                        {log.from_address}
-                      </td>
-                      <td className="py-2.5 px-3 font-mono text-[11px] text-slate-600">
-                        {Array.isArray(log.to_addresses) ? log.to_addresses.join(', ') : log.to_address}
-                      </td>
-                      <td className="py-2.5 px-3 font-bold text-slate-800 max-w-xs truncate">
-                        {log.subject}
-                      </td>
-                      <td className="py-2.5 px-3">
-                        {log.ai_generated ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                            <Sparkles size={10} className="text-amber-500" /> AI Generated
-                          </span>
-                        ) : (
-                          <span className="text-slate-400 text-[10px]">—</span>
-                        )}
-                      </td>
-                      <td className="py-2.5 px-3">
-                        <span className="text-emerald-700 font-bold text-[11px] bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                          {log.status || 'Delivered'}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                          <span>Generate Password</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Mailbox Credentials */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Email Address <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      placeholder="e.g. sales@yourcompany.com"
+                      value={connEmail}
+                      onChange={(e) => setConnEmail(e.target.value)}
+                      className="w-full px-3.5 py-2 text-xs rounded-xl bg-slate-50 border border-slate-200 text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      App Password / Password {editingAccount && <span className="text-slate-400 font-normal">(Leave blank to keep current)</span>}
+                    </label>
+                    <input
+                      type="password"
+                      required={!editingAccount}
+                      placeholder={PROVIDER_PRESETS[connProvider].pwHint}
+                      value={connPass}
+                      onChange={(e) => setConnPass(e.target.value)}
+                      className="w-full px-3.5 py-2 text-xs rounded-xl bg-slate-50 border border-slate-200 text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+
+                {/* 3. Display Name & Capabilities */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      From Display Name
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Argus Sales & Invoicing"
+                      value={connFromName}
+                      onChange={(e) => setConnFromName(e.target.value)}
+                      className="w-full px-3.5 py-2 text-xs rounded-xl bg-slate-50 border border-slate-200 text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Mailbox Mode
+                    </label>
+                    <select
+                      value={connType}
+                      onChange={(e) => setConnType(e.target.value as MailIntegrationType)}
+                      className="w-full px-3.5 py-2 text-xs rounded-xl bg-slate-50 border border-slate-200 text-slate-900 font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="both">Send &amp; Receive (SMTP + IMAP) — Recommended</option>
+                      <option value="sending">Sending Only (SMTP Outbound)</option>
+                      <option value="receiving">Receiving Only (IMAP Inbound)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* 4. Supported Users (Selecting the Users Directly in Setup) */}
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-800 uppercase tracking-wider font-mono">
+                      Which Users Should This Mail ID Support?
+                    </span>
+                  </div>
+
+                  <div
+                    onClick={() => setConnIsShared(!connIsShared)}
+                    className={`p-3 rounded-lg border transition-all cursor-pointer flex items-center gap-2.5 ${
+                      connIsShared ? 'bg-white border-blue-400 ring-1 ring-blue-200' : 'bg-white border-slate-200'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={connIsShared}
+                      onChange={() => {}}
+                      className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300"
+                    />
+                    <div>
+                      <div className="text-xs font-bold text-slate-800">Support All Users (Company-wide)</div>
+                      <div className="text-[10px] text-slate-500">Every active staff member can access and dispatch through this mail ID.</div>
+                    </div>
+                  </div>
+
+                  {!connIsShared && (
+                    <div className="space-y-2 pt-1">
+                      <div className="text-[11px] font-bold text-slate-600">Or Select Specific Users:</div>
+                      <div className="max-h-40 overflow-y-auto divide-y divide-slate-100 bg-white border border-slate-200 rounded-xl">
+                        {colleagues.map((col) => {
+                          const isSelected = connAssignedUsers.includes(col.id);
+                          return (
+                            <div
+                              key={col.id}
+                              onClick={() => {
+                                setConnAssignedUsers((prev) =>
+                                  prev.includes(col.id) ? prev.filter((id) => id !== col.id) : [...prev, col.id]
+                                );
+                              }}
+                              className="p-2.5 text-xs flex items-center justify-between cursor-pointer hover:bg-slate-50"
+                            >
+                              <div className="min-w-0">
+                                <div className="font-bold text-slate-900 truncate">{col.full_name || 'Staff User'}</div>
+                                <div className="text-[10px] text-slate-400 truncate">{col.email}</div>
+                              </div>
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => {}}
+                                className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300"
+                              />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 5. Toggle Advanced Server Settings (SMTP / IMAP hosts) */}
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setShowAdvancedSettings(!showAdvancedSettings)}
+                    className="text-xs font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>{showAdvancedSettings ? '− Hide' : '+ Show'} Advanced Server Settings (Host/Port)</span>
+                  </button>
+
+                  {showAdvancedSettings && (
+                    <div className="mt-3 p-4 rounded-xl bg-slate-50 border border-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 mb-1">SMTP Outbound Host</label>
+                        <input
+                          type="text"
+                          value={connSmtpHost}
+                          onChange={(e) => setConnSmtpHost(e.target.value)}
+                          className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 mb-1">SMTP Port</label>
+                        <input
+                          type="text"
+                          value={connSmtpPort}
+                          onChange={(e) => setConnSmtpPort(e.target.value)}
+                          className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 mb-1">IMAP Inbound Host</label>
+                        <input
+                          type="text"
+                          value={connImapHost}
+                          onChange={(e) => setConnImapHost(e.target.value)}
+                          className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 mb-1">IMAP Port</label>
+                        <input
+                          type="text"
+                          value={connImapPort}
+                          onChange={(e) => setConnImapPort(e.target.value)}
+                          className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-4 border-t border-slate-100 flex items-center justify-end gap-2.5 bg-slate-50/70 shrink-0">
+                <button
+                  type="button"
+                  disabled={connecting}
+                  onClick={() => setModalOpen(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={connecting}
+                  className="px-5 py-2.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-md shadow-blue-500/25 flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {connecting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Verifying &amp; Connecting...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4" />
+                      <span>{editingAccount ? 'Save Changes' : 'Connect Mail ID'}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

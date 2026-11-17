@@ -158,7 +158,19 @@ export const mailIntegrationApi = {
     );
   },
 
-  // Test live connection
+  // Assign users directly to an account
+  async assignUsers(payload: {
+    id: string;
+    is_shared: boolean;
+    assigned_user_ids: string[];
+  }): Promise<{ ok: boolean; account: EmailAccount; message: string }> {
+    return request<{ ok: boolean; account: EmailAccount; message: string }>(
+      '/api/mail-integration/accounts/assign-users',
+      { method: 'POST', body: JSON.stringify(payload) }
+    );
+  },
+
+    // Test live connection
   async testConnection(payload: {
     id?: string;
     test_type: 'smtp' | 'imap';

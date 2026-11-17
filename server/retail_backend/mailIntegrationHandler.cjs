@@ -402,6 +402,36 @@ module.exports = function mountMailIntegration({ app, SB, db, save, mailEnc, mai
   });
 
   // ------------------------------------------------------------------------------------
+  // 2b. POST /api/mail-integration/accounts/assign-users - Update user assignments
+  // ------------------------------------------------------------------------------------
+  app.post('/api/mail-integration/accounts/assign-users', async (req, res) => {
+    try {
+      const u = await authUser(req, res);
+      if (!u) return;
+      if (!u.isAdmin) {
+        return res.status(403).json({ ok: false, error: 'Only administrators can assign users to mail accounts.' });
+      }
+      const b = req.body || {};
+      const id = b.id;
+      const acc = (db.email_accounts || []).find((a) => a.id === id);
+      if (!acc) return res.status(404).json({ ok: false, error: 'Mail account not found.' });
+
+      acc.is_shared = !!b.is_shared;
+      acc.assigned_user_ids = Array.isArray(b.assigned_user_ids) ? b.assigned_user_ids : [];
+      acc.updated_at = new Date().toISOString();
+      save();
+
+      return res.json({
+        ok: true,
+        account: sanitizeAccount(acc),
+        message: 'Assigned users updated successfully.',
+      });
+    } catch (e) {
+      return res.status(500).json({ ok: false, error: String(e.message || e) });
+    }
+  });
+
+  // ------------------------------------------------------------------------------------
   // 3. POST /api/mail-integration/accounts/test - Test connection
   // ------------------------------------------------------------------------------------
   app.post('/api/mail-integration/accounts/test', async (req, res) => {
