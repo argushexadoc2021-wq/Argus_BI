@@ -1,4 +1,4 @@
-import React, { useState, useRef, useLayoutEffect, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useLayoutEffect, useCallback, useEffect, Suspense, lazy } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   TrendingUp,
@@ -17,34 +17,41 @@ import {
   ChevronLeft,
   ChevronRight,
   Layers,
+  Orbit,
+  Box,
+  LayoutGrid,
+  Loader2,
 } from 'lucide-react';
 
-interface MindLeaf {
+// @ts-ignore - JSX 3D scene chunk
+const MindMap3DScene = lazy(() => import('./MindMap3DScene'));
+
+export interface MindLeaf {
   id: string;
   label: string;
   route: string;
 }
 
-interface MindBranch {
+export interface MindBranch {
   id: string;
   title: string;
   subtitle: string;
   side: 'left' | 'right';
-  color: string;        // hex for SVG curves
-  bgClass: string;      // badge / pill background
-  borderClass: string;  // border color
-  textClass: string;    // accent text color
-  dotClass: string;     // dot color
+  color: string;
+  bgClass: string;
+  borderClass: string;
+  textClass: string;
+  dotClass: string;
   icon: React.ComponentType<{ className?: string }>;
   children: MindLeaf[];
 }
 
 const BRANCHES: MindBranch[] = [
-  // LEFT SIDE (Core Operations)
+  // LEFT / FIRST HALF
   {
     id: 'sales',
     title: 'Sales & Quotations',
-    subtitle: 'Enquiry to order',
+    subtitle: 'Dashboard, quotes & orders',
     side: 'left',
     color: '#10b981',
     bgClass: 'bg-emerald-50',
@@ -53,7 +60,7 @@ const BRANCHES: MindBranch[] = [
     dotClass: 'bg-emerald-500',
     icon: TrendingUp,
     children: [
-      { id: 'sales-pipeline', label: 'Sales Pipelines', route: '/sales/in-house' },
+      { id: 'sales-pipeline', label: 'Dashboard (Sales Pipeline)', route: '/sales/in-house' },
       { id: 'quotations', label: 'Quotations & Metal Calc', route: '/sales/quotations' },
       { id: 'sales-orders', label: 'Sales Orders', route: '/sales/orders' },
       { id: 'site-visits', label: 'Site Visit & Partner Sales', route: '/sales/site-visits' },
@@ -118,13 +125,13 @@ const BRANCHES: MindBranch[] = [
     ],
   },
 
-  // RIGHT SIDE (Suites, Communication & Admin)
+  // RIGHT / SECOND HALF
   {
     id: 'attendance',
     title: 'AI Face Attendance',
     subtitle: 'Biometric workforce suite',
     side: 'right',
-    color: '#2563eb',
+    color: '#3b82f6',
     bgClass: 'bg-blue-50',
     borderClass: 'border-blue-200 hover:border-blue-400',
     textClass: 'text-blue-700',
@@ -143,7 +150,7 @@ const BRANCHES: MindBranch[] = [
     title: 'Retail Online Store',
     subtitle: 'Digital storefront & orders',
     side: 'right',
-    color: '#e11d48',
+    color: '#f43f5e',
     bgClass: 'bg-rose-50',
     borderClass: 'border-rose-200 hover:border-rose-400',
     textClass: 'text-rose-700',
@@ -157,8 +164,8 @@ const BRANCHES: MindBranch[] = [
   },
   {
     id: 'insights',
-    title: 'Overview & Communication',
-    subtitle: 'Dashboards, chat & mail',
+    title: 'Reports & Communication',
+    subtitle: 'Analytics, chat & mail',
     side: 'right',
     color: '#06b6d4',
     bgClass: 'bg-cyan-50',
@@ -167,8 +174,8 @@ const BRANCHES: MindBranch[] = [
     dotClass: 'bg-cyan-500',
     icon: BarChart3,
     children: [
-      { id: 'exec-dash', label: 'Executive Dashboard', route: '/dashboard' },
-      { id: 'reports', label: 'Reports & Analytics', route: '/reports/production' },
+      { id: 'exec-dash', label: 'Report (Executive Overview)', route: '/dashboard' },
+      { id: 'reports', label: 'Production Reports', route: '/reports/production' },
       { id: 'bi-chat', label: 'BI Chat', route: '/bi-chat' },
       { id: 'mail-hub', label: 'Mail Integration', route: '/admin/email-integration' },
     ],
@@ -178,7 +185,7 @@ const BRANCHES: MindBranch[] = [
     title: 'Admin & Support',
     subtitle: 'Users, access & helpdesk',
     side: 'right',
-    color: '#4f46e5',
+    color: '#6366f1',
     bgClass: 'bg-indigo-50',
     borderClass: 'border-indigo-200 hover:border-indigo-400',
     textClass: 'text-indigo-700',
@@ -193,29 +200,69 @@ const BRANCHES: MindBranch[] = [
   },
 ];
 
+// Graceful ErrorBoundary in case WebGL context is unavailable
+class Scene3DBoundary extends React.Component<
+  { fallback: React.ReactNode; children: React.ReactNode },
+  { hasError: boolean }
+> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  render() {
+    if (this.state.hasError) return this.props.fallback;
+    return this.props.children;
+  }
+}
+
 interface CurvePath {
   key: string;
   d: string;
   color: string;
-  dashed?: boolean;
   thick?: boolean;
+}
+
+// Compute the 3D position of a branch by index (matches MindMap3DScene)
+function getBranchPos3D(index: number, total: number): [number, number, number] {
+  const angle = (index / total) * Math.PI * 2 - Math.PI / 2;
+  const radius = 6.3;
+  return [
+    Math.cos(angle) * radius,
+    index % 2 === 0 ? 1.15 : -1.05,
+    Math.sin(angle) * radius,
+  ];
 }
 
 export function MindMapPage() {
   const navigate = useNavigate();
 
-  // Track which branches are expanded (all expanded by default so full project is visible immediately)
+  // View mode: '3d' by default!
+  const [viewMode, setViewMode] = useState<'3d' | '2d'>('3d');
+  const [autoRotate, setAutoRotate] = useState(true);
+  const [focusedId, setFocusedId] = useState<string | null>(null);
+  const [cameraTarget, setCameraTarget] = useState<{
+    pos: [number, number, number];
+    target: [number, number, number];
+  }>({
+    pos: [0, 5.2, 16.2],
+    target: [0, 0, 0],
+  });
+  const [cameraTrigger, setCameraTrigger] = useState(0);
+
+  // Expanded state for branches (in 3D start clean with overview orbs; clicking blooms satellites!)
   const [expanded, setExpanded] = useState<Record<string, boolean>>(() => {
     const init: Record<string, boolean> = {};
-    BRANCHES.forEach((b) => { init[b.id] = true; });
+    BRANCHES.forEach((b) => { init[b.id] = false; });
     return init;
   });
 
+  // 2D mode zoom + SVG curves
   const [zoom, setZoom] = useState(0.95);
   const [paths, setPaths] = useState<CurvePath[]>([]);
   const [svgSize, setSvgSize] = useState({ width: 1200, height: 800 });
-
-  // Refs for measuring exact card edge anchors
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const centerRef = useRef<HTMLDivElement | null>(null);
   const branchRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -223,35 +270,98 @@ export function MindMapPage() {
 
   const allExpanded = BRANCHES.every((b) => expanded[b.id]);
 
-  const toggleBranch = (id: string) => {
-    setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
-  };
+  // Focus & bloom a branch in 3D
+  const handleFocusBranch3D = useCallback((branchId: string, customPos?: [number, number, number]) => {
+    const idx = BRANCHES.findIndex((b) => b.id === branchId);
+    if (idx === -1) return;
 
-  const toggleAll = () => {
+    const alreadyFocused = focusedId === branchId;
+    if (alreadyFocused) {
+      // Collapse & zoom back out to center overview
+      setFocusedId(null);
+      setExpanded((prev) => ({ ...prev, [branchId]: false }));
+      setCameraTarget({ pos: [0, 5.2, 16.2], target: [0, 0, 0] });
+      setCameraTrigger((t) => t + 1);
+      setAutoRotate(true);
+      return;
+    }
+
+    const pos = customPos || getBranchPos3D(idx, BRANCHES.length);
+    const len = Math.hypot(pos[0], pos[2]) || 1;
+    const dirX = pos[0] / len;
+    const dirZ = pos[2] / len;
+
+    // Position camera gracefully outside & slightly above the selected module so all its satellites shine clearly
+    const camPos: [number, number, number] = [
+      pos[0] + dirX * 8.6,
+      pos[1] + 2.4,
+      pos[2] + dirZ * 8.6,
+    ];
+    const targetPos: [number, number, number] = [
+      pos[0] + dirX * 1.4,
+      pos[1],
+      pos[2] + dirZ * 1.4,
+    ];
+
+    setFocusedId(branchId);
+    setExpanded((prev) => {
+      const next: Record<string, boolean> = {};
+      BRANCHES.forEach((b) => { next[b.id] = b.id === branchId; });
+      return next;
+    });
+    setAutoRotate(false);
+    setCameraTarget({ pos: camPos, target: targetPos });
+    setCameraTrigger((t) => t + 1);
+  }, [focusedId]);
+
+  const handleReset3D = useCallback(() => {
+    setFocusedId(null);
+    setCameraTarget({ pos: [0, 5.2, 16.2], target: [0, 0, 0] });
+    setCameraTrigger((t) => t + 1);
+    setAutoRotate(true);
+  }, []);
+
+  const handleToggleAll = () => {
     const nextState = !allExpanded;
     const next: Record<string, boolean> = {};
     BRANCHES.forEach((b) => { next[b.id] = nextState; });
     setExpanded(next);
+    if (viewMode === '3d') {
+      setFocusedId(null);
+      setCameraTarget({
+        pos: nextState ? [0, 7.5, 22.0] : [0, 5.2, 16.2],
+        target: [0, 0, 0],
+      });
+      setCameraTrigger((t) => t + 1);
+    }
   };
 
+  // When switching to 2D, expand all branches so full map is immediately readable
+  const handleSwitchMode = (mode: '3d' | '2d') => {
+    setViewMode(mode);
+    if (mode === '2d') {
+      const next: Record<string, boolean> = {};
+      BRANCHES.forEach((b) => { next[b.id] = true; });
+      setExpanded(next);
+    }
+  };
+
+  // Compute 2D Bezier curves when in 2D mode
   const computeCurves = useCallback(() => {
+    if (viewMode !== '2d') return;
     const canvas = canvasRef.current;
     const center = centerRef.current;
     if (!canvas || !center) return;
 
     const cRect = canvas.getBoundingClientRect();
     const scale = zoom || 1;
-    const width = canvas.scrollWidth;
-    const height = canvas.scrollHeight;
-    setSvgSize({ width, height });
+    setSvgSize({ width: canvas.scrollWidth, height: canvas.scrollHeight });
 
     const relRect = (el: HTMLElement) => {
       const r = el.getBoundingClientRect();
       return {
         left: (r.left - cRect.left) / scale,
         right: (r.right - cRect.left) / scale,
-        top: (r.top - cRect.top) / scale,
-        bottom: (r.bottom - cRect.top) / scale,
         midY: (r.top + r.height / 2 - cRect.top) / scale,
       };
     };
@@ -264,59 +374,41 @@ export function MindMapPage() {
       if (!bEl) return;
       const bRect = relRect(bEl);
 
-      // Curve from Center Hub -> Branch Card
       if (branch.side === 'left') {
-        const x1 = hub.left;
-        const y1 = hub.midY;
-        const x2 = bRect.right;
-        const y2 = bRect.midY;
-        const cx = (x1 + x2) / 2;
+        const cx = (hub.left + bRect.right) / 2;
         nextPaths.push({
           key: `hub-${branch.id}`,
-          d: `M ${x1} ${y1} C ${cx} ${y1}, ${cx} ${y2}, ${x2} ${y2}`,
+          d: `M ${hub.left} ${hub.midY} C ${cx} ${hub.midY}, ${cx} ${bRect.midY}, ${bRect.right} ${bRect.midY}`,
           color: branch.color,
           thick: true,
         });
       } else {
-        const x1 = hub.right;
-        const y1 = hub.midY;
-        const x2 = bRect.left;
-        const y2 = bRect.midY;
-        const cx = (x1 + x2) / 2;
+        const cx = (hub.right + bRect.left) / 2;
         nextPaths.push({
           key: `hub-${branch.id}`,
-          d: `M ${x1} ${y1} C ${cx} ${y1}, ${cx} ${y2}, ${x2} ${y2}`,
+          d: `M ${hub.right} ${hub.midY} C ${cx} ${hub.midY}, ${cx} ${bRect.midY}, ${bRect.left} ${bRect.midY}`,
           color: branch.color,
           thick: true,
         });
       }
 
-      // Curves from Branch Card -> Leaf Items
       if (expanded[branch.id]) {
         branch.children.forEach((leaf) => {
           const lEl = leafRefs.current[leaf.id];
           if (!lEl) return;
           const lRect = relRect(lEl);
           if (branch.side === 'left') {
-            const x1 = bRect.left;
-            const y1 = bRect.midY;
-            const x2 = lRect.right;
-            const y2 = lRect.midY;
-            const cx = (x1 + x2) / 2;
+            const cx = (bRect.left + lRect.right) / 2;
             nextPaths.push({
               key: `${branch.id}-${leaf.id}`,
-              d: `M ${x1} ${y1} C ${cx} ${y1}, ${cx} ${y2}, ${x2} ${y2}`,
+              d: `M ${bRect.left} ${bRect.midY} C ${cx} ${bRect.midY}, ${cx} ${lRect.midY}, ${lRect.right} ${lRect.midY}`,
               color: branch.color,
             });
           } else {
-            const x1 = bRect.right;
-            const y1 = bRect.midY;
-            const x2 = lRect.left;
-            const y2 = lRect.midY;
-            const cx = (x1 + x2) / 2;
+            const cx = (bRect.right + lRect.left) / 2;
             nextPaths.push({
               key: `${branch.id}-${leaf.id}`,
-              d: `M ${x1} ${y1} C ${cx} ${y1}, ${cx} ${y2}, ${x2} ${y2}`,
+              d: `M ${bRect.right} ${bRect.midY} C ${cx} ${bRect.midY}, ${cx} ${lRect.midY}, ${lRect.left} ${lRect.midY}`,
               color: branch.color,
             });
           }
@@ -325,7 +417,7 @@ export function MindMapPage() {
     });
 
     setPaths(nextPaths);
-  }, [expanded, zoom]);
+  }, [expanded, zoom, viewMode]);
 
   useLayoutEffect(() => {
     computeCurves();
@@ -334,6 +426,7 @@ export function MindMapPage() {
   }, [computeCurves]);
 
   useEffect(() => {
+    if (viewMode !== '2d') return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ro = new ResizeObserver(() => computeCurves());
@@ -343,227 +436,325 @@ export function MindMapPage() {
       ro.disconnect();
       window.removeEventListener('resize', computeCurves);
     };
-  }, [computeCurves]);
+  }, [computeCurves, viewMode]);
 
   const leftBranches = BRANCHES.filter((b) => b.side === 'left');
   const rightBranches = BRANCHES.filter((b) => b.side === 'right');
 
-  return (
+  const render2DMap = () => (
     <div
-      className="min-h-full flex flex-col bg-[#f8fbff] text-slate-800"
+      className="flex-1 overflow-auto p-6 sm:p-10 flex items-center justify-center bg-[#f8fbff]"
       style={{
         backgroundImage: 'radial-gradient(#cbd5e1 1px, transparent 1px)',
         backgroundSize: '24px 24px',
       }}
     >
-      {/* Simple Top Bar */}
-      <div className="px-4 sm:px-6 py-3.5 bg-white/95 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 sticky top-0 z-20">
+      <div
+        ref={canvasRef}
+        className="relative inline-flex items-center justify-center gap-16 sm:gap-24 py-6 px-4 transition-transform duration-150 origin-center"
+        style={{ transform: `scale(${zoom})` }}
+      >
+        <svg
+          width={svgSize.width}
+          height={svgSize.height}
+          className="absolute inset-0 pointer-events-none overflow-visible"
+          style={{ zIndex: 0 }}
+        >
+          {paths.map((p) => (
+            <path
+              key={p.key}
+              d={p.d}
+              fill="none"
+              stroke={p.color}
+              strokeWidth={p.thick ? 2.5 : 1.75}
+              strokeOpacity={p.thick ? 0.55 : 0.4}
+              strokeLinecap="round"
+            />
+          ))}
+        </svg>
+
+        <div className="flex flex-col gap-7 relative z-10">
+          {leftBranches.map((branch) => {
+            const Icon = branch.icon;
+            const isOpen = !!expanded[branch.id];
+            return (
+              <div key={branch.id} className="flex items-center justify-end gap-10">
+                {isOpen && (
+                  <div className="flex flex-col items-end gap-2">
+                    {branch.children.map((leaf) => (
+                      <button
+                        key={leaf.id}
+                        ref={(el) => { leafRefs.current[leaf.id] = el; }}
+                        type="button"
+                        onClick={() => navigate(leaf.route)}
+                        className="group flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white border border-slate-200 hover:border-slate-400 hover:shadow-sm text-xs font-semibold text-slate-700 hover:text-slate-950 transition-all cursor-pointer whitespace-nowrap"
+                      >
+                        <ArrowUpRight className="w-3 h-3 text-slate-300 group-hover:text-slate-600 transition-colors" />
+                        <span>{leaf.label}</span>
+                        <span className={`w-2 h-2 rounded-full ${branch.dotClass} shrink-0`} />
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <div
+                  ref={(el) => { branchRefs.current[branch.id] = el; }}
+                  onClick={() => setExpanded((p) => ({ ...p, [branch.id]: !p[branch.id] }))}
+                  className={`flex items-center gap-3 px-4 py-3 rounded-2xl bg-white border-2 shadow-xs cursor-pointer transition-all select-none min-w-[220px] ${branch.borderClass}`}
+                >
+                  <span className="p-1 rounded-lg bg-slate-50 text-slate-400">
+                    {isOpen ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronLeft className="w-3.5 h-3.5" />}
+                  </span>
+                  <div className="flex-1 text-right min-w-0">
+                    <div className="text-xs font-black text-slate-900 leading-tight">{branch.title}</div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">{branch.subtitle}</div>
+                  </div>
+                  <div className={`w-9 h-9 rounded-xl ${branch.bgClass} ${branch.textClass} flex items-center justify-center shrink-0`}>
+                    <Icon className="w-4 h-4" />
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div
+          ref={centerRef}
+          className="relative z-10 px-7 py-6 rounded-3xl bg-slate-900 text-white shadow-xl border-4 border-white ring-2 ring-blue-500/30 text-center min-w-[200px] shrink-0 select-none"
+        >
+          <div className="w-11 h-11 rounded-2xl bg-blue-600 text-white flex items-center justify-center mx-auto mb-2.5 shadow-md shadow-blue-500/30">
+            <Layers className="w-6 h-6" />
+          </div>
+          <div className="text-base font-black tracking-wide uppercase">ARGUS BI</div>
+          <div className="text-[11px] text-blue-300 font-semibold mt-0.5">Complete Project Mind Map</div>
+        </div>
+
+        <div className="flex flex-col gap-7 relative z-10">
+          {rightBranches.map((branch) => {
+            const Icon = branch.icon;
+            const isOpen = !!expanded[branch.id];
+            return (
+              <div key={branch.id} className="flex items-center justify-start gap-10">
+                <div
+                  ref={(el) => { branchRefs.current[branch.id] = el; }}
+                  onClick={() => setExpanded((p) => ({ ...p, [branch.id]: !p[branch.id] }))}
+                  className={`flex items-center gap-3 px-4 py-3 rounded-2xl bg-white border-2 shadow-xs cursor-pointer transition-all select-none min-w-[220px] ${branch.borderClass}`}
+                >
+                  <div className={`w-9 h-9 rounded-xl ${branch.bgClass} ${branch.textClass} flex items-center justify-center shrink-0`}>
+                    <Icon className="w-4 h-4" />
+                  </div>
+                  <div className="flex-1 text-left min-w-0">
+                    <div className="text-xs font-black text-slate-900 leading-tight">{branch.title}</div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">{branch.subtitle}</div>
+                  </div>
+                  <span className="p-1 rounded-lg bg-slate-50 text-slate-400">
+                    {isOpen ? <ChevronLeft className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                  </span>
+                </div>
+
+                {isOpen && (
+                  <div className="flex flex-col items-start gap-2">
+                    {branch.children.map((leaf) => (
+                      <button
+                        key={leaf.id}
+                        ref={(el) => { leafRefs.current[leaf.id] = el; }}
+                        type="button"
+                        onClick={() => navigate(leaf.route)}
+                        className="group flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white border border-slate-200 hover:border-slate-400 hover:shadow-sm text-xs font-semibold text-slate-700 hover:text-slate-950 transition-all cursor-pointer whitespace-nowrap"
+                      >
+                        <span className={`w-2 h-2 rounded-full ${branch.dotClass} shrink-0`} />
+                        <span>{leaf.label}</span>
+                        <ArrowUpRight className="w-3 h-3 text-slate-300 group-hover:text-slate-600 transition-colors" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="h-[calc(100vh-56px)] min-h-[600px] flex flex-col relative overflow-hidden bg-[#060b19]">
+      {/* Clean Minimal Header Bar */}
+      <div
+        className={`px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3 z-30 border-b ${
+          viewMode === '3d'
+            ? 'bg-slate-950/80 backdrop-blur-md border-white/10 text-white'
+            : 'bg-white border-slate-200 text-slate-900'
+        }`}
+      >
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center shrink-0">
+          <div className="w-9 h-9 rounded-xl bg-blue-600/20 border border-blue-400/30 text-sky-400 flex items-center justify-center shrink-0">
             <Layers className="w-5 h-5" />
           </div>
           <div>
-            <h1 className="text-base sm:text-lg font-black text-slate-900 tracking-tight leading-tight">
-              Project Mind Map
+            <h1 className="text-sm sm:text-base font-black tracking-tight leading-tight">
+              3D Project Mind Map
             </h1>
-            <p className="text-xs text-slate-500">
-              Simple visual map of the entire Argus BI platform — click any branch to fold, or click a topic to open it.
+            <p className={`text-[11px] ${viewMode === '3d' ? 'text-slate-400' : 'text-slate-500'}`}>
+              {viewMode === '3d'
+                ? 'Drag to rotate 360° • Scroll to zoom • Click any glowing sphere to explore modules'
+                : 'Click any branch to fold or click any topic to open it'}
             </p>
           </div>
         </div>
 
-        {/* Minimal Controls */}
-        <div className="flex items-center gap-2">
+        {/* Simple Controls */}
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             type="button"
-            onClick={toggleAll}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-xs font-bold text-slate-700 transition-colors cursor-pointer"
+            onClick={handleToggleAll}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${
+              viewMode === '3d'
+                ? 'bg-white/10 hover:bg-white/15 border-white/15 text-white'
+                : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'
+            }`}
           >
-            <ChevronsUpDown className="w-3.5 h-3.5 text-blue-600" />
+            <ChevronsUpDown className="w-3.5 h-3.5 text-sky-400" />
             <span>{allExpanded ? 'Collapse All' : 'Expand All'}</span>
           </button>
 
-          <div className="inline-flex items-center bg-white border border-slate-200 rounded-xl p-0.5">
-            <button
-              type="button"
-              onClick={() => setZoom((z) => Math.max(0.65, +(z - 0.1).toFixed(2)))}
-              className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-100 cursor-pointer"
-              title="Zoom Out"
-            >
-              <ZoomOut className="w-3.5 h-3.5" />
-            </button>
-            <span className="px-2 text-[11px] font-mono font-bold text-slate-700 select-none">
-              {Math.round(zoom * 100)}%
-            </span>
-            <button
-              type="button"
-              onClick={() => setZoom((z) => Math.min(1.25, +(z + 0.1).toFixed(2)))}
-              className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-100 cursor-pointer"
-              title="Zoom In"
-            >
-              <ZoomIn className="w-3.5 h-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setZoom(0.95)}
-              className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 cursor-pointer border-l border-slate-100 ml-0.5"
-              title="Reset Zoom"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
-      </div>
+          {viewMode === '3d' ? (
+            <>
+              <button
+                type="button"
+                onClick={() => setAutoRotate((r) => !r)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${
+                  autoRotate
+                    ? 'bg-blue-600/25 border-blue-400/50 text-sky-200'
+                    : 'bg-white/10 hover:bg-white/15 border-white/15 text-slate-300'
+                }`}
+              >
+                <Orbit className="w-3.5 h-3.5" />
+                <span>{autoRotate ? 'Auto-Orbit On' : 'Auto-Orbit Off'}</span>
+              </button>
 
-      {/* Mind Map Canvas */}
-      <div className="flex-1 overflow-auto p-6 sm:p-10 flex items-center justify-center">
-        <div
-          ref={canvasRef}
-          className="relative inline-flex items-center justify-center gap-16 sm:gap-24 py-6 px-4 transition-transform duration-150 origin-center"
-          style={{ transform: `scale(${zoom})` }}
-        >
-          {/* SVG Bezier Connectors Layer */}
-          <svg
-            width={svgSize.width}
-            height={svgSize.height}
-            className="absolute inset-0 pointer-events-none overflow-visible"
-            style={{ zIndex: 0 }}
-          >
-            {paths.map((p) => (
-              <path
-                key={p.key}
-                d={p.d}
-                fill="none"
-                stroke={p.color}
-                strokeWidth={p.thick ? 2.5 : 1.75}
-                strokeOpacity={p.thick ? 0.55 : 0.4}
-                strokeLinecap="round"
-              />
-            ))}
-          </svg>
+              <button
+                type="button"
+                onClick={handleReset3D}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-white/10 hover:bg-white/15 border border-white/15 text-white transition-colors cursor-pointer"
+                title="Reset 3D Camera"
+              >
+                <RotateCcw className="w-3.5 h-3.5 text-sky-400" />
+                <span>Reset</span>
+              </button>
+            </>
+          ) : (
+            <div className="inline-flex items-center bg-white border border-slate-200 rounded-xl p-0.5">
+              <button
+                type="button"
+                onClick={() => setZoom((z) => Math.max(0.65, +(z - 0.1).toFixed(2)))}
+                className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-100 cursor-pointer"
+              >
+                <ZoomOut className="w-3.5 h-3.5" />
+              </button>
+              <span className="px-2 text-[11px] font-mono font-bold text-slate-700">
+                {Math.round(zoom * 100)}%
+              </span>
+              <button
+                type="button"
+                onClick={() => setZoom((z) => Math.min(1.25, +(z + 0.1).toFixed(2)))}
+                className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-100 cursor-pointer"
+              >
+                <ZoomIn className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
 
-          {/* LEFT BRANCHES */}
-          <div className="flex flex-col gap-7 relative z-10">
-            {leftBranches.map((branch) => {
-              const Icon = branch.icon;
-              const isOpen = !!expanded[branch.id];
-              return (
-                <div key={branch.id} className="flex items-center justify-end gap-10">
-                  {/* Leaves on the left of the branch node */}
-                  {isOpen && (
-                    <div className="flex flex-col items-end gap-2">
-                      {branch.children.map((leaf) => (
-                        <button
-                          key={leaf.id}
-                          ref={(el) => { leafRefs.current[leaf.id] = el; }}
-                          type="button"
-                          onClick={() => navigate(leaf.route)}
-                          className="group flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white border border-slate-200 hover:border-slate-400 hover:shadow-sm text-xs font-semibold text-slate-700 hover:text-slate-950 transition-all cursor-pointer whitespace-nowrap"
-                        >
-                          <ArrowUpRight className="w-3 h-3 text-slate-300 group-hover:text-slate-600 transition-colors" />
-                          <span>{leaf.label}</span>
-                          <span className={`w-2 h-2 rounded-full ${branch.dotClass} shrink-0`} />
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Branch Card */}
-                  <div
-                    ref={(el) => { branchRefs.current[branch.id] = el; }}
-                    onClick={() => toggleBranch(branch.id)}
-                    className={`flex items-center gap-3 px-4 py-3 rounded-2xl bg-white border-2 shadow-xs cursor-pointer transition-all select-none min-w-[220px] ${branch.borderClass}`}
-                  >
-                    <button
-                      type="button"
-                      className="p-1 rounded-lg bg-slate-50 text-slate-400 hover:text-slate-700"
-                      aria-label={isOpen ? 'Collapse' : 'Expand'}
-                    >
-                      {isOpen ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronLeft className="w-3.5 h-3.5" />}
-                    </button>
-                    <div className="flex-1 text-right min-w-0">
-                      <div className="text-xs font-black text-slate-900 leading-tight">{branch.title}</div>
-                      <div className="text-[11px] text-slate-500 mt-0.5">{branch.subtitle}</div>
-                    </div>
-                    <div className={`w-9 h-9 rounded-xl ${branch.bgClass} ${branch.textClass} flex items-center justify-center shrink-0`}>
-                      <Icon className="w-4 h-4" />
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* CENTER HUB NODE */}
+          {/* 3D / 2D Switcher */}
           <div
-            ref={centerRef}
-            className="relative z-10 px-7 py-6 rounded-3xl bg-slate-900 text-white shadow-xl border-4 border-white ring-2 ring-blue-500/30 text-center min-w-[200px] shrink-0 select-none"
+            className={`inline-flex p-0.5 rounded-xl border ${
+              viewMode === '3d' ? 'bg-white/10 border-white/15' : 'bg-slate-100 border-slate-200'
+            }`}
           >
-            <div className="w-11 h-11 rounded-2xl bg-blue-600 text-white flex items-center justify-center mx-auto mb-2.5 shadow-md shadow-blue-500/30">
-              <Layers className="w-6 h-6" />
-            </div>
-            <div className="text-base font-black tracking-wide uppercase">ARGUS BI</div>
-            <div className="text-[11px] text-blue-300 font-semibold mt-0.5">
-              Complete Project Mind Map
-            </div>
-            <div className="mt-2.5 inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/10 text-[10px] font-mono text-slate-200">
-              <span>{BRANCHES.length} Core Modules</span>
-            </div>
-          </div>
-
-          {/* RIGHT BRANCHES */}
-          <div className="flex flex-col gap-7 relative z-10">
-            {rightBranches.map((branch) => {
-              const Icon = branch.icon;
-              const isOpen = !!expanded[branch.id];
-              return (
-                <div key={branch.id} className="flex items-center justify-start gap-10">
-                  {/* Branch Card */}
-                  <div
-                    ref={(el) => { branchRefs.current[branch.id] = el; }}
-                    onClick={() => toggleBranch(branch.id)}
-                    className={`flex items-center gap-3 px-4 py-3 rounded-2xl bg-white border-2 shadow-xs cursor-pointer transition-all select-none min-w-[220px] ${branch.borderClass}`}
-                  >
-                    <div className={`w-9 h-9 rounded-xl ${branch.bgClass} ${branch.textClass} flex items-center justify-center shrink-0`}>
-                      <Icon className="w-4 h-4" />
-                    </div>
-                    <div className="flex-1 text-left min-w-0">
-                      <div className="text-xs font-black text-slate-900 leading-tight">{branch.title}</div>
-                      <div className="text-[11px] text-slate-500 mt-0.5">{branch.subtitle}</div>
-                    </div>
-                    <button
-                      type="button"
-                      className="p-1 rounded-lg bg-slate-50 text-slate-400 hover:text-slate-700"
-                      aria-label={isOpen ? 'Collapse' : 'Expand'}
-                    >
-                      {isOpen ? <ChevronLeft className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-                    </button>
-                  </div>
-
-                  {/* Leaves on the right of the branch node */}
-                  {isOpen && (
-                    <div className="flex flex-col items-start gap-2">
-                      {branch.children.map((leaf) => (
-                        <button
-                          key={leaf.id}
-                          ref={(el) => { leafRefs.current[leaf.id] = el; }}
-                          type="button"
-                          onClick={() => navigate(leaf.route)}
-                          className="group flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white border border-slate-200 hover:border-slate-400 hover:shadow-sm text-xs font-semibold text-slate-700 hover:text-slate-950 transition-all cursor-pointer whitespace-nowrap"
-                        >
-                          <span className={`w-2 h-2 rounded-full ${branch.dotClass} shrink-0`} />
-                          <span>{leaf.label}</span>
-                          <ArrowUpRight className="w-3 h-3 text-slate-300 group-hover:text-slate-600 transition-colors" />
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+            <button
+              type="button"
+              onClick={() => handleSwitchMode('3d')}
+              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                viewMode === '3d'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Box className="w-3.5 h-3.5" />
+              <span>3D</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSwitchMode('2d')}
+              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                viewMode === '2d'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-slate-300 hover:text-white'
+              }`}
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              <span>2D</span>
+            </button>
           </div>
         </div>
       </div>
+
+      {/* Main Canvas Area */}
+      {viewMode === '3d' ? (
+        <div className="flex-1 relative w-full h-full">
+          <Scene3DBoundary fallback={render2DMap()}>
+            <Suspense
+              fallback={
+                <div className="w-full h-full flex flex-col items-center justify-center text-sky-300 gap-3">
+                  <Loader2 className="w-8 h-8 animate-spin" />
+                  <span className="text-xs font-semibold tracking-wide">Loading 3D Mind Map…</span>
+                </div>
+              }
+            >
+              <MindMap3DScene
+                branches={BRANCHES}
+                expanded={expanded}
+                focusedId={focusedId}
+                autoRotate={autoRotate}
+                cameraTarget={cameraTarget}
+                cameraTrigger={cameraTrigger}
+                onToggleBranch={handleFocusBranch3D}
+                onResetView={handleReset3D}
+                onNavigate={(route: string) => navigate(route)}
+              />
+            </Suspense>
+          </Scene3DBoundary>
+
+          {/* Floating Bottom Quick-Jump Module Dock */}
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 max-w-[95vw] overflow-x-auto">
+            <div className="inline-flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-slate-950/80 backdrop-blur-md border border-white/15 shadow-2xl">
+              {BRANCHES.map((b) => {
+                const active = focusedId === b.id;
+                return (
+                  <button
+                    key={b.id}
+                    type="button"
+                    onClick={() => handleFocusBranch3D(b.id)}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap ${
+                      active
+                        ? 'bg-white text-slate-950 shadow-md scale-105'
+                        : 'text-slate-200 hover:bg-white/10 hover:text-white'
+                    }`}
+                  >
+                    <span
+                      className="w-2 h-2 rounded-full shrink-0"
+                      style={{ backgroundColor: b.color, boxShadow: `0 0 8px ${b.color}` }}
+                    />
+                    <span>{b.title}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      ) : (
+        render2DMap()
+      )}
     </div>
   );
 }

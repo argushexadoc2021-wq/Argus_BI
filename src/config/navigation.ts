@@ -58,7 +58,7 @@ export const navSections: NavSection[] = [
   {
     label: 'Overview',
     items: [
-      { label: 'Dashboard', icon: LayoutDashboard, page: 'dashboard', iconClass: 'text-sky-400', module: 'dashboard' },
+      { label: 'Report', icon: LayoutDashboard, page: 'dashboard', iconClass: 'text-sky-400', module: 'dashboard' },
       { label: 'BI Chat', icon: MessageSquare, page: 'bi-chat', iconClass: 'text-amber-400', module: 'bi-chat' },
       { label: 'Reports', icon: BarChart3, page: 'reports/production', iconClass: 'text-red-400', module: 'reports' },
       { label: 'Mind Map', icon: Network, page: 'mind-map', iconClass: 'text-cyan-400' },
@@ -67,7 +67,7 @@ export const navSections: NavSection[] = [
   {
     label: 'Sales',
     items: [
-      { label: 'Sales Pipelines', icon: TrendingUp, page: 'sales/in-house', iconClass: 'text-emerald-400', module: 'sales-pipeline' },
+      { label: 'Dashboard', icon: TrendingUp, page: 'sales/in-house', iconClass: 'text-emerald-400', module: 'sales-pipeline' },
       { label: 'Site Visit Sales', icon: MapPin, page: 'sales/site-visits', iconClass: 'text-sky-400', module: 'site-visit-sales' },
       { label: 'Partner & Online Sales', icon: ShoppingCart, page: 'sales/partner-orders', iconClass: 'text-indigo-400', module: 'partner-online-sales' },
       { label: 'Quotations', icon: FileText, page: 'sales/quotations', iconClass: 'text-amber-300', module: 'menu-quotations' },
@@ -141,12 +141,12 @@ export const navSections: NavSection[] = [
 ];
 
 export const pageTitles: Record<string, string> = {
-  'dashboard': 'Executive Dashboard',
+  'dashboard': 'Report',
   'bi-chat': 'BI Chat',
   'mind-map': 'Project Mind Map',
   'admin/jd-build': 'JD Build',
-  'sales/pipeline': 'In-house Sales Pipeline',
-  'sales/in-house': 'In-house Sales Pipeline',
+  'sales/pipeline': 'Dashboard',
+  'sales/in-house': 'Dashboard',
   'sales/site-visits': 'Site Visit Sales',
   'sales/partner-orders': 'Partner & Online Sales',
   'sales/leads': 'All Company Library',
