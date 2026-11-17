@@ -15,7 +15,8 @@ import { HsnDatalist } from '@/components/HsnDatalist';
 import { HSN_LIST_ID } from '@/lib/hsnMaster';
 import { ProductWorkingsPage } from './ProductWorkingsPage';
 import { hasWorkings, type Workings } from '@/lib/quotationWorkings';
-import { PDF_THEMES, downloadQuotePdf, exportQuoteCsv, quoteSummaryText, type PdfThemeId, type QuoteClient, type QuoteDoc } from '@/lib/quotationDocument';
+import { PDF_THEMES, PDF_TEMPLATES, downloadQuotePdf, exportQuoteCsv, quoteSummaryText, type PdfThemeId, type QuoteClient, type QuoteDoc } from '@/lib/quotationDocument';
+import { PdfTemplateSelectorModal } from './PdfTemplateSelectorModal';
 
 const cell = 'w-full h-8 px-2 text-sm bg-white border border-slate-200 rounded-md focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20';
 const numeric = (v: string) => v.replace(/[^0-9.,]/g, '');
@@ -86,8 +87,13 @@ export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) 
   const [tax, setTax] = useState({ cgst: '9', sgst: '9', igst: '' });
   const [terms, setTerms] = useState(() => defaultTermsText(company?.id));
   const [notes, setNotes] = useState('');
-  const [theme, setTheme] = useState<PdfThemeId>('orange');
-  const [themeOpen, setThemeOpen] = useState(false);
+  const [theme, setTheme] = useState<PdfThemeId>(() => {
+    try { return (localStorage.getItem('metal-pdf-color') as PdfThemeId) || 'orange'; } catch { return 'orange'; }
+  });
+  const [templateId, setTemplateId] = useState<string>(() => {
+    try { return localStorage.getItem('metal-pdf-template') || 'template-1'; } catch { return 'template-1'; }
+  });
+  const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   // a message is shown at the top of the quotation: bring it into view (after the workings sheet the page is still scrolled down)
   const msgRef = useRef<HTMLDivElement>(null);
@@ -540,24 +546,20 @@ export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) 
         {/* Action Toolbar - aligned in single clean row with horizontal scroll on small screens */}
         <div className="w-full overflow-x-auto pb-1 border-t border-slate-100 pt-2">
           <div className="flex items-center justify-end gap-1.5 sm:gap-2 min-w-max ml-auto">
-            <div className="relative">
-              <button onClick={() => setThemeOpen(o => !o)} className="flex items-center gap-1.5 h-9 px-3 text-xs font-bold border border-slate-200 rounded-lg bg-white hover:bg-slate-50 transition-all shadow-xs"><Palette size={14} className="text-orange-500" /> Select PDF Theme · {PDF_THEMES[theme].label}</button>
-              {themeOpen && (
-                <div className="absolute bottom-11 left-0 z-20 bg-white border border-slate-200 rounded-lg shadow-xl p-1 w-40">
-                  {(Object.keys(PDF_THEMES) as PdfThemeId[]).map(id => (
-                    <button key={id} onClick={() => { setTheme(id); setThemeOpen(false); }} className={`flex items-center gap-2 w-full text-left text-xs px-3 py-1.5 rounded ${id === theme ? 'bg-orange-50 text-orange-700 font-bold' : 'hover:bg-slate-50 text-slate-700'}`}>
-                      <span className="w-2.5 h-2.5 rounded-full" style={{ background: `rgb(${PDF_THEMES[id].rgb.join(',')})` }} />{PDF_THEMES[id].label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            <button
+              type="button"
+              onClick={() => setTemplateModalOpen(true)}
+              className="flex items-center gap-1.5 h-9 px-3 text-xs font-bold border border-slate-200 rounded-lg bg-white hover:bg-slate-50 transition-all shadow-xs cursor-pointer"
+            >
+              <Palette size={14} className="text-orange-500" />
+              Select PDF Template & Theme · {(PDF_TEMPLATES.find(t => t.id === templateId)?.name || 'Template 1')} ({PDF_THEMES[theme]?.label || 'Orange'})
+            </button>
             <ActionBtn cls="bg-[#25D366] hover:bg-[#20ba59] text-white" icon={<MessageCircle size={14} />} disabled={busy}
               onClick={() => run('Opened WhatsApp with the quotation summary', () => { const d = buildDoc(); window.open(`https://wa.me/?text=${encodeURIComponent(quoteSummaryText(d))}`, '_blank', 'noopener'); })}>Send to Whatsapp</ActionBtn>
             <ActionBtn cls="bg-blue-600 hover:bg-blue-700 text-white" icon={<Mail size={14} />} disabled={busy}
               onClick={() => run('Opened your mail app', () => { const d = buildDoc(); window.location.href = `mailto:${clients.map(c => c.email).filter(Boolean).join(',')}?subject=${encodeURIComponent(`Quotation ${d.quoteNo} from ${sellerName}`)}&body=${encodeURIComponent(quoteSummaryText(d))}`; })}>Send to Client</ActionBtn>
-            <ActionBtn cls="bg-orange-500 hover:bg-orange-600 text-white" icon={<FileDown size={14} />} disabled={busy} onClick={() => run('PDF downloaded', () => downloadQuotePdf(buildDoc(), false, theme, seller))}>PDF without Workings</ActionBtn>
-            <ActionBtn cls="bg-slate-700 hover:bg-slate-800 text-white" icon={<FileDown size={14} />} disabled={busy} onClick={() => run('PDF with workings downloaded', () => downloadQuotePdf(buildDoc(), true, theme, seller))}>PDF with Workings</ActionBtn>
+            <ActionBtn cls="bg-orange-500 hover:bg-orange-600 text-white" icon={<FileDown size={14} />} disabled={busy} onClick={() => run('PDF downloaded', () => downloadQuotePdf(buildDoc(), false, theme, seller, templateId))}>PDF without Workings</ActionBtn>
+            <ActionBtn cls="bg-slate-700 hover:bg-slate-800 text-white" icon={<FileDown size={14} />} disabled={busy} onClick={() => run('PDF with workings downloaded', () => downloadQuotePdf(buildDoc(), true, theme, seller, templateId))}>PDF with Workings</ActionBtn>
             <ActionBtn cls="bg-emerald-600 hover:bg-emerald-700 text-white" icon={<Upload size={14} />} disabled={busy} onClick={() => run('CSV exported', () => exportQuoteCsv(buildDoc()))}>Export CSV</ActionBtn>
             <ActionBtn cls="border border-slate-200 text-slate-700 bg-white hover:bg-slate-50" icon={<Bookmark size={14} />} disabled={busy}
               onClick={() => run('Quotation saved', () => undefined, true)}>Save Quote</ActionBtn>
@@ -747,6 +749,22 @@ export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) 
           </div>
         </div>
       </Modal>
+      {/* PDF Template & Theme Selector Modal */}
+      <PdfTemplateSelectorModal
+        open={templateModalOpen}
+        onClose={() => setTemplateModalOpen(false)}
+        activeTemplateId={templateId}
+        onSelectTemplate={tId => {
+          setTemplateId(tId);
+          try { localStorage.setItem('metal-pdf-template', tId); } catch {}
+        }}
+        activeColorId={theme}
+        onSelectColor={cId => {
+          setTheme(cId as PdfThemeId);
+          try { localStorage.setItem('metal-pdf-color', cId); } catch {}
+        }}
+        companyName={sellerName}
+      />
     </div>
   );
 }

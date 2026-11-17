@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, Calculator, Layers, PencilRuler, Shapes, BarChart3, RotateCcw, Info } from 'lucide-react';
+import { ChevronDown, Search, Check, Calculator, Layers, PencilRuler, Shapes, BarChart3, RotateCcw, Info } from 'lucide-react';
 import { formatINR } from '@/lib/format';
 import { supabase } from '@/lib/supabase';
 import { LIVE_METAL_OF, LIVE_METALS, ageLabel, describeRateIssue, inrLabel, quoteStamp, isStale, needsRefresh, parseRates, rateInUnit, type LiveMetal, type MarketRate } from '@/lib/marketRates';
 import {
   PROFILES, PROFILE_BY_ID, MATERIALS, UNITS, PRICE_UNITS, LENGTH_KEY,
-  calculate, convertDims, defaultDims,
+  calculate, convertDims, defaultDims, BENCHMARK_RATES_INR_KG, getMaterialBenchmarkRate,
   type DimMap, type DimValue, type PriceUnit, type ProfileId, type Unit,
 } from '@/lib/metalCalc';
 import { ProfileGlyph, ProfilePreview } from './MetalProfilePreview';
@@ -121,74 +121,193 @@ function newestQuote(rates: Partial<Record<LiveMetal, MarketRate>>): string | nu
 }
 
 /** Material picker: name, density and the ₹/kg rate for each (your saved dealer rate, else today's market price). */
-function MaterialSelect({ value, onChange, badge, density, asOf, issue }: { value: string; onChange: (id: string) => void; badge: (id: string) => Badge; density: string; asOf: string | null; issue: string | null }) {
+function MaterialSelect({
+  value,
+  onChange,
+  density,
+  asOf,
+  rates
+}: {
+  value: string;
+  onChange: (id: string) => void;
+  density: string;
+  asOf: string | null;
+  rates: Partial<Record<LiveMetal, MarketRate>>;
+}) {
   const [open, setOpen] = useState(false);
-  const [active, setActive] = useState(0);
+  const [search, setSearch] = useState('');
   const box = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const current = MATERIALS.find(m => m.id === value);
   const label = current ? `${current.name} (${current.density} g/cm³)` : `Custom (${density.trim() || '—'} g/cm³)`;
 
   useEffect(() => {
     if (!open) return;
-    const away = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) setOpen(false); };
+    const away = (e: MouseEvent) => {
+      if (box.current && !box.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
     document.addEventListener('mousedown', away);
     return () => document.removeEventListener('mousedown', away);
   }, [open]);
 
-  const choose = (id: string) => { onChange(id); setOpen(false); };
-  const onKey = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') { setOpen(false); return; }
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-      e.preventDefault();
-      if (!open) { setActive(Math.max(0, MATERIALS.findIndex(m => m.id === value))); setOpen(true); return; }
-      setActive(i => (e.key === 'ArrowDown' ? Math.min(MATERIALS.length - 1, i + 1) : Math.max(0, i - 1)));
-    } else if ((e.key === 'Enter' || e.key === ' ') && open) { e.preventDefault(); choose(MATERIALS[active].id); }
+  useEffect(() => {
+    if (open) {
+      setTimeout(() => searchInputRef.current?.focus(), 50);
+    } else {
+      setSearch('');
+    }
+  }, [open]);
+
+  const choose = (id: string) => {
+    onChange(id);
+    setOpen(false);
+  };
+
+  const q = search.trim().toLowerCase();
+  const filtered = MATERIALS.filter(m => {
+    if (!q) return true;
+    return m.name.toLowerCase().includes(q) || m.id.toLowerCase().includes(q) || String(m.density).includes(q);
+  });
+
+  const getEffectiveRate = (id: string): number | null => {
+    const liveKey = LIVE_METAL_OF[id];
+    const liveObj = liveKey ? rates[liveKey] : undefined;
+    if (liveObj && !isStale(liveObj)) {
+      return liveObj.inrPerKg;
+    }
+    return BENCHMARK_RATES_INR_KG[id] ?? null;
   };
 
   return (
-    <div ref={box} className="relative" onKeyDown={onKey}>
-      <button type="button" aria-label="Material presets" aria-haspopup="listbox" aria-expanded={open} data-value={value}
-        onClick={() => { setActive(Math.max(0, MATERIALS.findIndex(m => m.id === value))); setOpen(o => !o); }}
-        className="w-full h-10 px-3 rounded-lg border border-slate-200 bg-slate-50 text-sm font-medium text-slate-800 flex items-center justify-between gap-2 text-left focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500">
+    <div ref={box} className="relative">
+      <button
+        type="button"
+        aria-label="Material presets"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        data-value={value}
+        onClick={() => setOpen(o => !o)}
+        className="w-full h-10 px-3 rounded-lg border border-slate-200 bg-slate-50 text-sm font-medium text-slate-800 flex items-center justify-between gap-2 text-left focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500"
+      >
         <span className="truncate">{label}</span>
         <ChevronDown size={16} className="text-slate-400 shrink-0" />
       </button>
+
       {open && (
-        <ul role="listbox" aria-label="Materials" className="absolute z-30 mt-1 w-full max-h-72 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg pb-1">
-          <li role="presentation" data-testid="mat-asof" className="sticky top-0 z-10 bg-white/95 backdrop-blur px-3 py-1.5 text-[10px] text-slate-500 border-b border-slate-100">
-            {asOf ? <>Live market rates · <b className="text-slate-700">{quoteStamp(asOf)}</b> ({ageLabel(asOf)})</> : <span className="text-amber-700" data-testid="mat-issue">Live market rates not available{issue ? ` — ${issue}` : ' yet'}</span>}
-          </li>
-          {MATERIALS.map((m, i) => {
-            const b = badge(m.id);
-            return (
-              <li key={m.id} role="option" aria-selected={m.id === value} data-testid={`mat-opt-${m.id}`}
-                onMouseEnter={() => setActive(i)} onClick={() => choose(m.id)}
-                className={`flex items-center justify-between gap-3 px-3 py-2 cursor-pointer text-sm ${i === active ? 'bg-slate-50' : ''} ${m.id === value ? 'font-semibold text-slate-900' : 'text-slate-700'}`}>
-                <span className="truncate">{m.name}</span>
-                <span className="flex items-center gap-2 shrink-0">
-                  <span className="font-mono text-[11px] text-slate-400">{m.density} g/cm³</span>
-                  {b ? (
-                    <span data-testid={`mat-badge-${m.id}`} title="Market price today (from the live feed)"
-                      className="font-mono text-[11px] font-bold px-2 py-0.5 rounded-full border bg-sky-50 text-sky-700 border-sky-200">
-                      ₹{inrLabel(b.v)}/kg
-                    </span>
-                  ) : <span className="text-[11px] text-slate-300 px-2">—</span>}
-                </span>
+        <div
+          role="listbox"
+          aria-label="Materials"
+          className="absolute z-50 mt-1 min-w-[340px] sm:min-w-[420px] max-w-[500px] w-full max-h-80 overflow-hidden flex flex-col rounded-xl border border-slate-200 bg-white shadow-2xl pb-1"
+        >
+          {/* Header info badge */}
+          <div className="sticky top-0 z-20 bg-slate-50/95 backdrop-blur px-3 py-2 text-[10.5px] border-b border-slate-200 flex items-center justify-between gap-2">
+            {asOf ? (
+              <span className="text-emerald-700 font-semibold flex items-center gap-1.5 truncate">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                Live market rates · <b className="text-slate-800">{quoteStamp(asOf)}</b>
+              </span>
+            ) : (
+              <span className="text-emerald-700 font-medium flex items-center gap-1.5 truncate" data-testid="mat-asof">
+                <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                Market Benchmark Rates (MCX/LME Reference)
+              </span>
+            )}
+            <span className="text-[10px] text-slate-400 font-mono shrink-0">{filtered.length} presets</span>
+          </div>
+
+          {/* Search bar */}
+          <div className="p-2 border-b border-slate-100 bg-white">
+            <div className="relative">
+              <Search size={14} className="absolute left-2.5 top-2.5 text-slate-400" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                placeholder="Search or select material preset..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="w-full h-8 pl-8 pr-7 text-xs rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-brand-500 focus:border-brand-500"
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch('')}
+                  className="absolute right-2 top-2 text-slate-400 hover:text-slate-600 text-xs"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Preset list */}
+          <ul className="overflow-y-auto flex-1 divide-y divide-slate-100/70">
+            {filtered.length === 0 ? (
+              <li className="p-4 text-center text-xs text-slate-400">
+                No material presets found matching "{search}".
               </li>
-            );
-          })}
-          <li role="option" aria-selected={value === 'custom'} data-testid="mat-opt-custom" onClick={() => choose('custom')}
-            className={`flex items-center justify-between gap-3 px-3 py-2 cursor-pointer text-sm border-t border-slate-100 mt-1 ${value === 'custom' ? 'bg-orange-50 font-semibold text-orange-700' : 'text-slate-700 hover:bg-slate-50'}`}>
-            <span>Custom Material</span>
-            <span className="font-mono text-[11px] text-slate-400">{density.trim() || '—'} g/cm³</span>
-          </li>
-        </ul>
+            ) : (
+              filtered.map(m => {
+                const isSelected = m.id === value;
+                const rate = getEffectiveRate(m.id);
+                return (
+                  <li
+                    key={m.id}
+                    role="option"
+                    aria-selected={isSelected}
+                    data-testid={`mat-opt-${m.id}`}
+                    onClick={() => choose(m.id)}
+                    className={`flex items-center justify-between gap-3 px-3 py-2 cursor-pointer text-xs transition-colors ${
+                      isSelected
+                        ? 'bg-orange-50 font-bold text-orange-900 border-l-4 border-orange-500'
+                        : 'text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span className="truncate pr-1">{m.name}</span>
+                    <span className="flex items-center gap-2 shrink-0">
+                      <span className="font-mono text-[10px] text-slate-400 whitespace-nowrap">
+                        {m.density.toFixed(2)} g/cm³
+                      </span>
+                      {rate != null ? (
+                        <span
+                          data-testid={`mat-badge-${m.id}`}
+                          className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200 shrink-0 whitespace-nowrap shadow-2xs"
+                        >
+                          ₹{inrLabel(rate)}/kg
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-slate-300 px-2 shrink-0">—</span>
+                      )}
+                    </span>
+                  </li>
+                );
+              })
+            )}
+
+            <li
+              role="option"
+              aria-selected={value === 'custom'}
+              data-testid="mat-opt-custom"
+              onClick={() => choose('custom')}
+              className={`flex items-center justify-between gap-3 px-3 py-2.5 cursor-pointer text-xs border-t border-slate-200 ${
+                value === 'custom'
+                  ? 'bg-orange-50 font-bold text-orange-900 border-l-4 border-orange-500'
+                  : 'text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              <span className="font-semibold">Custom Material</span>
+              <span className="font-mono text-[10px] text-slate-400">
+                {density.trim() || '—'} g/cm³
+              </span>
+            </li>
+          </ul>
+        </div>
       )}
     </div>
   );
 }
 
-/** One metal component handed to a product's cost sheet. */
 export interface BomMetalItem { description: string; weightKg: number; ratePerKg: number | null }
 
 /** `embedded`: used inside the Product Workings page (no page header, adds an "Add to Product BOM" button). */
@@ -198,7 +317,7 @@ export function MetalCalculatorPage({ embedded }: { embedded?: { onAdd: (item: B
   const [unitMode, setUnitMode] = useState<'mm' | 'in'>('mm');
   const [materialId, setMaterialId] = useState('steel');
   const [density, setDensity] = useState('7.85');
-  const [price, setPrice] = useState('');
+  const [price, setPrice] = useState(() => String(BENCHMARK_RATES_INR_KG['steel'] || '68.50'));
   const [priceUnit, setPriceUnit] = useState<PriceUnit>('kg');
   const [qty, setQty] = useState('1');
   // Live market rate (INR/kg) for the metals a feed quotes; the price field follows it until you type your own.
@@ -266,7 +385,16 @@ export function MetalCalculatorPage({ embedded }: { embedded?: { onAdd: (item: B
   const pickMaterial = (id: string) => {
     setMaterialId(id);
     const m = MATERIALS.find(x => x.id === id);
-    if (m) setDensity(String(m.density));
+    if (m) {
+      setDensity(String(m.density));
+      const liveKey = LIVE_METAL_OF[id];
+      const liveObj = liveKey ? rates[liveKey] : undefined;
+      const ratePerKg = (liveObj && !isStale(liveObj)) ? liveObj.inrPerKg : BENCHMARK_RATES_INR_KG[id];
+      if (ratePerKg) {
+        setPrice(rateInUnit(ratePerKg, priceUnit));
+        setPriceFromLive(true);
+      }
+    }
   };
   const onDensity = (v: string) => {
     const clean = numeric(v);

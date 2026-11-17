@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Calculator, Cog, Package, Plus, RotateCcw, Save, Trash2 } from 'lucide-react';
+import { ArrowLeft, Calculator, Cog, Package, Plus, RotateCcw, Save, Trash2, ListPlus, ChevronDown } from 'lucide-react';
 import { formatINR } from '@/lib/format';
 import { calcWorkings, emptyWorkings, rowCost, type WorkRow, type Workings } from '@/lib/quotationWorkings';
 import { MetalCalculatorPage, type BomMetalItem } from './MetalCalculatorPage';
+import { DEFAULT_PROCESS_RATES } from '@/lib/metalCalc';
 
 const cell = 'w-full h-8 px-2 text-xs bg-white border border-slate-200 rounded focus:outline-none focus:border-orange-500';
 const numeric = (v: string) => v.replace(/[^0-9.,]/g, '');
@@ -19,12 +20,19 @@ export function ProductWorkingsPage({ title, initial, onBack, onSave }: {
 }) {
   const [w, setW] = useState<Workings>(() => initial ?? emptyWorkings());
   const [dirty, setDirty] = useState(false);
+  const [opMenuOpen, setOpMenuOpen] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const r = calcWorkings(w);
   const change = (fn: (p: Workings) => Workings) => { setW(fn); setDirty(true); };
   const setRows = (k: Key, rows: WorkRow[]) => change(p => ({ ...p, [k]: rows }));
   const upd = (k: Key, id: string, patch: Partial<WorkRow>) => setRows(k, w[k].map(x => (x.id === id ? { ...x, ...patch } : x)));
   const del = (k: Key, id: string) => setRows(k, w[k].filter(x => x.id !== id));
+
+  
+  const addPresetProcess = (name: string, rate: number, unit = 'Minute') => {
+    setRows('processes', [...w.processes, newRow(`${name} (${unit})`, '1', String(rate))]);
+    setOpMenuOpen(false);
+  };
 
   const addMetal = (it: BomMetalItem) => {
     change(p => ({ ...p, materials: [...p.materials, newRow(it.description, String(it.weightKg), it.ratePerKg !== null ? String(it.ratePerKg) : '')] }));
@@ -104,7 +112,41 @@ export function ProductWorkingsPage({ title, initial, onBack, onSave }: {
         <section className="rounded-xl border border-rose-200 bg-rose-50/40 p-4">
           <div className="flex items-start justify-between gap-2 mb-3">
             <div><h2 className="flex items-center gap-2 text-sm font-bold text-slate-800"><Cog size={15} className="text-rose-500" /> Process Costing (Machinery/Labour)</h2><p className="text-[11px] text-slate-500">Click Add Operation to type an operation, hours and rate.</p></div>
-            <button type="button" data-testid="add-process" onClick={() => setRows('processes', [...w.processes, newRow()])} className="flex items-center gap-1 h-8 px-3 rounded-md bg-rose-600 text-white text-xs font-bold"><Plus size={13} /> Add Operation</button>
+            <div className="flex items-center gap-2 relative">
+              <div className="relative">
+                <button
+                  type="button"
+                  data-testid="select-process"
+                  onClick={() => setOpMenuOpen(o => !o)}
+                  className="flex items-center gap-1.5 h-8 px-3 rounded-md bg-white border border-rose-300 text-rose-700 text-xs font-bold hover:bg-rose-50 shadow-xs"
+                >
+                  <ListPlus size={14} /> Select Operation <ChevronDown size={12} />
+                </button>
+                {opMenuOpen && (
+                  <div className="absolute right-0 top-full mt-1 w-64 bg-white rounded-xl border border-slate-200 shadow-xl z-30 py-1.5 overflow-hidden">
+                    <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100">
+                      Standard Machine Operations
+                    </div>
+                    <div className="max-h-60 overflow-y-auto divide-y divide-slate-50">
+                      {DEFAULT_PROCESS_RATES.map(op => (
+                        <button
+                          key={op.name}
+                          type="button"
+                          onClick={() => addPresetProcess(op.name, op.rate, op.unit)}
+                          className="w-full px-3 py-2 text-left text-xs text-slate-700 hover:bg-rose-50 hover:text-rose-700 flex items-center justify-between transition-colors"
+                        >
+                          <span className="font-medium">{op.name}</span>
+                          <span className="font-mono text-[11px] font-bold text-rose-600 bg-rose-50/80 px-1.5 py-0.5 rounded">
+                            ₹{op.rate}/{op.unit === 'Minute' ? 'min' : 'hr'}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <button type="button" data-testid="add-process" onClick={() => setRows('processes', [...w.processes, newRow()])} className="flex items-center gap-1 h-8 px-3 rounded-md bg-rose-600 text-white text-xs font-bold hover:bg-rose-700 shadow-xs"><Plus size={13} /> Add Operation</button>
+            </div>
           </div>
           <div className="bg-white rounded-lg border border-slate-200 overflow-hidden"><table className="w-full">
             <thead className="bg-slate-50 text-[10px] uppercase text-slate-500"><tr><th className="text-left px-3 py-2">Process Operation</th><th className="px-2 py-2 w-28 text-left">Hours / Qty</th><th className="px-2 py-2 w-28 text-left">Rate (₹)</th><th className="px-2 py-2 w-28 text-right">Total Cost</th><th className="w-10" /></tr></thead>
