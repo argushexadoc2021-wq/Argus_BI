@@ -31,6 +31,7 @@ import {
   Briefcase,
   MessageSquare,
   Camera,
+  Network,
   type LucideIcon,
 } from 'lucide-react';
 import type { ErpRole } from '@/contexts/AuthContext';
@@ -60,6 +61,7 @@ export const navSections: NavSection[] = [
       { label: 'Dashboard', icon: LayoutDashboard, page: 'dashboard', iconClass: 'text-sky-400', module: 'dashboard' },
       { label: 'BI Chat', icon: MessageSquare, page: 'bi-chat', iconClass: 'text-amber-400', module: 'bi-chat' },
       { label: 'Reports', icon: BarChart3, page: 'reports/production', iconClass: 'text-red-400', module: 'reports' },
+      { label: 'Mind Map', icon: Network, page: 'mind-map', iconClass: 'text-cyan-400' },
     ],
   },
   {
@@ -141,6 +143,7 @@ export const navSections: NavSection[] = [
 export const pageTitles: Record<string, string> = {
   'dashboard': 'Executive Dashboard',
   'bi-chat': 'BI Chat',
+  'mind-map': 'Project Mind Map',
   'admin/jd-build': 'JD Build',
   'sales/pipeline': 'In-house Sales Pipeline',
   'sales/in-house': 'In-house Sales Pipeline',

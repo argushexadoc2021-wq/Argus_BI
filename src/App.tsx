@@ -107,6 +107,7 @@ import {
 } from './pages/admin/AdminPages';
 import { JdBuildPage } from '@/pages/admin/JdBuildPage';
 import { SupportCenterPage } from './pages/support/SupportCenterPage';
+import { MindMapPage } from './pages/MindMapPage';
 import { AssistantDock } from '@/components/AssistantDock';
 import { RequireModule, moduleForPage } from '@/components/auth/RequireModule';
 import { displayScale as scaleOf, useDisplaySize, useDisplaySizeShortcuts } from '@/lib/displaySize';
@@ -228,6 +229,8 @@ function MainLayout() {
             <Route path="/" element={<HomeRedirect />} />
             <Route path="/dashboard" element={<Dashboard onNavigate={handleNavigate} />} />
             <Route path="/bi-chat" element={<BiChatPage />} />
+            <Route path="/mind-map" element={<MindMapPage />} />
+            <Route path="/mindmap" element={<Navigate to="/mind-map" replace />} />
             
             {/* Sales */}
             <Route path="/sales/pipeline" element={<SalesPipelinePage />} />
