@@ -50,7 +50,7 @@ const METAL_LABEL: Record<LiveMetal, string> = { aluminum: 'Aluminium', copper: 
 const METAL_ORDER: LiveMetal[] = LIVE_METALS;
 
 /** Reference only: today's market price per kg, next to the dealer price the user types. */
-function MarketPanel({ rates, state, selected, price, unit, fromLive, issue }: {
+function MarketPanel({ rates = {}, state, selected, price, unit, fromLive, issue }: {
   issue: string | null;
   rates: Partial<Record<LiveMetal, MarketRate>>; state: 'loading' | 'ready' | 'error'; selected?: LiveMetal; price: string; unit: PriceUnit; fromLive: boolean;
 }) {
@@ -115,7 +115,8 @@ function RateNote({ materialId, liveMetal, rate, fresh, state, unit, applied, on
 type Badge = { v: number } | null;
 
 /** The newest quote time across all metals, as an ISO string. */
-function newestQuote(rates: Partial<Record<LiveMetal, MarketRate>>): string | null {
+function newestQuote(rates?: Partial<Record<LiveMetal, MarketRate>>): string | null {
+  if (!rates) return null;
   const t = LIVE_METALS.map(m => rates[m]).filter(Boolean).map(r => r!.quotedAt ?? r!.fetchedAt).sort().pop();
   return t ?? null;
 }
@@ -126,13 +127,13 @@ function MaterialSelect({
   onChange,
   density,
   asOf,
-  rates
+  rates = {}
 }: {
   value: string;
   onChange: (id: string) => void;
   density: string;
   asOf: string | null;
-  rates: Partial<Record<LiveMetal, MarketRate>>;
+  rates?: Partial<Record<LiveMetal, MarketRate>>;
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -173,7 +174,7 @@ function MaterialSelect({
 
   const getEffectiveRate = (id: string): number | null => {
     const liveKey = LIVE_METAL_OF[id];
-    const liveObj = liveKey ? rates[liveKey] : undefined;
+    const liveObj = (liveKey && rates) ? rates[liveKey] : undefined;
     if (liveObj && !isStale(liveObj)) {
       return liveObj.inrPerKg;
     }
@@ -388,7 +389,7 @@ export function MetalCalculatorPage({ embedded }: { embedded?: { onAdd: (item: B
     if (m) {
       setDensity(String(m.density));
       const liveKey = LIVE_METAL_OF[id];
-      const liveObj = liveKey ? rates[liveKey] : undefined;
+      const liveObj = (liveKey && rates) ? rates[liveKey] : undefined;
       const ratePerKg = (liveObj && !isStale(liveObj)) ? liveObj.inrPerKg : BENCHMARK_RATES_INR_KG[id];
       if (ratePerKg) {
         setPrice(rateInUnit(ratePerKg, priceUnit));
@@ -470,8 +471,7 @@ export function MetalCalculatorPage({ embedded }: { embedded?: { onAdd: (item: B
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
                 <div>
                   <label className={`${labelCls} uppercase tracking-wide`}>Material presets</label>
-                  <MaterialSelect value={materialId} onChange={pickMaterial} density={density} asOf={newestQuote(rates)} issue={ratesIssue}
-                    badge={id => { const m = LIVE_METAL_OF[id]; const r = m ? rates[m] : undefined; return r && !isStale(r) ? { v: r.inrPerKg } : null; }} />
+                  <MaterialSelect value={materialId} onChange={pickMaterial} density={density} asOf={newestQuote(rates)} rates={rates} />
                 </div>
                 <div>
                   <label className={`${labelCls} uppercase tracking-wide`}>Density (g/cm³)</label>
