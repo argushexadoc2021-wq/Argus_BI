@@ -331,6 +331,10 @@ catch { db = seed(); try { fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2)
 if (!Array.isArray(db.quotations)) { db.quotations = []; }
 if (!Array.isArray(db.roles)) { db.roles = defaultRoles(); }
 if (!Array.isArray(db.globalDisabledMenus)) { db.globalDisabledMenus = []; }
+if (!Array.isArray(db.email_accounts)) { db.email_accounts = []; }
+if (!Array.isArray(db.email_permissions)) { db.email_permissions = []; }
+if (!Array.isArray(db.received_emails)) { db.received_emails = []; }
+if (!Array.isArray(db.sent_emails)) { db.sent_emails = []; }
 ensureRolePermissions();
 
 let lastSyncTime = 0;
@@ -629,7 +633,7 @@ const retailOffFor = (companyId) => { const c = companyId ? (db.companies || [])
 const biOffFor = (companyId) => { const c = companyId ? (db.companies || []).find(x => x.id === companyId || x.code === companyId) : null; return !!c && c.biEnabled === false; };
 app.use((req, res, next) => {
   if (req.ctx && req.ctx.role !== 'super_admin' && req.path.startsWith('/api/') && !['/api/health', '/api/config', '/api/me'].includes(req.path)
-      && !req.path.startsWith('/api/integrations/erp/') && !req.path.startsWith('/api/retail-sync/') && !req.path.startsWith('/api/quote-confirm/') && !req.path.startsWith('/api/bi-chat/') && !req.path.startsWith('/api/adviser/')
+      && !req.path.startsWith('/api/integrations/erp/') && !req.path.startsWith('/api/retail-sync/') && !req.path.startsWith('/api/quote-confirm/') && !req.path.startsWith('/api/bi-chat/') && !req.path.startsWith('/api/adviser/') && !req.path.startsWith('/api/mail-integration/')
       && retailOffFor(req.ctx.companyId)) {
     return res.status(403).json({ error: 'The Retail Store is turned off for your company.', code: 'RETAIL_OFF' });
   }
@@ -638,7 +642,7 @@ app.use((req, res, next) => {
 /* pending/disabled Google users may only reach health, config and /api/me */
 app.use((req, res, next) => {
   /* the ERP server-to-server calls carry x-erp-api-key (checked by verifyErpServerAuth), not a user sign-in */
-  if (req.path.startsWith('/api/integrations/erp/') || req.path === '/api/digital-order-mail' || req.path.startsWith('/api/digital-mail/') || req.path.startsWith('/api/digital-pay/') || req.path.startsWith('/api/adviser/') || req.path.startsWith('/api/quote-confirm/') || req.path.startsWith('/api/bi-chat/')) return next();   // the mail route checks the sign-in token itself
+  if (req.path.startsWith('/api/integrations/erp/') || req.path === '/api/digital-order-mail' || req.path.startsWith('/api/digital-mail/') || req.path.startsWith('/api/digital-pay/') || req.path.startsWith('/api/adviser/') || req.path.startsWith('/api/quote-confirm/') || req.path.startsWith('/api/bi-chat/') || req.path.startsWith('/api/mail-integration/')) return next();   // the mail route checks the sign-in token itself
   if ((req.ctx.role === 'pending' || req.ctx.role === 'disabled') && req.path.startsWith('/api/') && !['/api/health', '/api/config', '/api/me'].includes(req.path)) {
     return res.status(403).json({ error: req.ctx.role === 'pending' ? 'Account pending approval by your administrator' : 'Account deactivated' });
   }
@@ -957,6 +961,9 @@ app.post('/api/adviser-mail/remove', async (req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: String(e.message || e) }); }
 });
 const adviserMailHits = new Map();   // person -> send times (a small limit against mistakes / runaway use)
+// Mount enterprise multi-mailbox integration handler
+require('./mailIntegrationHandler.cjs')({ app, SB, db, save, mailEnc, mailDec, mailTransport, mailProblem, uid });
+
 app.post('/api/adviser-mail/send', async (req, res) => {
   try {
     const a = await adviserMailUser(req, res); if (!a) return;

@@ -74,6 +74,10 @@ export function MailConnect({ onClose }: { onClose: () => void }) {
       <div className="mb-2 flex items-center gap-2">
         <Mail size={14} className="text-emerald-700" />
         <span className="flex-1 font-bold text-emerald-900">{state?.connected ? 'Your e-mail is connected' : 'Connect your e-mail'}</span>
+        <a href="/admin/email-integration" onClick={onClose} className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-100 hover:bg-emerald-200 px-2 py-0.5 rounded border border-emerald-300 transition-colors mr-1" title="Open Dedicated Mail Integration Hub">
+          <span>Open Full Setup</span>
+          <ExternalLink size={10} />
+        </a>
         <button type="button" onClick={onClose} className="rounded p-1 text-slate-500 hover:bg-white" title="Close"><X size={14} /></button>
       </div>
       {state?.connected && state.mail && (

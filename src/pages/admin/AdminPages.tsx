@@ -1876,6 +1876,7 @@ export function SettingsPage() {
   );
 }
 export { AuditLogsPage } from './AuditLogsPage';
+export { EmailIntegrationPage } from './EmailIntegrationPage';
 
 // ======================================================================================
 // Company & Access Management: All Companies → Company → Users → User Permissions

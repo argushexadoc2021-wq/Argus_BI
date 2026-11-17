@@ -1,5 +1,6 @@
 import {
   LayoutDashboard,
+  Mail,
   TrendingUp,
   Users,
   FileText,
@@ -127,6 +128,7 @@ export const navSections: NavSection[] = [
       { label: 'Company Management', icon: Building2, page: 'admin/companies', roles: ['SUPER_ADMIN'], iconClass: 'text-indigo-400', module: 'admin-companies' },
       { label: 'Settings', icon: Settings, page: 'admin/settings', iconClass: 'text-gray-400', module: 'settings' },
       { label: 'Audit Logs', icon: ShieldCheck, page: 'admin/audit-logs', iconClass: 'text-slate-300', module: 'audit-logs' },
+      { label: 'Mail Integration', icon: Mail, page: 'admin/email-integration', iconClass: 'text-amber-400', module: 'email-integration' },
       { label: 'Technical Support', icon: LifeBuoy, page: 'support/technical', iconClass: 'text-cyan-400', module: 'support' },
       { label: 'On-site Support', icon: Wrench, page: 'support/onsite', iconClass: 'text-emerald-400', module: 'onsite-support' },
       { label: 'Retail Store', icon: Store, page: 'store/home', iconClass: 'text-orange-400' },
@@ -223,6 +225,7 @@ export const pageTitles: Record<string, string> = {
   'admin/settings': 'Company Settings',
   'updates': 'App Updates & Version History',
   'admin/audit-logs': 'Audit Logs',
+  'admin/email-integration': 'Email & Mailbox Integration',
   'support/center': 'Support Center',
   'support/technical': 'Technical Support',
   'support/onsite': 'On-site Support',

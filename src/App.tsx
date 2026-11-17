@@ -103,7 +103,7 @@ import { QuantityTrackingPage } from './pages/reports/QuantityTrackingPage';
 import { PipelineReportPage } from './pages/reports/PipelineReportPage';
 
 import {
-  UsersPage, CompaniesPage, SettingsPage, AuditLogsPage, AccessPage
+  UsersPage, CompaniesPage, SettingsPage, AuditLogsPage, AccessPage, EmailIntegrationPage
 } from './pages/admin/AdminPages';
 import { JdBuildPage } from '@/pages/admin/JdBuildPage';
 import { SupportCenterPage } from './pages/support/SupportCenterPage';
@@ -345,6 +345,7 @@ function MainLayout() {
             <Route path="/admin/settings" element={<SettingsPage />} />
             <Route path="/updates" element={<UpdatesSettingsPage />} />
             <Route path="/admin/audit-logs" element={<AuditLogsPage />} />
+            <Route path="/admin/email-integration" element={<EmailIntegrationPage />} />
             <Route path="/support/center" element={<SupportCenterPage />} />
             <Route path="/support/technical" element={<SupportCenterPage defaultType="technical" />} />
             <Route path="/support/onsite" element={<SupportCenterPage defaultType="onsite" />} />

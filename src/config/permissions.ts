@@ -95,6 +95,7 @@ export const MODULE_CATALOG: ModuleDef[] = [
   { key: 'admin-companies', label: 'Company Management', category: 'Administration', actions: [...V], pages: ['admin/companies'] },
   { key: 'settings', label: 'Settings', category: 'Administration', actions: [...V], pages: ['admin/settings'] },
   { key: 'audit-logs', label: 'Audit Logs', category: 'Administration', actions: [...V], pages: ['admin/audit-logs'] },
+  { key: 'email-integration', label: 'Mail Integration', category: 'Administration', actions: [...VCEDX], pages: ['admin/email-integration'] },
 
   { key: 'support', label: 'Technical Support', category: 'Administration', actions: ['view', 'create', 'edit', 'delete', 'approve', 'export'], pages: ['support/center', 'support/technical'] },
   { key: 'ai-teaching', label: 'Teaching (AI)', category: 'AI Assistants', actions: [...V], pages: [], defaultOn: true },
