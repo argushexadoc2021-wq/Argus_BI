@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import type { AiAccess } from '@/lib/aiAccess';
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { BarChart3, Bot, Columns2, Crosshair, Download, Mail, CheckCircle2, GraduationCap, Lightbulb, Loader2, MessageCircle, Mic, Send, Sparkles, Volume2, VolumeX, X, History, Plus, Trash2 } from 'lucide-react';
+import { BarChart3, Bot, Columns2, Crosshair, Download, Mail, CheckCircle2, GraduationCap, Lightbulb, Loader2, MessageCircle, Mic, Send, Sparkles, Undo2, Volume2, VolumeX, X, History, Plus, Trash2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { AdviserReportPanel } from '@/components/AdviserReport';
 import { serverChat, serverSpeech, ServerAiError } from '@/lib/adviser/serverAi';
@@ -51,8 +51,14 @@ const TAMIL = /[஀-௿]/;
 const ENDPOINT = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/help-assistant`;
 // "Guide me": starts the on-screen walkthrough of the current screen (GuideCoach) instead of answering by voice.
 const GUIDE_WORDS = /\b(guide me|walk me through|walkthrough|show me how|step by step|guide pannu|guide pannunga|vazhi ?kaattu)\b|வழிகாட்டு|வழி காட்டு|வழிகாட்டுங்கள்/i;
-/** The word that ends a turn when "over" mode is on (English, Tamil script and a common spelling of it). */
-const OVER_RE = /(?:^|[\s,.!?])(over|ஓவர்|ஓவர|ஓவரு|ஓவா|ஓர்|ovar|ओवर)\s*[.!?]*\s*$/i;
+/** The word that ends a turn when "over" mode is on (English, Tamil script and common speech-to-text spellings — excludes Tamil word "ஓர்"). */
+const OVER_RE = /(?:^|[\s,.!?])(over|ஓவர்|ஓவர|ஓவரு|ovar|ओवर)\s*[.!?]*\s*$/i;
+/** Voice-editing commands while recording in "over" mode (matched only when spoken as a standalone phrase so normal questions are never deleted). */
+const VOICE_CLEAR_RE = /^(delete|clear|cancel|erase|reset|start over|clear all|delete all|delete that|delete this|clear that|delete recording|delete pannu|clear pannu|அழி|நீக்கு|கேன்சல்|அழித்துவிடு|முழுவதும் அழி|அழிச்சிடு)\s*[.!?]*$/i;
+const VOICE_UNDO_RE = /^(undo|undo last|delete last|remove last|clear last|backspace|last delete|go back|கடைசி அழி|கடைசி நீக்கு|கடைசியை அழி|பின்செல்)\s*[.!?]*$/i;
+const VOICE_REPLACE_RE = /^(?:replace|change)\s+(.+?)\s+(?:with|to|as)\s+(.+?)\s*[.!?]*$/i;
+const VOICE_REPLACE_TA_RE = /^(.+?)\s+(?:மாற்றி|பதிலாக|என்பதை)\s+(.+?)\s*[.!?]*$/i;
+const VOICE_EDIT_LAST_RE = /^(?:edit|edit to|change to|change it to|make it|actually|மாற்று|திருத்து)\s+(.+?)\s*[.!?]*$/i;
 
 /** English words people say inside Tamil speech, as the mic writes them in Tamil letters -> the English word. */
 const TA_TERMS: [RegExp, string][] = [
@@ -704,10 +710,15 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
   const [input, setInput] = useState('');
   const [speakOn, setSpeakOn] = useAiVoice('adviser');        // read the answers aloud (off until switched on)
   const [handsFree, setHandsFree] = useState(() => store.get('help.handsfree', '1') === '1'); // listen again after each answer
-  const [overMode, setOverMode] = useState(() => store.get('help.over', '1') === '1');          // keep listening until the person says "over"
+  const [overMode, setOverMode] = useState(() => store.get('help.over.v2', '1') === '1');       // ON by default: only send when user says "over" (or clicks Send)
   const overRef = useRef(overMode); overRef.current = overMode;
-  const accRef = useRef('');          // what was said so far in this turn (kept while the microphone restarts)
-  const overHit = useRef(false);      // the person said "over"
+  const accRef = useRef('');          // joined draft text kept across recognition restarts
+  const voiceSegmentsRef = useRef<string[]>([]); // finalized voice chunks so Undo / Delete / Voice-Edit work cleanly
+  const [voiceDraft, setVoiceDraft] = useState('');
+  const [voiceInterim, setVoiceInterim] = useState('');
+  const [voiceHint, setVoiceHint] = useState('');
+  const voiceHintTimer = useRef<number>(0);
+  const overHit = useRef(false);      // the person explicitly said "over"
   const [tips, setTips] = useState(false);
   // The Adviser opens on its automatic report; "Ask" is the chat for questions.
   const [view, setView] = useState<'both' | 'report' | 'chat' | 'coworker'>('both');
@@ -769,9 +780,50 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
   useEffect(() => { store.set('help.handsfree', handsFree ? '1' : '0'); }, [handsFree]);
   useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }); }, [msgs, phase]);
 
+  const flashVoiceHint = useCallback((msg: string) => {
+    window.clearTimeout(voiceHintTimer.current);
+    setVoiceHint(msg);
+    voiceHintTimer.current = window.setTimeout(() => setVoiceHint(''), 2600);
+  }, []);
+
+  const syncVoiceDraft = useCallback((segs: string[]) => {
+    const clean = segs.map((x) => x.trim()).filter(Boolean);
+    voiceSegmentsRef.current = clean;
+    const joined = clean.join(' ').replace(/\s+/g, ' ').trim();
+    accRef.current = joined;
+    setVoiceDraft(joined);
+    setHeard(joined);
+    return joined;
+  }, []);
+
+  const clearVoiceDraft = useCallback((notify = true) => {
+    syncVoiceDraft([]);
+    setVoiceInterim('');
+    overHit.current = false;
+    if (notify) {
+      flashVoiceHint(langRef.current === 'ta' ? 'அழிக்கப்பட்டது! மீண்டும் பேசுங்கள்…' : 'Cleared! Speak again…');
+    }
+  }, [syncVoiceDraft, flashVoiceHint]);
+
+  const undoVoiceDraft = useCallback(() => {
+    const segs = [...voiceSegmentsRef.current];
+    if (!segs.length) return;
+    if (segs.length > 1) {
+      segs.pop();
+    } else {
+      const words = segs[0].split(/\s+/);
+      if (words.length <= 4) segs.pop();
+      else segs[0] = words.slice(0, Math.max(1, words.length - 3)).join(' ');
+    }
+    syncVoiceDraft(segs);
+    setVoiceInterim('');
+    flashVoiceHint(langRef.current === 'ta' ? 'கடைசி பகுதி நீக்கப்பட்டது — தொடரலாம்' : 'Removed last part — keep speaking…');
+  }, [syncVoiceDraft, flashVoiceHint]);
+
   const stopListening = useCallback(() => {
     try { recRef.current?.abort?.(); } catch { /* ignore */ }
     recRef.current = null;
+    setVoiceInterim('');
   }, []);
 
   const endSession = useCallback((goodbye: boolean) => {
@@ -781,9 +833,11 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
     stopListening();
     stopSpeaking('adviser');   // only our own voice: another AI may have just taken over
     setLiveGuide(null);
-    setHeard('');
+    syncVoiceDraft([]);
+    setVoiceInterim('');
+    setVoiceHint('');
     if (goodbye && wasActive && speakRef.current) { setPhase('speaking'); say(GOODBYE[langRef.current], () => setPhase('idle'), undefined, 'adviser'); } else setPhase('idle');
-  }, [stopListening]);
+  }, [stopListening, syncVoiceDraft]);
 
   // ------------------------------------------------ the answer: stream it, show it, and speak each sentence as it completes
   const ask = useCallback(async (question: string) => {
@@ -922,38 +976,126 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
     const r = new SR();
     r.lang = langRef.current === 'ta' ? 'ta-IN' : 'en-IN';
     r.interimResults = true;
-    r.continuous = overRef.current;   // "over" mode: keep listening through pauses
-    let finalText = '';
+    r.continuous = overRef.current;   // "over" mode: keep listening through pauses until user says "over"
+    let processedIdx = 0;
+    let lastInterim = '';
+
+    const applyFinalChunk = (rawChunk: string) => {
+      const chunk = rawChunk.replace(/\s+/g, ' ').trim();
+      if (!chunk) return;
+
+      // Ignore Adviser's own echo
+      const normEcho = (x: string) => x.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
+      if (normEcho(chunk).length > 8 && normEcho(lastSpoken.current).includes(normEcho(chunk))) return;
+
+      if (overRef.current) {
+        // 1) Voice command: Delete / Clear freshly recorded draft & keep listening
+        if (VOICE_CLEAR_RE.test(chunk)) {
+          clearVoiceDraft(true);
+          return;
+        }
+        // 2) Voice command: Undo / delete only the last spoken phrase
+        if (VOICE_UNDO_RE.test(chunk)) {
+          undoVoiceDraft();
+          return;
+        }
+        // 3) Voice command: Replace <old> with <new>
+        const rep = chunk.match(VOICE_REPLACE_RE) || chunk.match(VOICE_REPLACE_TA_RE);
+        if (rep && voiceSegmentsRef.current.length > 0) {
+          const fromWord = rep[1].trim();
+          const toWord = rep[2].replace(OVER_RE, '').trim();
+          const joined = voiceSegmentsRef.current.join(' ');
+          const esc = fromWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const re = new RegExp(esc, 'i');
+          if (fromWord && re.test(joined)) {
+            const updated = joined.replace(re, toWord).replace(/\s+/g, ' ').trim();
+            syncVoiceDraft(updated ? [updated] : []);
+            flashVoiceHint(langRef.current === 'ta' ? `மாற்றப்பட்டது: "${toWord}"` : `Replaced "${fromWord}" with "${toWord}"`);
+            if (OVER_RE.test(chunk)) { overHit.current = true; try { r.stop(); } catch { /* ended */ } }
+            return;
+          }
+        }
+        // 4) Voice command: "edit <new phrase>" / "change to <new phrase>" replaces the last recorded chunk
+        const ed = chunk.match(VOICE_EDIT_LAST_RE);
+        if (ed && voiceSegmentsRef.current.length > 0) {
+          const replacement = ed[1].replace(OVER_RE, '').trim();
+          if (replacement) {
+            const segs = [...voiceSegmentsRef.current];
+            segs[segs.length - 1] = replacement;
+            syncVoiceDraft(segs);
+            flashVoiceHint(langRef.current === 'ta' ? 'திருத்தப்பட்டது! தொடரலாம் அல்லது "ஓவர்" சொல்லுங்கள்' : 'Edited! Keep speaking or say "over"');
+            if (OVER_RE.test(chunk)) { overHit.current = true; try { r.stop(); } catch { /* ended */ } }
+            return;
+          }
+        }
+        // 5) Explicit "over" / "ஓவர்" at end of finalized speech -> send!
+        if (OVER_RE.test(chunk)) {
+          const prefix = chunk.replace(OVER_RE, '').trim();
+          if (prefix) syncVoiceDraft([...voiceSegmentsRef.current, prefix]);
+          overHit.current = true;
+          try { r.stop(); } catch { /* ended */ }
+          return;
+        }
+        // 6) Normal dictation chunk: append to draft and keep recording
+        syncVoiceDraft([...voiceSegmentsRef.current, chunk]);
+        return;
+      }
+
+      // Non-over mode: append chunk directly
+      syncVoiceDraft([...voiceSegmentsRef.current, chunk]);
+    };
+
     r.onresult = (e: any) => {
       let interim = '';
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const tr = e.results[i][0].transcript;
-        if (e.results[i].isFinal) finalText += tr; else interim += tr;
+      for (let i = Math.max(processedIdx, e.resultIndex); i < e.results.length; i++) {
+        const tr = e.results[i][0]?.transcript ?? '';
+        if (e.results[i].isFinal) {
+          processedIdx = i + 1;
+          applyFinalChunk(tr);
+        } else {
+          interim += tr;
+        }
       }
-      const heardNow = `${accRef.current} ${finalText} ${interim}`.replace(/\s+/g, ' ').trim();
-      setHeard(heardNow);
-      if (overRef.current && OVER_RE.test(heardNow)) { overHit.current = true; try { r.stop(); } catch { /* ended */ } }
+      lastInterim = interim.replace(/\s+/g, ' ').trim();
+      setVoiceInterim(lastInterim);
+      const preview = [accRef.current, lastInterim].filter(Boolean).join(' ').trim();
+      setHeard(preview);
     };
+
     r.onerror = (e: any) => {
       if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
         setNote('The microphone is blocked. Allow it in the browser address bar, then tap the mic again.');
         setHandsFree(false); handsFreeRef.current = false; setPhase('ready'); recRef.current = null;
       }
     };
+
     r.onend = () => {
       if (!activeRef.current || recRef.current !== r) return;
       recRef.current = null;
-      const said0 = `${accRef.current} ${finalText}`.replace(/\s+/g, ' ').trim();
+      setVoiceInterim('');
+
+      // If recognition closed while the final word was still in lastInterim, process it safely
+      if (lastInterim) {
+        applyFinalChunk(lastInterim);
+        lastInterim = '';
+      }
+
       if (overRef.current && !overHit.current) {
-        // the person has not said "over" yet: keep what was said and listen on (the browser ends a recording every now and then)
-        accRef.current = said0;
-        misses.current = said0 ? 0 : misses.current + 1;
-        if (misses.current >= 10) { accRef.current = ''; setHandsFree(false); handsFreeRef.current = false; setPhase('ready'); setNote('I did not hear anything, so the mic is off. Tap the mic to talk again.'); return; }
-        if (handsFreeRef.current || said0) listenRef.current(); else setPhase('ready');
+        // NEVER auto-send in "over" mode before user says "over" (or clicks Send)!
+        const hasDraft = !!accRef.current.trim();
+        misses.current = hasDraft ? 0 : misses.current + 1;
+        if (misses.current >= 12) {
+          setHandsFree(false); handsFreeRef.current = false; setPhase('ready');
+          setNote(hasDraft ? 'Mic paused. Your recorded text is kept below — edit, delete, send, or tap mic to continue.' : 'I did not hear anything, so the mic is off. Tap the mic to talk again.');
+          return;
+        }
+        if (handsFreeRef.current || hasDraft) listenRef.current(); else setPhase('ready');
         return;
       }
-      const said = said0.replace(OVER_RE, '').trim();
-      accRef.current = ''; overHit.current = false;
+
+      const said = accRef.current.replace(OVER_RE, '').trim();
+      syncVoiceDraft([]);
+      overHit.current = false;
       if (!said) {
         misses.current += 1;
         if (misses.current >= 3) { setHandsFree(false); handsFreeRef.current = false; setPhase('ready'); setNote('I did not hear anything, so the mic is off. Tap the mic to talk again.'); return; }
@@ -969,12 +1111,12 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
       lastSpoken.current = '';
       void ask(said);
     };
+
     recRef.current = r;
-    setHeard('');
     setPhase('listening');
     // A short pause first, so the end of the Adviser's own voice has died away before the microphone opens.
-    window.setTimeout(() => { if (activeRef.current && recRef.current === r) { try { r.start(); } catch { recRef.current = null; setPhase('ready'); } } }, 600);
-  }, [SR, ask, endSession, stopListening]);
+    window.setTimeout(() => { if (activeRef.current && recRef.current === r) { try { r.start(); } catch { recRef.current = null; setPhase('ready'); } } }, 500);
+  }, [SR, ask, clearVoiceDraft, endSession, flashVoiceHint, stopListening, syncVoiceDraft, undoVoiceDraft]);
   listenRef.current = listen;
   const beginRef = useRef<() => void>(() => {});
 
@@ -1119,9 +1261,23 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
   useEffect(() => () => { activeRef.current = false; try { recRef.current?.abort?.(); } catch { /* ignore */ } stopSpeaking(); }, []);
 
   const send = () => {
-    const text = input.trim();
+    const text = (input.trim() || voiceDraft.trim());
     if (!text || busyRef.current) return;
     setInput('');
+    syncVoiceDraft([]);
+    setVoiceInterim('');
+    overHit.current = false;
+    stopListening();
+    stopSpeaking();
+    lastSpoken.current = '';
+    void ask(text);
+  };
+  const sendVoiceDraft = () => {
+    const text = [voiceDraft, voiceInterim].filter(Boolean).join(' ').replace(OVER_RE, '').trim();
+    if (!text || busyRef.current) return;
+    syncVoiceDraft([]);
+    setVoiceInterim('');
+    overHit.current = false;
     stopListening();
     stopSpeaking();
     lastSpoken.current = '';
@@ -1130,18 +1286,18 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
   const toggleMic = () => {
     if (!SR) { setNote('Voice input needs Chrome or Edge on a computer.'); return; }
     if (phase === 'speaking') {                          // talking over the answer: stop it and listen now
-      setHandsFree(true); handsFreeRef.current = true; misses.current = 0; accRef.current = ''; overHit.current = false; setNote('');
+      setHandsFree(true); handsFreeRef.current = true; misses.current = 0; overHit.current = false; setNote('');
       stopSpeaking();
       window.setTimeout(() => listenRef.current(), 150);
       return;
     }
-    if (phase === 'listening' || handsFree) {            // mic off
+    if (phase === 'listening' || handsFree) {            // mic paused (keeps any recorded voice draft so user can edit / delete / send)
       setHandsFree(false); handsFreeRef.current = false;
       stopListening();
       if (!busyRef.current) setPhase('ready');
       return;
     }
-    setHandsFree(true); handsFreeRef.current = true; misses.current = 0; accRef.current = ''; overHit.current = false; setNote('');
+    setHandsFree(true); handsFreeRef.current = true; misses.current = 0; overHit.current = false; setNote('');
     if (!busyRef.current) { stopSpeaking(); listenRef.current(); }
   };
 
@@ -1473,26 +1629,90 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
           </div>
           )}
 
-          {(status || note) && (
+          {(phase === 'listening' || voiceDraft || voiceInterim) && (
+            <div className="border-t border-violet-200 bg-gradient-to-b from-violet-50/80 to-white px-2.5 py-2">
+              <div className="mb-1.5 flex items-center justify-between gap-1.5">
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <span className={`h-2 w-2 shrink-0 rounded-full ${phase === 'listening' ? 'animate-pulse bg-red-500' : 'bg-amber-500'}`} />
+                  <span className="truncate text-[10.5px] font-bold text-slate-700">
+                    {phase === 'listening'
+                      ? (overMode
+                          ? (lang === 'ta' ? 'பதிவாகிறது… அனுப்ப "ஓவர்" / "over" சொல்லுங்கள்' : 'Recording… say "over" to send')
+                          : (lang === 'ta' ? 'கேட்கிறது… பேசுங்கள்' : 'Listening… speak now'))
+                      : (lang === 'ta' ? 'பதிவு செய்த உரை (திருத்த / அழிக்க / அனுப்பலாம்)' : 'Recorded draft (edit, delete, or send)')}
+                  </span>
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  <button type="button" onClick={undoVoiceDraft} disabled={!voiceDraft}
+                    title={lang === 'ta' ? 'கடைசி பகுதியை நீக்கு (அல்லது "undo" / "கடைசி அழி" சொல்லுங்கள்)' : 'Undo last spoken part (or say "undo")'}
+                    className="inline-flex h-6 items-center gap-1 rounded-md border border-slate-200 bg-white px-1.5 text-[10px] font-bold text-slate-600 hover:bg-slate-100 disabled:opacity-35">
+                    <Undo2 size={11} />{lang === 'ta' ? 'பின்செல்' : 'Undo'}
+                  </button>
+                  <button type="button" onClick={() => clearVoiceDraft(true)} disabled={!voiceDraft && !voiceInterim}
+                    title={lang === 'ta' ? 'பதிவை முழுவதும் அழி (அல்லது "delete" / "அழி" சொல்லுங்கள்)' : 'Delete freshly recorded text (or say "delete" / "clear")'}
+                    className="inline-flex h-6 items-center gap-1 rounded-md border border-red-200 bg-red-50 px-1.5 text-[10px] font-bold text-red-600 hover:bg-red-100 disabled:opacity-35">
+                    <Trash2 size={11} />{lang === 'ta' ? 'அழி' : 'Delete'}
+                  </button>
+                  <button type="button" onClick={sendVoiceDraft} disabled={(!voiceDraft && !voiceInterim) || phase === 'thinking'}
+                    title={lang === 'ta' ? 'இப்போது அனுப்பு (அல்லது "over" / "ஓவர்" சொல்லுங்கள்)' : 'Send now (or say "over")'}
+                    className="inline-flex h-6 items-center gap-1 rounded-md bg-emerald-600 px-2 text-[10px] font-bold text-white hover:bg-emerald-700 disabled:opacity-35">
+                    <Send size={10} />{lang === 'ta' ? 'அனுப்பு' : 'Send'}
+                  </button>
+                </div>
+              </div>
+              <textarea
+                rows={2}
+                value={voiceDraft}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  voiceSegmentsRef.current = val.trim() ? [val] : [];
+                  accRef.current = val;
+                  setVoiceDraft(val);
+                  setHeard(val);
+                }}
+                placeholder={lang === 'ta' ? 'பேசுங்கள்… இங்கே நேரடியாகப் பதிவாகும் (கைமுறையாகவும் அல்லது குரலாலும் திருத்தலாம்)' : 'Speak now… your words appear here (edit by typing or by voice)'}
+                className="w-full resize-none rounded-lg border border-violet-200 bg-white px-2.5 py-1.5 text-[12px] leading-snug text-slate-800 placeholder:text-slate-400 focus:border-violet-500 focus:outline-none"
+              />
+              {voiceInterim && (
+                <p className="mt-1 truncate text-[11px] italic text-violet-700">… {voiceInterim}</p>
+              )}
+              <div className="mt-1 flex items-center justify-between gap-2">
+                <p className="truncate text-[9.5px] text-slate-500">
+                  {voiceHint
+                    ? <span className="font-bold text-emerald-700">✓ {voiceHint}</span>
+                    : (lang === 'ta'
+                        ? 'குரல் கட்டளை: "ஓவர்" அனுப்ப · "அழி" நீக்க · "கடைசி அழி" பின்செல்ல · "replace X with Y" திருத்த'
+                        : 'Voice edit: say "over" to send · "delete" to clear · "undo" last · "replace X with Y"')}
+                </p>
+              </div>
+            </div>
+          )}
+          {(status || note) && phase !== 'listening' && (
             <div className="border-t border-slate-100 bg-white px-3 py-1 text-[11px]">
               {status && <span className="font-semibold text-red-600">{status}</span>}
-              {heard && phase === 'listening' && <span className="ml-1.5 text-slate-600">“{heard}”</span>}
               {note && !status && <span className="text-slate-500">{note}</span>}
             </div>
           )}
           <form className="flex items-center gap-1.5 border-t border-slate-200 bg-white p-2" onSubmit={(e) => { e.preventDefault(); send(); }}>
             <button type="button" onClick={toggleMic} aria-pressed={handsFree} aria-label={handsFree ? 'Turn the microphone off' : 'Talk using the microphone'}
-              title={handsFree ? 'Voice conversation is on (click to turn off)' : 'Talk using the microphone'}
+              title={handsFree ? 'Voice recording is active (click to pause)' : 'Talk using the microphone'}
               className={`relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${handsFree ? 'bg-red-600 text-white' : 'border border-slate-200 text-slate-500 hover:bg-slate-100'}`}>
               {phase === 'listening' && <span className="absolute inset-0 animate-ping rounded-full bg-red-500/30" />}
               <Mic size={16} className="relative" />
             </button>
-            <button type="button" onClick={() => { const v = !overMode; setOverMode(v); store.set('help.over', v ? '1' : '0'); accRef.current = ''; overHit.current = false; }} aria-pressed={overMode}
-              title={overMode ? 'It keeps listening until you say "over" (click to turn off)' : 'Turn on: it keeps listening until you say "over"'}
-              className={`h-9 shrink-0 rounded-full px-2 text-[10px] font-extrabold uppercase ${overMode ? 'bg-violet-600 text-white' : 'border border-slate-200 text-slate-500 hover:bg-slate-100'}`}>over</button>
+            <button type="button" onClick={() => {
+              const v = !overMode;
+              setOverMode(v);
+              overRef.current = v;
+              store.set('help.over.v2', v ? '1' : '0');
+              overHit.current = false;
+              if (phase === 'listening') listenRef.current();
+            }} aria-pressed={overMode}
+              title={overMode ? 'OVER mode ON: message sends ONLY when you say "over" / "ஓவர்" (click to turn off)' : 'OVER mode OFF: sends automatically when you pause (click to turn ON)'}
+              className={`h-9 shrink-0 rounded-full px-2.5 text-[10px] font-extrabold uppercase ${overMode ? 'bg-violet-600 text-white shadow-sm' : 'border border-slate-200 text-slate-500 hover:bg-slate-100'}`}>{overMode ? 'OVER ✓' : 'OVER'}</button>
             <input value={input} onChange={(e) => setInput(e.target.value)} placeholder={lang === 'ta' ? 'உங்கள் கேள்வியை எழுதுங்கள்…' : 'Type your question…'} aria-label="Your question"
               className="h-9 min-w-0 flex-1 rounded-full border border-slate-200 bg-slate-50 px-3 text-sm text-slate-800 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none" />
-            <button type="submit" disabled={!input.trim() || phase === 'thinking'} aria-label="Send" title="Send"
+            <button type="submit" disabled={(!input.trim() && !voiceDraft.trim()) || phase === 'thinking'} aria-label="Send" title="Send"
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40"><Send size={15} /></button>
           </form>
           </>
