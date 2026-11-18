@@ -10,6 +10,7 @@ import { businessData } from '@/lib/adviser/dataContext';
 import { ChartView, parseBlocks, saveReportPdf, speakablePart } from '@/lib/adviser/charts';
 import { EmailCard, MailConnect, useAdviserMail } from '@/lib/adviser/mail';
 import { WhatsAppCard } from '@/lib/adviser/whatsapp';
+import { AnimatedTeachCard } from '@/lib/adviser/AnimatedTeachCard';
 import { deleteChat, groupByDay, loadChats, saveChat, type SavedChat } from '@/lib/adviser/chatHistory';
 import { boostAudio } from '@/lib/voiceBoost';
 import { supabase } from '@/lib/supabase';
@@ -631,6 +632,9 @@ type is "bar" (compare), "line" (trend over time) or "pie" (share of a whole, on
 E-MAILS: when the person asks you to write, draft or send an e-mail (payment reminder, quotation follow-up, delivery update, thank-you, anything), write one short line saying the draft is below for them to check, then at the VERY END add exactly one block per e-mail, on its own line (valid JSON; use \n for new lines in the body):
 [[EMAIL {"to":"customer@example.com","cc":"","subject":"...","body":"Dear ...,\n\n...\n\nRegards,\n<sender name>\n<company>"}]]
 Write a polite, clear, professional e-mail in the language they ask for (English by default), with the real figures, invoice / order numbers and dates from COMPANY DATA. Take the receiver's address from CUSTOMER CONTACTS; if it is not there, leave "to" empty and say they must type it. Sign it with the SENDER's name and company. Never say the e-mail was sent: the person checks it and presses Send.
+ANIMATED TEACHING WALKTHROUGHS: whenever the person asks "how to...", "teach me...", "show me...", "explain...", "steps for...", "workflow...", or asks to learn ANY screen/feature in Argus BI OR any CNC machining / business / general concept, first write your clear explanation, then at the VERY END add one interactive animated lesson block on its own line (valid JSON, 3 to 6 crisp steps):
+[[TEACH {"title":"How to Create a Quotation","subtitle":"Step-by-step animated guide","route":"/sales/in-house","steps":[{"title":"Open Dashboard","detail":"Go to Dashboard (Sales Pipeline) and click + Add Quotation or convert an Enquiry.","action":"Click + Add Quotation","route":"/sales/in-house"},{"title":"Select Client & Items","detail":"Pick the client company, enter HSN/SAC, quantity, and click Workings for metal & process costing.","action":"Click Select Client -> Workings"},{"title":"Save or Share PDF","detail":"Choose a PDF template and click Save Quote, Download PDF, or Send to WhatsApp.","action":"Click Send to Whatsapp / Save Quote"}]}]]
+Include real Argus BI routes (like "/sales/in-house", "/production/process-master", "/finance/invoices", "/inventory/stock", "/admin/users", "/mind-map") when teaching Argus BI screens, or omit "route" for general/CNC machining lessons. Never read the [[TEACH ...]] JSON aloud.
 WHATSAPP: when the person asks to send / write a WhatsApp message (or just "message" / "msg" / "text" a customer), write one short line saying the message is below for them to check, then at the VERY END add exactly one block per message, on its own line (valid JSON; use \n for new lines):
 [[WHATSAPP {"to":"9876543210","name":"<customer / contact name>","text":"Hello ...,\n\n...\n\n- <sender name>, <company>"}]]
 Keep it short and friendly like a WhatsApp chat (no subject line), in the language they ask for (English by default), with the real figures, invoice / order numbers and dates from COMPANY DATA. Take the number from the phone in CUSTOMER CONTACTS; if it is not there, leave "to" empty and say they can type it or pick the chat in WhatsApp. If they ask for both an e-mail and a WhatsApp message, give both blocks. Never say the message was sent: the person presses Send in WhatsApp.
@@ -771,7 +775,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
   // ------------------------------------------------ the answer: stream it, show it, and speak each sentence as it completes
   const ask = useCallback(async (question: string) => {
     const q = question.trim();
-    const wantsChart = /graph|chart|plot|diagram|pie|bar|trend|pdf|report|download|print|mail|e-mail|letter|whatsapp|whats app|msg|message|வாட்ஸ்|மெசேஜ்|மெயில்|கடிதம்|வரைபட|அறிக்கை|ரிப்போர்ட்|கிராப்/i.test(q);
+    const wantsChart = /graph|chart|plot|diagram|pie|bar|trend|pdf|report|download|print|mail|e-mail|letter|whatsapp|whats app|msg|message|teach|how|explain|show me|guide|steps|workflow|animat|வாட்ஸ்|மெசேஜ்|மெயில்|கடிதம்|வரைபட|அறிக்கை|ரிப்போர்ட்|கிராப்|எப்படி|சொல்லி/i.test(q);
     if (!q || busyRef.current) return;
     // If the user speaks or types a data-entry command in Adviser, seamlessly hand it off to the embedded Co-worker tab.
     if (allowedRef.current.coworker && isOralDataEntryCommand(q)) {
@@ -1360,7 +1364,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
                 <div className={`max-w-[88%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-[13px] leading-relaxed ${m.role === 'user' ? 'bg-emerald-600 text-white' : m.error ? 'border border-red-200 bg-red-50 text-red-800' : 'border border-slate-100 bg-slate-100 text-slate-800'}`}>
                   {m.role === 'assistant' && !m.error ? (() => {
                     const b = parseBlocks(m.text);
-                    if (!b.visible && !b.charts.length) return m.pending ? <span className="inline-flex items-center gap-1 text-slate-400"><Loader2 size={13} className="animate-spin" />Thinking…</span> : '';
+                    if (!b.visible && !b.charts.length && !b.teaches.length) return m.pending ? <span className="inline-flex items-center gap-1 text-slate-400"><Loader2 size={13} className="animate-spin" />Thinking…</span> : '';
                     return (
                       <>
                         {b.visible}
@@ -1370,6 +1374,21 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
                         {!m.pending && b.emails.map((e, i) => <EmailCard key={i} draft={e} onConnect={() => setMailOpen(true)} />)}
                         {m.pending && /\[\[\s*WHATSAPP/.test(m.text) && <span className="mt-1 flex items-center gap-1 text-[11px] text-slate-400"><Loader2 size={12} className="animate-spin" />Writing the WhatsApp message…</span>}
                         {!m.pending && b.whatsapps.map((w, i) => <WhatsAppCard key={`wa${i}`} draft={w} />)}
+                        {m.pending && /\[\[\s*TEACH/.test(m.text) && <span className="mt-1 flex items-center gap-1 text-[11px] text-indigo-500 font-medium"><Loader2 size={12} className="animate-spin" />Building animated lesson…</span>}
+                        {!m.pending && b.teaches.map((lesson, i) => (
+                          <AnimatedTeachCard
+                            key={`teach${i}`}
+                            lesson={lesson}
+                            onOpenRoute={(route) => navigate(route.startsWith('/') ? route : `/${route}`)}
+                            onStartLiveTour={(route) => {
+                              if (route) navigate(route.startsWith('/') ? route : `/${route}`);
+                              endSession(false);
+                              window.setTimeout(() => {
+                                window.dispatchEvent(new CustomEvent('argus:teach', { detail: { on: true, fullErp: false } }));
+                              }, 350);
+                            }}
+                          />
+                        ))}
                         {!m.pending && (b.charts.length > 0 || b.pdf) && (
                           <button type="button" onClick={() => void saveReportPdf(b.pdf?.title || b.charts[0]?.title || 'Adviser report', b.visible, b.charts, company?.company_name ?? '')}
                             className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700">
