@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { FolderOpen, Search, Hash, Eye, Pencil, FileDown, Trash2 } from 'lucide-react';
+import { FolderOpen, Search, Hash, Eye, Pencil, FileDown, MessageCircle, Trash2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatINR } from '@/lib/format';
 import { Modal } from '@/components/ui/Modal';
 import { calcLine } from '@/lib/quotationCalc';
 import { buildQuotePdf, downloadQuotePdf, type PdfThemeId, type QuoteDoc } from '@/lib/quotationDocument';
-import { resolveSeller, syncProfileStore } from '@/lib/companyProfile';
+import { resolveSeller, syncProfileStore, type QuoteSeller } from '@/lib/companyProfile';
 import { clientNames, deleteQuote, filterQuotes, loadQuotes, mergeQuotes, noFilter, upsertQuote, type DbQuoteRow, type SavedQuote } from '@/lib/quotationStore';
 import { supabase } from '@/lib/supabase';
 import { fillClientDetails } from '@/lib/quoteClients';
 import { CreateQuotationPage, type QuotationEmbed } from './CreateQuotationPage';
+import { WhatsappQuoteModal } from './WhatsappQuoteModal';
 
 const inputCls = 'h-9 px-2.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20';
 const dmy = (iso: string) => (iso ? iso.split('-').reverse().join('-') : '—');
@@ -67,6 +68,7 @@ export function QuotationLibraryPage({ onChanged }: { onChanged?: () => void } =
   const [pdfPreviewLoading, setPdfPreviewLoading] = useState(false);
   const [pdfPreviewErr, setPdfPreviewErr] = useState<string | null>(null);
   const [editingQuote, setEditingQuote] = useState<SavedQuote | null>(null);
+  const [waState, setWaState] = useState<{ doc: QuoteDoc; seller?: QuoteSeller } | null>(null);
   const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
   const shown = useMemo(() => filterQuotes(all, f), [all, f]);
@@ -140,6 +142,21 @@ export function QuotationLibraryPage({ onChanged }: { onChanged?: () => void } =
   const openEdit = (q: SavedQuote) => {
     setViewingQuote(null);
     setEditingQuote(q);
+  };
+
+  const openWhatsapp = async (q: SavedQuote) => {
+    try {
+      const [enrichedClients, store] = await Promise.all([
+        fillClientDetails(q.clients, cid),
+        syncProfileStore(cid, { orgName: company?.company_name ?? '', email: authEmail ?? '' }),
+      ]);
+      const seller = resolveSeller(store, q.sellerRef);
+      setViewingQuote(null);
+      setWaState({ doc: { ...q, clients: enrichedClients }, seller });
+    } catch (e) {
+      console.error(e);
+      setNotice({ kind: 'err', text: `Could not prepare WhatsApp quotation: ${(e as Error).message}` });
+    }
   };
 
   const pdf = async (q: SavedQuote, workings: boolean) => {
@@ -335,6 +352,9 @@ export function QuotationLibraryPage({ onChanged }: { onChanged?: () => void } =
                         <button type="button" aria-label={`Edit #${q.seq}`} title="Edit Quotation" onClick={() => openEdit(q)} className={`${iconBtn} hover:text-orange-600`}>
                           <Pencil size={15} />
                         </button>
+                        <button type="button" aria-label={`Send #${q.seq} on WhatsApp`} title="Send to WhatsApp" onClick={() => void openWhatsapp(q)} className={`${iconBtn} hover:text-[#25D366]`}>
+                          <MessageCircle size={15} />
+                        </button>
                         <button type="button" aria-label={`Download PDF #${q.seq}`} title="Download PDF" onClick={() => void pdf(q, false)} className={`${iconBtn} hover:text-emerald-600`}>
                           <FileDown size={15} />
                         </button>
@@ -404,6 +424,13 @@ export function QuotationLibraryPage({ onChanged }: { onChanged?: () => void } =
                 </button>
                 <button
                   type="button"
+                  onClick={() => void openWhatsapp(viewingQuote)}
+                  className="flex items-center gap-1.5 h-9 px-3.5 rounded-lg bg-[#25D366] hover:bg-[#20ba59] text-white text-xs font-bold shadow-xs cursor-pointer"
+                >
+                  <MessageCircle size={14} /> Send to WhatsApp
+                </button>
+                <button
+                  type="button"
                   onClick={() => openEdit(viewingQuote)}
                   className="flex items-center gap-1.5 h-9 px-4 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold shadow-xs cursor-pointer"
                 >
@@ -456,6 +483,17 @@ export function QuotationLibraryPage({ onChanged }: { onChanged?: () => void } =
           <CreateQuotationPage key={`lib-edit-${editingQuote.id}`} embed={editEmbed} />
         )}
       </Modal>
+
+      {waState && (
+        <WhatsappQuoteModal
+          open={!!waState}
+          onClose={() => setWaState(null)}
+          doc={waState.doc}
+          seller={waState.seller}
+          theme={getSavedPdfPrefs().theme}
+          templateId={getSavedPdfPrefs().templateId}
+        />
+      )}
 
       <Modal open={!!toDelete} onClose={() => setToDelete(null)} size="sm" title="Delete quotation?">
         <p className="text-sm text-slate-600">Quotation #{toDelete?.seq} ({toDelete?.clients.map(c => c.name).join(', ')}) will be permanently removed.</p>

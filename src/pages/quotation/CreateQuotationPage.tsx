@@ -17,6 +17,7 @@ import { ProductWorkingsPage } from './ProductWorkingsPage';
 import { hasWorkings, type Workings } from '@/lib/quotationWorkings';
 import { PDF_THEMES, PDF_TEMPLATES, downloadQuotePdf, exportQuoteCsv, quoteSummaryText, type PdfThemeId, type QuoteClient, type QuoteDoc } from '@/lib/quotationDocument';
 import { PdfTemplateSelectorModal } from './PdfTemplateSelectorModal';
+import { WhatsappQuoteModal } from './WhatsappQuoteModal';
 
 const cell = 'w-full h-8 px-2 text-sm bg-white border border-slate-200 rounded-md focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20';
 const numeric = (v: string) => v.replace(/[^0-9.,]/g, '');
@@ -107,6 +108,7 @@ export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) 
     try { return localStorage.getItem('metal-pdf-template') || 'template-1'; } catch { return 'template-1'; }
   });
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
+  const [whatsappOpen, setWhatsappOpen] = useState(false);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   // a message is shown at the top of the quotation: bring it into view (after the workings sheet the page is still scrolled down)
   const msgRef = useRef<HTMLDivElement>(null);
@@ -587,7 +589,11 @@ export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) 
               Select PDF Template & Theme · {(PDF_TEMPLATES.find(t => t.id === templateId)?.name || 'Template 1')} ({PDF_THEMES[theme]?.label || 'Orange'})
             </button>
             <ActionBtn cls="bg-[#25D366] hover:bg-[#20ba59] text-white" icon={<MessageCircle size={14} />} disabled={busy}
-              onClick={() => run('Opened WhatsApp with the quotation summary', () => { const d = buildDoc(); window.open(`https://wa.me/?text=${encodeURIComponent(quoteSummaryText(d))}`, '_blank', 'noopener'); })}>Send to Whatsapp</ActionBtn>
+              onClick={() => {
+                if (!guard()) return;
+                if (!ident.current) ident.current = newIdent(company?.id, date);
+                setWhatsappOpen(true);
+              }}>Send to Whatsapp</ActionBtn>
             <ActionBtn cls="bg-blue-600 hover:bg-blue-700 text-white" icon={<Mail size={14} />} disabled={busy}
               onClick={() => run('Opened your mail app', () => { const d = buildDoc(); window.location.href = `mailto:${clients.map(c => c.email).filter(Boolean).join(',')}?subject=${encodeURIComponent(`Quotation ${d.quoteNo} from ${sellerName}`)}&body=${encodeURIComponent(quoteSummaryText(d))}`; })}>Send to Client</ActionBtn>
             <ActionBtn cls="bg-orange-500 hover:bg-orange-600 text-white" icon={<FileDown size={14} />} disabled={busy} onClick={() => run('PDF downloaded', () => downloadQuotePdf(buildDoc(), false, theme, seller, templateId))}>PDF without Workings</ActionBtn>
@@ -796,6 +802,25 @@ export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) 
           try { localStorage.setItem('metal-pdf-color', cId); } catch {}
         }}
         companyName={sellerName}
+      />
+
+      {/* Send Quotation to WhatsApp Modal (live PDF preview + auto-download + instant chat) */}
+      <WhatsappQuoteModal
+        open={whatsappOpen}
+        onClose={() => setWhatsappOpen(false)}
+        doc={buildDoc()}
+        seller={seller}
+        theme={theme}
+        templateId={templateId}
+        onConfirmSend={async () => {
+          if (!ident.current) ident.current = newIdent(company?.id, date);
+          const d = buildDoc();
+          const saved = upsertQuote(company?.id, d, ident.current);
+          if (embed?.onRecord) await embed.onRecord(d, totals.total, ident.current.quoteNo);
+          setMsg(saved
+            ? { kind: 'ok', text: `Opened WhatsApp & downloaded quotation PDF · saved to Quotation Library as #${ident.current.seq}` }
+            : { kind: 'ok', text: 'Opened WhatsApp & downloaded quotation PDF.' });
+        }}
       />
     </div>
   );
