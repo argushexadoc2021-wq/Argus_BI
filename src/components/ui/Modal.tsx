@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { GripVertical, Maximize2, Minimize2, Minus, X } from 'lucide-react';
 import type { EntryTint } from '@/lib/entryTints';
 
@@ -244,7 +245,7 @@ export function Modal({
     setResizing(false);
   };
 
-  return (
+  const dialogNode = (
     <div role="dialog" aria-modal="true" style={{ zIndex }} className={`fixed inset-0 ${dragging || resizing ? 'select-none' : ''}`}>
       <div
         className={`absolute inset-0 ${SCRIM}`}
@@ -391,6 +392,8 @@ export function Modal({
       )}
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(dialogNode, document.body) : dialogNode;
 }
 
 export function FormSection({ title, children }: { title: string; children: ReactNode }) {

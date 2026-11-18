@@ -1,9 +1,17 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Calculator, Cog, Package, Plus, RotateCcw, Save, Trash2, ListPlus, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Calculator, Cog, Package, Plus, RotateCcw, Save, Trash2 } from 'lucide-react';
 import { formatINR } from '@/lib/format';
 import { calcWorkings, emptyWorkings, rowCost, type WorkRow, type Workings } from '@/lib/quotationWorkings';
 import { MetalCalculatorPage, type BomMetalItem } from './MetalCalculatorPage';
-import { DEFAULT_PROCESS_RATES } from '@/lib/metalCalc';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
+
+interface ProcessMasterOption {
+  id: string;
+  processCode: string;
+  processName: string;
+  costPerHour: number;
+}
 
 const cell = 'w-full h-8 px-2 text-xs bg-white border border-slate-200 rounded focus:outline-none focus:border-orange-500';
 const numeric = (v: string) => v.replace(/[^0-9.,]/g, '');
@@ -18,38 +26,90 @@ type Key = 'materials' | 'processes' | 'others';
 export function ProductWorkingsPage({ title, initial, onBack, onSave }: {
   title: string; initial?: Workings; onBack: () => void; onSave: (w: Workings, unitPrice: number, leave: boolean) => void;
 }) {
+  const { company } = useAuth();
   const [w, setW] = useState<Workings>(() => initial ?? emptyWorkings());
   const [dirty, setDirty] = useState(false);
-  const [opMenuOpen, setOpMenuOpen] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const [processMaster, setProcessMaster] = useState<ProcessMasterOption[]>([]);
+  const [loadingProcesses, setLoadingProcesses] = useState(false);
+
+  // Load active processes live from Process Master (cnc_processes)
+  useEffect(() => {
+    let live = true;
+    const loadProcesses = async () => {
+      setLoadingProcesses(true);
+      try {
+        let q = supabase.from('cnc_processes').select('*').order('process_name', { ascending: true });
+        if (company?.id) q = q.eq('company_id', company.id);
+        let { data, error } = await q;
+
+        // Fallback: if company filter returned no rows, load all accessible active processes
+        if (!error && (data?.length ?? 0) === 0 && company?.id) {
+          const fb = await supabase.from('cnc_processes').select('*').order('process_name', { ascending: true });
+          data = fb.data;
+          error = fb.error;
+        }
+
+        if (!live) return;
+        if (error) {
+          console.error('Failed to load Process Master:', error);
+          setProcessMaster([]);
+        } else {
+          const list: ProcessMasterOption[] = (data ?? [])
+            .filter((r: any) => r.status !== 'Inactive' && (r.process_name || '').trim())
+            .map((r: any) => ({
+              id: r.id,
+              processCode: r.process_code ?? '',
+              processName: String(r.process_name).trim(),
+              costPerHour: Number(r.cost_per_hour) || 0,
+            }));
+          setProcessMaster(list);
+        }
+      } catch (err) {
+        console.error('Process Master load exception:', err);
+        if (live) setProcessMaster([]);
+      } finally {
+        if (live) setLoadingProcesses(false);
+      }
+    };
+    void loadProcesses();
+    return () => { live = false; };
+  }, [company?.id]);
+
   const r = calcWorkings(w);
   const change = (fn: (p: Workings) => Workings) => { setW(fn); setDirty(true); };
   const setRows = (k: Key, rows: WorkRow[]) => change(p => ({ ...p, [k]: rows }));
   const upd = (k: Key, id: string, patch: Partial<WorkRow>) => setRows(k, w[k].map(x => (x.id === id ? { ...x, ...patch } : x)));
   const del = (k: Key, id: string) => setRows(k, w[k].filter(x => x.id !== id));
 
-  
-  const addPresetProcess = (name: string, rate: number, unit = 'Minute') => {
-    setRows('processes', [...w.processes, newRow(`${name} (${unit})`, '1', String(rate))]);
-    setOpMenuOpen(false);
+  const onSelectProcess = (rowId: string, selectedName: string) => {
+    const match = processMaster.find(p => p.processName === selectedName);
+    const currentRow = w.processes.find(x => x.id === rowId);
+    const patch: Partial<WorkRow> = { description: selectedName };
+    if (match) {
+      if (match.costPerHour > 0) patch.rate = String(match.costPerHour);
+      if (!currentRow?.qty?.trim()) patch.qty = '1';
+    }
+    upd('processes', rowId, patch);
   };
 
   const addMetal = (it: BomMetalItem) => {
     change(p => ({ ...p, materials: [...p.materials, newRow(it.description, String(it.weightKg), it.ratePerKg !== null ? String(it.ratePerKg) : '')] }));
     setNote(it.ratePerKg === null ? 'Metal added to the BOM. Enter its rate (₹/kg) in the sheet below.' : 'Metal added to the BOM.');
   };
+
   // Keep the quotation line's unit price in step with the workings as they are edited, so leaving
   // the sheet (or exporting) never finds the price still empty.
   useEffect(() => {
     if (dirty && r.issues.length === 0 && r.total > 0) onSave(w, Math.round(r.total * 100) / 100, false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [w]);
+
   const back = () => { if (!dirty || r.issues.length === 0 || window.confirm('Leave without saving this product\'s workings?')) onBack(); };
   const [saveError, setSaveError] = useState<string | null>(null);
   const save = (leave: boolean) => {
     setSaveError(null);
     if (r.issues.length) { setNote(r.issues[0]); setSaveError(r.issues[0]); return; }
-    // nothing to price yet: say so next to the button (the page's own message is at the very top, out of sight)
     if (!(r.total > 0)) { const m = 'Add at least one material, process or expense with a rate first, so there is a cost to save.'; setNote(m); setSaveError(m); return; }
     const roundedPrice = Math.round(r.total * 100) / 100;
     onSave(w, roundedPrice, leave);
@@ -59,14 +119,44 @@ export function ProductWorkingsPage({ title, initial, onBack, onSave }: {
   const header = (k: Key, label: string, cls: string, color: string) => (
     <tr className={cls}><td colSpan={5} className={`px-3 py-2 text-[11px] font-bold uppercase tracking-wider ${color}`}>{label}</td></tr>
   );
+
   const rowsOf = (k: Key, empty: string, editable = true) => w[k].length === 0
     ? <tr><td colSpan={5} className="px-3 py-3 text-center text-xs italic text-slate-400">{empty}</td></tr>
     : w[k].map((row, i) => {
       const c = rowCost(row);
+      const hasCurrentInMaster = k === 'processes' && row.description && processMaster.some(p => p.processName === row.description);
       return (
         <tr key={row.id} className="border-t border-slate-100" data-testid={`${k}-row`}>
           {editable ? <>
-            <td className="px-3 py-1.5"><input className={cell} aria-label={`${k} ${i + 1} description`} value={row.description} onChange={e => upd(k, row.id, { description: e.target.value })} /></td>
+            <td className="px-3 py-1.5">
+              {k === 'processes' ? (
+                <select
+                  className={`${cell} cursor-pointer text-slate-800 font-medium`}
+                  aria-label={`processes ${i + 1} description`}
+                  value={row.description}
+                  onChange={e => onSelectProcess(row.id, e.target.value)}
+                >
+                  <option value="">
+                    {loadingProcesses
+                      ? 'Loading Process Master…'
+                      : processMaster.length === 0
+                      ? '-- No active processes in Process Master --'
+                      : '-- Select Process from Process Master --'}
+                  </option>
+                  {row.description && !hasCurrentInMaster && (
+                    <option value={row.description}>{row.description}</option>
+                  )}
+                  {processMaster.map(pm => (
+                    <option key={pm.id} value={pm.processName}>
+                      {pm.processCode ? `${pm.processName} (${pm.processCode})` : pm.processName}
+                      {pm.costPerHour > 0 ? ` — ₹${pm.costPerHour}/hr` : ''}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input className={cell} aria-label={`${k} ${i + 1} description`} value={row.description} onChange={e => upd(k, row.id, { description: e.target.value })} />
+              )}
+            </td>
             <td className="px-2 py-1.5 w-28 text-center">
               {k === 'materials' ? (
                 <div className="inline-flex flex-col items-center">
@@ -111,46 +201,22 @@ export function ProductWorkingsPage({ title, initial, onBack, onSave }: {
       <div className="grid lg:grid-cols-2 gap-4">
         <section className="rounded-xl border border-rose-200 bg-rose-50/40 p-4">
           <div className="flex items-start justify-between gap-2 mb-3">
-            <div><h2 className="flex items-center gap-2 text-sm font-bold text-slate-800"><Cog size={15} className="text-rose-500" /> Process Costing (Machinery/Labour)</h2><p className="text-[11px] text-slate-500">Click Add Operation to type an operation, hours and rate.</p></div>
-            <div className="flex items-center gap-2 relative">
-              <div className="relative">
-                <button
-                  type="button"
-                  data-testid="select-process"
-                  onClick={() => setOpMenuOpen(o => !o)}
-                  className="flex items-center gap-1.5 h-8 px-3 rounded-md bg-white border border-rose-300 text-rose-700 text-xs font-bold hover:bg-rose-50 shadow-xs"
-                >
-                  <ListPlus size={14} /> Select Operation <ChevronDown size={12} />
-                </button>
-                {opMenuOpen && (
-                  <div className="absolute right-0 top-full mt-1 w-64 bg-white rounded-xl border border-slate-200 shadow-xl z-30 py-1.5 overflow-hidden">
-                    <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100">
-                      Standard Machine Operations
-                    </div>
-                    <div className="max-h-60 overflow-y-auto divide-y divide-slate-50">
-                      {DEFAULT_PROCESS_RATES.map(op => (
-                        <button
-                          key={op.name}
-                          type="button"
-                          onClick={() => addPresetProcess(op.name, op.rate, op.unit)}
-                          className="w-full px-3 py-2 text-left text-xs text-slate-700 hover:bg-rose-50 hover:text-rose-700 flex items-center justify-between transition-colors"
-                        >
-                          <span className="font-medium">{op.name}</span>
-                          <span className="font-mono text-[11px] font-bold text-rose-600 bg-rose-50/80 px-1.5 py-0.5 rounded">
-                            ₹{op.rate}/{op.unit === 'Minute' ? 'min' : 'hr'}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-              <button type="button" data-testid="add-process" onClick={() => setRows('processes', [...w.processes, newRow()])} className="flex items-center gap-1 h-8 px-3 rounded-md bg-rose-600 text-white text-xs font-bold hover:bg-rose-700 shadow-xs"><Plus size={13} /> Add Operation</button>
+            <div>
+              <h2 className="flex items-center gap-2 text-sm font-bold text-slate-800"><Cog size={15} className="text-rose-500" /> Process Costing (Machinery/Labour)</h2>
+              <p className="text-[11px] text-slate-500">Click Add Process to select from Process Master, hours/qty and rate.</p>
             </div>
+            <button
+              type="button"
+              data-testid="add-process"
+              onClick={() => setRows('processes', [...w.processes, newRow()])}
+              className="flex items-center gap-1 h-8 px-3 rounded-md bg-rose-600 text-white text-xs font-bold hover:bg-rose-700 shadow-xs cursor-pointer shrink-0"
+            >
+              <Plus size={13} /> Add Process
+            </button>
           </div>
           <div className="bg-white rounded-lg border border-slate-200 overflow-hidden"><table className="w-full">
-            <thead className="bg-slate-50 text-[10px] uppercase text-slate-500"><tr><th className="text-left px-3 py-2">Process Operation</th><th className="px-2 py-2 w-28 text-left">Hours / Qty</th><th className="px-2 py-2 w-28 text-left">Rate (₹)</th><th className="px-2 py-2 w-28 text-right">Total Cost</th><th className="w-10" /></tr></thead>
-            <tbody>{rowsOf('processes', 'No operations configured. Click "Add Operation" above.')}</tbody></table></div>
+            <thead className="bg-slate-50 text-[10px] uppercase text-slate-500"><tr><th className="text-left px-3 py-2">Process</th><th className="px-2 py-2 w-28 text-left">Hours / Qty</th><th className="px-2 py-2 w-28 text-left">Rate (₹)</th><th className="px-2 py-2 w-28 text-right">Total Cost</th><th className="w-10" /></tr></thead>
+            <tbody>{rowsOf('processes', 'No processes configured. Click "Add Process" above.')}</tbody></table></div>
           <p className="flex justify-between text-xs font-bold text-slate-600 mt-3 px-1"><span>TOTAL PROCESS COST:</span><span className="font-mono text-rose-600" data-testid="total-process">{inr(r.processes)}</span></p>
         </section>
 
@@ -198,7 +264,6 @@ export function ProductWorkingsPage({ title, initial, onBack, onSave }: {
         {r.issues.map(m => <p key={m} className="text-xs text-red-600 mt-2">{m}</p>)}
         {saveError && <p role="alert" className="text-xs font-semibold text-red-600 mt-2 text-right">{saveError}</p>}
         <div className="flex justify-end gap-2 mt-4">
-          {/* saves the cost as the quotation line's unit price and goes back to the quotation, where the saved price is shown */}
           <button type="button" data-testid="save-calcs" onClick={() => save(true)} className="flex items-center gap-2 h-9 px-4 rounded-lg bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700"><Save size={15} /> Save Calculations</button>
           <button type="button" data-testid="clear-sheet" onClick={() => { change(() => emptyWorkings()); setNote(null); }} className="flex items-center gap-2 h-9 px-4 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50"><RotateCcw size={14} /> Clear Sheet</button>
         </div>

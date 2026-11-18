@@ -144,34 +144,51 @@ export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) 
   // Loads the client list the first time the picker opens (and again on Retry).
   const [libTry, setLibTry] = useState(0);
   useEffect(() => {
-    if (!pickOpen || (libTry === 0 && libState === 'ready')) return;
+    if (!pickOpen) return;
     let live = true;
     setLibState('loading');
-    let custQ = supabase.from('cnc_customers').select('*');
-    let enqQ = supabase.from('cnc_enquiries').select('customer,contact_person,phone,email,city,gst');
-    if (company?.id) { custQ = custQ.eq('company_id', company.id); enqQ = enqQ.eq('company_id', company.id); }
-    Promise.all([
-      custQ,
-      enqQ,
-    ]).then(([cust, enq]) => {
-      if (!live) return;
-      if (cust.error && enq.error) { console.error('Quotation: client fetch failed', cust.error, enq.error); setLibState('error'); return; }
-      if (cust.error) console.error('Quotation: customer fetch failed', cust.error);
-      if (enq.error) console.error('Quotation: enquiry fetch failed', enq.error);
-      const map = new Map<string, QuoteClient>();
-      const add = (c: QuoteClient) => {
-        const k = c.name.toLowerCase();
-        const prev = map.get(k);
-        map.set(k, prev ? { ...prev, email: prev.email || c.email, phone: prev.phone || c.phone, address: prev.address || c.address, gstin: prev.gstin || c.gstin } : { ...c, key: k });
-      };
-      (cust.data ?? []).map(toClient).filter(c => c.name).forEach(add);
-      (enq.data ?? []).map(r => toClient({ ...r, name: r.customer })).filter(c => c.name).forEach(add);
-      setLibrary([...map.values()].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })));
-      setLibState('ready');
-    });
+    const fetchAll = async () => {
+      try {
+        let custQ = supabase.from('cnc_customers').select('*');
+        let enqQ = supabase.from('cnc_enquiries').select('*');
+        if (company?.id) { custQ = custQ.eq('company_id', company.id); enqQ = enqQ.eq('company_id', company.id); }
+        let [cust, enq] = await Promise.all([custQ, enqQ]);
+
+        // Independent fallbacks: if a company-filtered table returned error or 0 rows (e.g. shared/unscoped customers), load all accessible rows
+        if (company?.id) {
+          const [custFb, enqFb] = await Promise.all([
+            (cust.error || (cust.data?.length ?? 0) === 0) ? supabase.from('cnc_customers').select('*') : Promise.resolve(null),
+            (enq.error || (enq.data?.length ?? 0) === 0) ? supabase.from('cnc_enquiries').select('*') : Promise.resolve(null),
+          ]);
+          if (custFb) cust = custFb;
+          if (enqFb) enq = enqFb;
+        }
+
+        if (!live) return;
+        if (cust.error && enq.error) {
+          console.error('Quotation: client fetch failed', cust.error, enq.error);
+          setLibState('error');
+          return;
+        }
+        const map = new Map<string, QuoteClient>();
+        const add = (cl: QuoteClient) => {
+          const k = cl.name.toLowerCase();
+          const prev = map.get(k);
+          map.set(k, prev ? { ...prev, email: prev.email || cl.email, phone: prev.phone || cl.phone, address: prev.address || cl.address, gstin: prev.gstin || cl.gstin } : { ...cl, key: k });
+        };
+        (cust.data ?? []).map(toClient).filter(cl => cl.name).forEach(add);
+        (enq.data ?? []).map(r => toClient({ ...r, name: r.customer || r.company || r.name })).filter(cl => cl.name).forEach(add);
+        setLibrary([...map.values()].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })));
+        setLibState('ready');
+      } catch (err) {
+        console.error('Quotation: client fetch exception', err);
+        if (live) setLibState('error');
+      }
+    };
+    void fetchAll();
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pickOpen, libTry]);
+  }, [pickOpen, libTry, company?.id]);
 
   const addFromLibrary = (p: LibraryProduct) => {
     setLines(ls => [...ls, { ...newLine(), hsn: p.hsn, description: p.description ? `${p.name} - ${p.description}` : p.name, qty: p.qty, unit: toQuoteUnit(p.unit), unitPrice: p.price }]);
@@ -395,7 +412,7 @@ export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) 
               </div>
 
               <span className="text-xs font-semibold text-orange-600 bg-orange-50 border border-orange-200 rounded-lg px-3 h-8 flex items-center">{clients.length} {clients.length === 1 ? 'Client' : 'Clients'} Selected</span>
-              <button onClick={() => { setSearch(''); setPickOpen(true); }} className="flex items-center gap-1.5 h-8 px-3 text-sm font-medium border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"><UserCheck size={15} /> Select Client</button>
+              <button type="button" onClick={() => { setSearch(''); setPickOpen(true); }} className="flex items-center gap-1.5 h-8 px-3 text-sm font-medium border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer"><UserCheck size={15} /> Select Client</button>
             </div>
           </div>
           <div className="overflow-x-auto border border-slate-200 rounded-lg">
@@ -417,7 +434,7 @@ export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) 
               <div className="flex flex-col items-center py-3 text-center">
                 <Building2 size={20} className="text-slate-300 mb-1" />
                 <p className="text-sm font-semibold text-slate-700">No client company attached to this quotation.</p>
-                <p className="text-xs text-slate-500 mt-1">Click <b className="text-blue-600">Select Client</b> to choose from all companies under your account.</p>
+                <p className="text-xs text-slate-500 mt-1">Click <button type="button" onClick={() => { setSearch(''); setPickOpen(true); }} className="font-bold text-blue-600 hover:underline cursor-pointer">Select Client</button> to choose from all companies under your account.</p>
               </div>
             )}
           </div>
@@ -568,7 +585,7 @@ export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) 
       </div>
 
       {/* Select Client Modal */}
-      <Modal open={pickOpen} onClose={() => setPickOpen(false)} title="Select Client" subtitle="Choose one or more recipient companies" size="md">
+      <Modal open={pickOpen} onClose={() => setPickOpen(false)} title="Select Client" subtitle="Choose one or more recipient companies" size="md" zIndex={90} footer={<div className="flex justify-end"><button type="button" onClick={() => setPickOpen(false)} className="px-4 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold cursor-pointer">Done ({clients.length} selected)</button></div>}>
         <div className="relative mb-3"><Search size={15} className="absolute left-3 top-3 text-slate-400" /><input aria-label="Search clients" className={`${cell} pl-9 h-10`} placeholder="Search company" value={search} onChange={e => setSearch(e.target.value)} /></div>
         {libState === 'loading' && <p className="text-sm text-slate-500 py-6 text-center">Loading clients…</p>}
         {libState === 'error' && <p className="text-sm text-red-600 py-6 text-center">Could not load clients. <button className="underline" onClick={() => setLibTry(n => n + 1)}>Retry</button></p>}
@@ -593,7 +610,7 @@ export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) 
       </Modal>
 
       {/* Product Library Modal */}
-      <Modal open={prodOpen} onClose={() => setProdOpen(false)} title="Product Library" subtitle="Click a product to add it to the quotation" size="md">
+      <Modal open={prodOpen} onClose={() => setProdOpen(false)} title="Product Library" subtitle="Click a product to add it to the quotation" size="md" zIndex={90}>
         {prodList.length === 0 ? <p className="text-sm text-slate-500 py-6 text-center">No products saved yet. Add some in Product Library, or use the bookmark icon on a row.</p> : (
           <ul className="divide-y divide-slate-100 max-h-80 overflow-y-auto">
             {prodList.map(p => (
@@ -607,7 +624,7 @@ export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) 
       </Modal>
 
       {/* Sub-Companies & Issuer Profiles Modal */}
-      <Modal open={subModalOpen} onClose={() => setSubModalOpen(false)} title="Company Profiles & Sub-Companies" subtitle="Switch or configure branches and subsidiary seller entities for quotations" size="md">
+      <Modal open={subModalOpen} onClose={() => setSubModalOpen(false)} title="Company Profiles & Sub-Companies" subtitle="Switch or configure branches and subsidiary seller entities for quotations" size="md" zIndex={90}>
         <div className="space-y-4 max-h-[75vh] overflow-y-auto pr-1">
           {/* Existing Sub-companies */}
           <div>
