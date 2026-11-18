@@ -5634,7 +5634,7 @@ export function SalesPipelinePage() {
                         items: [{ id: crypto.randomUUID(), partName: '', partNumber: '', quantity: '', unitPrice: '', discount: '0', unitDiscount: '0', gst: '18' }],
                         paymentTerms: '', deliveryTerms: '', remarks: ''
                       });
-                      setQuotationModalTarget({ id: 'dummy', stage: 'Enquiry', type: 'lead', refNo: '', customer: '', part: '', qty: 1, value: 0, date: '', raw: {} });
+                      setEditingQuotationRaw(null); quoteRecordId.current = null; setQuotationModalTarget({ id: 'dummy', stage: 'Enquiry', type: 'lead', refNo: '', customer: '', part: '', qty: 1, value: 0, date: '', raw: {} });
                     } else if (stageId === 'Sales Order') {
                       setSoForm(resetSoForm());
                       setSoSaveNotice(null);
@@ -5680,6 +5680,7 @@ export function SalesPipelinePage() {
   const listEdit = (type: KanbanCard['type'], stage: Stage) => (record: any) => {
     const card = listCard(type, stage, record, true);
     if (type === 'finished_goods') { void openFgPopup(card, 'edit'); return; }
+    if (type === 'quotation' || stage === 'Quotation') { openEditQuotationPopup(card); return; }
     setViewEditMode(true);
     void openViewModal(card);
   };
@@ -6004,7 +6005,7 @@ export function SalesPipelinePage() {
         items: quoteItems,
         paymentTerms: '', deliveryTerms: '', remarks: ''
       });
-      setQuotationModalTarget(card);
+      setEditingQuotationRaw(null); quoteRecordId.current = null; setQuotationModalTarget(card);
     } else if (card.type === 'quotation' && toStage === 'Sales Order') {
       const oNo = `SO-2026-${Math.floor(1000 + Math.random() * 9000)}`;
       
@@ -6440,13 +6441,142 @@ export function SalesPipelinePage() {
     }
   };
 
-  // The Create Quotation popup is the same page as Quotation > Create Quotation. Saving or exporting from it
-  // records the quotation in the pipeline (first time inserts, later saves update the same row), which moves the enquiry card.
+  // The Create & Edit Quotation popup uses the exact same page as Quotation > Create Quotation.
+  // Saving or exporting from it records or updates the quotation in the pipeline.
   const quoteRecordId = useRef<string | null>(null);
-  const closeQuotationPopup = () => { setQuotationModalTarget(null); quoteRecordId.current = null; fetchPipeline(); };
+  const [editingQuotationRaw, setEditingQuotationRaw] = useState<any | null>(null);
+  const closeQuotationPopup = () => {
+    setQuotationModalTarget(null);
+    setEditingQuotationRaw(null);
+    quoteRecordId.current = null;
+    fetchPipeline();
+    setListRefresh(n => n + 1);
+  };
+  const openEditQuotationPopup = (card: KanbanCard) => {
+    const raw = card?.raw || {};
+    quoteRecordId.current = raw?.id || null;
+    setEditingQuotationRaw(raw);
+    setQuotationModalTarget(card);
+  };
   const quotationEmbed = useMemo<QuotationEmbed | undefined>(() => {
     if (!quotationModalTarget) return undefined;
     const target = quotationModalTarget;
+
+    // EDIT MODE: open existing quotation in the exact same CreateQuotationPage format
+    if (editingQuotationRaw) {
+      const raw = editingQuotationRaw;
+      let parsedItems: any[] = [];
+      try {
+        const p = raw.description ? JSON.parse(raw.description) : null;
+        if (Array.isArray(p) && p.length > 0) parsedItems = p;
+      } catch { /* fallback below */ }
+      if (parsedItems.length === 0) {
+        parsedItems = [{
+          partName: raw.part_name || '',
+          partNumber: raw.part_number || raw.part_no || '',
+          quantity: raw.quantity ?? '1',
+          unitPrice: raw.unit_price ?? '',
+          discount: raw.discount_percent ?? '0',
+          gst: raw.gst_percent ?? '18',
+        }];
+      }
+      const firstParsed = parsedItems[0] || {};
+      let initialTax = { cgst: '9', sgst: '9', igst: '' };
+      if (firstParsed.cgst !== undefined || firstParsed.sgst !== undefined || firstParsed.igst !== undefined) {
+        initialTax = {
+          cgst: String(firstParsed.cgst ?? ''),
+          sgst: String(firstParsed.sgst ?? ''),
+          igst: String(firstParsed.igst ?? ''),
+        };
+      } else {
+        const totalGst = Number(firstParsed.gst ?? raw.gst_percent ?? 18);
+        if (Number.isFinite(totalGst) && totalGst >= 0) {
+          const half = String(Math.round((totalGst / 2) * 100) / 100);
+          initialTax = { cgst: half, sgst: half, igst: '' };
+        }
+      }
+      const custName = String(raw.customer || target.customer || '').trim();
+      const master = custName ? lookupCompanyDetails(custName) : null;
+      return {
+        isEdit: true,
+        quoteId: raw.id ? String(raw.id) : undefined,
+        quoteNo: raw.quote_no ? String(raw.quote_no) : undefined,
+        date: raw.date ? String(raw.date).slice(0, 10) : undefined,
+        tax: initialTax,
+        terms: raw.payment_terms ? String(raw.payment_terms) : undefined,
+        notes: String(raw.remarks || raw.notes || ''),
+        client: custName ? {
+          name: custName,
+          email: String(raw.email || master?.email || ''),
+          phone: String(raw.phone || master?.phone || ''),
+          gstin: String(raw.gst || raw.gstin || master?.gstin || ''),
+          address: String(master?.address || raw.address || raw.city || ''),
+        } : undefined,
+        lines: parsedItems.map((it: any) => ({
+          hsn: String(it.hsn || it.hsnCode || ''),
+          description: String(it.partName || it.productName || it.part_name || it.description || ''),
+          qty: String(it.quantity ?? it.qty ?? '1'),
+          unit: String(it.unit || 'Nos'),
+          unitPrice: String(it.unitPrice ?? it.rate ?? ''),
+          discount: String(it.discount ?? it.discount_percent ?? '0'),
+          workings: it.workings,
+        })),
+        onClose: closeQuotationPopup,
+        onRecord: async (doc, total, quoteNo) => {
+          const lineItems = doc.lines.filter(l => l.description.trim() || l.unitPrice.trim()).map((l, idx) => {
+            const orig = parsedItems[idx];
+            return {
+              id: l.id,
+              hsn: l.hsn || '',
+              partName: l.description.trim(),
+              partNumber: String(orig?.partNumber || orig?.part_number || ''),
+              quantity: l.qty,
+              unit: l.unit || 'Nos',
+              unitPrice: l.unitPrice,
+              discount: l.discount || '0',
+              unitDiscount: '0',
+              gst: String((Number(doc.tax.cgst) || 0) + (Number(doc.tax.sgst) || 0) + (Number(doc.tax.igst) || 0)),
+              cgst: doc.tax.cgst,
+              sgst: doc.tax.sgst,
+              igst: doc.tax.igst,
+              filePaths: Array.isArray(orig?.filePaths) ? orig.filePaths : [],
+              files: [],
+              workings: l.workings,
+            };
+          });
+          const first = lineItems[0];
+          const names = lineItems.map(i => i.partName).filter(Boolean).join(', ');
+          const payload: any = {
+            quote_no: raw.quote_no || quoteNo,
+            customer: doc.clients[0]?.name || custName,
+            part_name: lineItems.length > 1 ? `${names} (${lineItems.length} Products)` : (first?.partName || 'TBD'),
+            phone: doc.clients[0]?.phone || raw.phone || '',
+            email: doc.clients[0]?.email || raw.email || '',
+            part_number: first?.partNumber || raw.part_number || '',
+            description: JSON.stringify(lineItems),
+            unit_price: Number(first?.unitPrice) || 0,
+            unit_discount: 0,
+            quantity: lineItems.reduce((s, i) => s + (Number(i.quantity) || 0), 0),
+            total_value: total,
+            date: doc.date || null,
+            discount_percent: Number(first?.discount) || 0,
+            gst_percent: Number(first?.gst) || 18,
+            payment_terms: doc.terms || '',
+            remarks: doc.notes,
+          };
+          const targetId = quoteRecordId.current || raw.id;
+          const write = (pl: any) => supabase.from('cnc_quotations').update(pl).eq('id', targetId);
+          let { error } = await write(payload);
+          if (error && (error.message?.includes('unit_discount') || error.code === '42703')) {
+            const { unit_discount, ...rest } = payload;
+            ({ error } = await write(rest));
+          }
+          if (error) throw new Error(`Could not update the quotation: ${error.message}`);
+        },
+      };
+    }
+
+    // CREATE MODE: prefill from enquiry or blank
     const items: any[] = Array.isArray(quoteForm.items) ? quoteForm.items : [];
     const contact = Array.isArray(quoteForm.contacts) ? quoteForm.contacts[0] : null;
     // Address, GSTIN and phone: the enquiry may not carry them, so the company master (Add Company) fills the gaps.
@@ -6460,8 +6590,10 @@ export function SalesPipelinePage() {
       onClose: closeQuotationPopup,
       onRecord: async (doc, total) => {
         const lineItems = doc.lines.filter(l => l.description.trim() || l.unitPrice.trim()).map(l => ({
-          id: l.id, partName: l.description.trim(), partNumber: '', quantity: l.qty, unitPrice: l.unitPrice, discount: l.discount || '0', unitDiscount: '0',
-          gst: String((Number(doc.tax.cgst) || 0) + (Number(doc.tax.sgst) || 0) + (Number(doc.tax.igst) || 0)), filePaths: [], files: [],
+          id: l.id, hsn: l.hsn || '', partName: l.description.trim(), partNumber: '', quantity: l.qty, unit: l.unit || 'Nos', unitPrice: l.unitPrice, discount: l.discount || '0', unitDiscount: '0',
+          gst: String((Number(doc.tax.cgst) || 0) + (Number(doc.tax.sgst) || 0) + (Number(doc.tax.igst) || 0)),
+          cgst: doc.tax.cgst, sgst: doc.tax.sgst, igst: doc.tax.igst,
+          filePaths: [], files: [],
           workings: l.workings, // the cost breakdown behind the price, shown in Finished Goods + Costing
         }));
         const first = lineItems[0];
@@ -6474,7 +6606,7 @@ export function SalesPipelinePage() {
           part_number: '', description: JSON.stringify(lineItems), unit_price: Number(first?.unitPrice) || 0, unit_discount: 0,
           quantity: lineItems.reduce((s, i) => s + (Number(i.quantity) || 0), 0), total_value: total, date: doc.date || null, valid_till: quoteForm.validTill || null, status: 'Sent',
           salesperson: quoteForm.salesperson, discount_percent: Number(first?.discount) || 0, gst_percent: Number(first?.gst) || 18,
-          payment_terms: '', delivery_terms: '', remarks: doc.notes, lead_id: leadId,
+          payment_terms: doc.terms || '', delivery_terms: '', remarks: doc.notes, lead_id: leadId,
         };
         const newId = crypto.randomUUID();
         const write = (pl: any) => quoteRecordId.current
@@ -6491,7 +6623,7 @@ export function SalesPipelinePage() {
       },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [quotationModalTarget]);
+  }, [quotationModalTarget, editingQuotationRaw]);
 
   // Inwards of these categories flow to Production as Draft work orders
   // (released manually there). 'NEW PROJECT' is the legacy label of NEW PART.
@@ -9200,7 +9332,7 @@ export function SalesPipelinePage() {
             onStageFilter={setListStage}
             exportRef={listExportRef}
             onView={openViewModal}
-            onEdit={card => { const m = STAGE_MODULE[card.stage] ?? 'sales-pipeline'; if (!canDo(m, 'edit')) { alert('Not authorized: your account cannot edit these records.'); return; } if (card.type === 'finished_goods') { void openFgPopup(card, 'edit'); return; } setViewEditMode(true); void openViewModal(card); }}
+            onEdit={card => { const m = STAGE_MODULE[card.stage] ?? 'sales-pipeline'; if (!canDo(m, 'edit')) { alert('Not authorized: your account cannot edit these records.'); return; } if (card.type === 'finished_goods') { void openFgPopup(card, 'edit'); return; } if (card.type === 'quotation' || card.stage === 'Quotation') { openEditQuotationPopup(card); return; } setViewEditMode(true); void openViewModal(card); }}
             onDelete={card => { const m = STAGE_MODULE[card.stage] ?? 'sales-pipeline'; if (!canDo(m, 'delete')) { alert('Not authorized: your account cannot delete these records.'); return; } void handleDeleteCard({ stopPropagation() { /* not a click event */ } } as unknown as React.MouseEvent, card); }}
           />
         </div>
@@ -9529,7 +9661,7 @@ export function SalesPipelinePage() {
                             <Eye size={14} />
                           </button>
                           {canDo(STAGE_MODULE[card.stage] ?? 'sales-pipeline', 'edit') && (
-                          <button onClick={(e) => { e.stopPropagation(); if (card.type === 'finished_goods') { void openFgPopup(card, 'edit'); return; } setViewEditMode(true); openViewModal(card); }} className="text-slate-700 hover:text-blue-600 transition-colors" title="Inline Edit">
+                          <button onClick={(e) => { e.stopPropagation(); if (card.type === 'finished_goods') { void openFgPopup(card, 'edit'); return; } if (card.type === 'quotation' || card.stage === 'Quotation') { openEditQuotationPopup(card); return; } setViewEditMode(true); openViewModal(card); }} className="text-slate-700 hover:text-blue-600 transition-colors" title={card.type === 'quotation' ? 'Edit Quotation' : 'Inline Edit'}>
                             <Edit2 size={14} />
                           </button>
                           )}
@@ -9670,12 +9802,28 @@ export function SalesPipelinePage() {
       </Modal>
 
 
-      {/* Quotation Modal */}
+      {/* Quotation Modal (Create & Edit share the exact same format) */}
       <HsnDatalist />
-      <Modal open={!!quotationModalTarget} onClose={closeQuotationPopup} accent={tint('Quotation')} title="Create Quotation" subtitle={quotationModalTarget?.customer ? `From enquiry · ${quotationModalTarget.customer}` : undefined} size="full" width={1040} windowControls>
+      <Modal
+        open={!!quotationModalTarget}
+        onClose={closeQuotationPopup}
+        accent={tint('Quotation')}
+        title={editingQuotationRaw ? 'Edit Quotation' : 'Create Quotation'}
+        subtitle={
+          editingQuotationRaw
+            ? [editingQuotationRaw.quote_no, editingQuotationRaw.customer].filter(Boolean).join(' · ') || undefined
+            : (quotationModalTarget?.customer ? `From enquiry · ${quotationModalTarget.customer}` : undefined)
+        }
+        size="full"
+        width={1040}
+        windowControls
+      >
         {quotationModalTarget && (
           <ErrorBoundary title="Quotation form failed to load" onClose={closeQuotationPopup}>
-            <CreateQuotationPage key={quotationModalTarget.refNo + quoteForm.quoteNo} embed={quotationEmbed} />
+            <CreateQuotationPage
+              key={editingQuotationRaw ? `edit-${editingQuotationRaw.id || quotationModalTarget.id}` : (quotationModalTarget.refNo + quoteForm.quoteNo)}
+              embed={quotationEmbed}
+            />
           </ErrorBoundary>
         )}
       </Modal>
@@ -9840,12 +9988,18 @@ export function SalesPipelinePage() {
                         const ok = await dcSaveRef.current();
                         if (!ok) return;
                       }
+                      if (!viewEditMode && viewModalTarget?.stage === 'Quotation' && viewModalData?.quotation) {
+                        const qCard = { ...viewModalTarget, raw: viewModalData.quotation };
+                        closeViewModal();
+                        openEditQuotationPopup(qCard);
+                        return;
+                      }
                       if (viewEditMode && viewModalTarget?.stage === 'Quotation' && quoSaveRef.current) {
                         const ok = await quoSaveRef.current();
                         if (!ok) return;
                       }
                       setViewEditMode(!viewEditMode);
-                    })(); }}>{viewEditMode ? 'Done Editing' : 'Enable Inline Editing'}</Button><Button variant="secondary" onClick={closeViewModal}>Close</Button></>}>
+                    })(); }}>{viewEditMode ? 'Done Editing' : (viewModalTarget?.stage === 'Quotation' ? 'Edit Quotation' : 'Enable Inline Editing')}</Button><Button variant="secondary" onClick={closeViewModal}>Close</Button></>}>
         <div className={docKind ? 'doc-compact grid grid-cols-1 gap-3 xl:grid-cols-2' : ''}>
         {viewModalData ? (
           <div className="flex flex-col">

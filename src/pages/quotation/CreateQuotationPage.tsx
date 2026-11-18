@@ -40,11 +40,20 @@ function toClient(row: Record<string, unknown>): QuoteClient {
   };
 }
 
-/** Used when the page is shown as a popup (Sales Pipeline shortcut). */
+/** Used when the page is shown as a popup (Sales Pipeline create & edit). */
 export interface QuotationEmbed {
-  /** Prefill from an enquiry. */
+  /** Prefill from an enquiry or existing quotation. */
   client?: Partial<QuoteClient> & { name: string };
+  clients?: QuoteClient[];
   lines?: Partial<QuoteLine>[];
+  date?: string;
+  tax?: { cgst: string; sgst: string; igst: string };
+  terms?: string;
+  notes?: string;
+  quoteId?: string;
+  quoteNo?: string;
+  sellerRef?: string;
+  isEdit?: boolean;
   /** Called after every successful save/export with the document, so the host can record it (e.g. as a pipeline quotation). */
   onRecord?: (doc: QuoteDoc, total: number, quoteNo: string) => Promise<void> | void;
   /** Called after a successful save to close the popup. */
@@ -53,9 +62,10 @@ export interface QuotationEmbed {
 
 export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) {
   const { company, companies = [], email: authEmail } = useAuth();
-  const [date, setDate] = useState(todayISO());
+  const [date, setDate] = useState(() => embed?.date || todayISO());
   const safeCompanies = useMemo(() => (Array.isArray(companies) ? companies.filter(Boolean) : []), [companies]);
   const [clients, setClients] = useState<QuoteClient[]>(() => {
+    if (Array.isArray(embed?.clients) && embed.clients.length > 0) return embed.clients;
     if (!embed?.client) return [];
     const clientName = typeof embed.client.name === 'string' ? embed.client.name : '';
     const clientKey = embed.client.key || (clientName ? clientName.toLowerCase() : '') || 'client_1';
@@ -75,18 +85,21 @@ export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) 
       return raw.filter(Boolean).map(l => ({
         ...newLine(),
         ...l,
+        hsn: String(l?.hsn ?? ''),
         description: String(l?.description ?? ''),
         qty: String(l?.qty ?? '1'),
+        unit: l?.unit ? toQuoteUnit(String(l.unit)) : 'Nos',
         unitPrice: String(l?.unitPrice ?? ''),
         discount: String(l?.discount ?? '0'),
+        workings: l?.workings,
       }));
     }
     return [newLine()];
   });
   const [workingsFor, setWorkingsFor] = useState<string | null>(null);
-  const [tax, setTax] = useState({ cgst: '9', sgst: '9', igst: '' });
-  const [terms, setTerms] = useState(() => defaultTermsText(company?.id));
-  const [notes, setNotes] = useState('');
+  const [tax, setTax] = useState(() => embed?.tax ?? { cgst: '9', sgst: '9', igst: '' });
+  const [terms, setTerms] = useState(() => (embed?.terms !== undefined ? embed.terms : defaultTermsText(company?.id)));
+  const [notes, setNotes] = useState(() => embed?.notes ?? '');
   const [theme, setTheme] = useState<PdfThemeId>(() => {
     try { return (localStorage.getItem('metal-pdf-color') as PdfThemeId) || 'orange'; } catch { return 'orange'; }
   });
@@ -112,7 +125,7 @@ export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) 
   }, [company?.id, profileDefaults]);
 
   // Seller reference: empty string = primary organisation profile, or sub-company ID, or "comp_<id>"
-  const [sellerRef, setSellerRef] = useState('');
+  const [sellerRef, setSellerRef] = useState(() => embed?.sellerRef ?? '');
 
   // Sub-company management modal state
   const [subModalOpen, setSubModalOpen] = useState(false);
@@ -127,7 +140,9 @@ export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) 
   const [subFormError, setSubFormError] = useState<string | null>(null);
 
   // Identity (id + number) of the quotation being worked on; assigned the first time it is saved/exported.
-  const ident = useRef<QuoteIdent | null>(null);
+  const ident = useRef<QuoteIdent | null>(
+    embed?.quoteNo ? { id: embed.quoteId || embed.quoteNo, seq: 0, quoteNo: embed.quoteNo } : null
+  );
   const [termsMenu, setTermsMenu] = useState<TermsTemplate[] | null>(null);
   const [prodOpen, setProdOpen] = useState(false);
   const [prodList, setProdList] = useState<LibraryProduct[]>([]);
@@ -579,7 +594,7 @@ export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) 
             <ActionBtn cls="bg-slate-700 hover:bg-slate-800 text-white" icon={<FileDown size={14} />} disabled={busy} onClick={() => run('PDF with workings downloaded', () => downloadQuotePdf(buildDoc(), true, theme, seller, templateId))}>PDF with Workings</ActionBtn>
             <ActionBtn cls="bg-emerald-600 hover:bg-emerald-700 text-white" icon={<Upload size={14} />} disabled={busy} onClick={() => run('CSV exported', () => exportQuoteCsv(buildDoc()))}>Export CSV</ActionBtn>
             <ActionBtn cls="border border-slate-200 text-slate-700 bg-white hover:bg-slate-50" icon={<Bookmark size={14} />} disabled={busy}
-              onClick={() => run('Quotation saved', () => undefined, true)}>Save Quote</ActionBtn>
+              onClick={() => run(embed?.isEdit ? 'Quotation updated' : 'Quotation saved', () => undefined, true)}>{embed?.isEdit ? 'Save Changes' : 'Save Quote'}</ActionBtn>
           </div>
         </div>
       </div>
