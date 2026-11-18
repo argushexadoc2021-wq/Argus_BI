@@ -469,11 +469,29 @@ async function askHelp(question: string, page: string, pageTitle: string, lang: 
 const YES = /^(yes|y|ok|okay|confirm|sure|go ahead|do it|aamam|aama|seri|sari|சரி|ஆம்|ஆமாம்)\b/i;
 const NO = /^(no|n|cancel|stop|don'?t|venam|vendam|illa|இல்லை|வேண்டாம்)\b/i;
 
-export function Copilot() {
+export interface CopilotProps {
+  /** Render inline inside Adviser instead of as a floating popup. */
+  embedded?: boolean;
+  /** Synced language from Adviser when embedded. */
+  externalLang?: Lang;
+  /** Synced voice-reply toggle from Adviser when embedded. */
+  externalSpeak?: boolean;
+  /** Optional command handed off from Adviser's Ask tab to execute immediately. */
+  initialCommand?: string | null;
+  onCommandConsumed?: () => void;
+}
+
+export function Copilot({
+  embedded = false,
+  externalLang,
+  externalSpeak,
+  initialCommand,
+  onCommandConsumed,
+}: CopilotProps = {}) {
   const navigate = useNavigate();
   const location = useLocation();
   const { company, canDo } = useAuth();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(embedded);
   // The standby pill can be dragged anywhere on the screen; the place is remembered in this browser.
   const [pillPos, setPillPos] = useState<{ x: number; y: number } | null>(() => {
     try { const v = JSON.parse(localStorage.getItem('coworker-pill-pos') || 'null'); return v && typeof v.x === 'number' && typeof v.y === 'number' ? v : null; } catch { return null; }
@@ -484,8 +502,14 @@ export function Copilot() {
   const pillMoved = useRef(false);
   const wakeRef = useRef<() => Promise<void>>(async () => {});
   const pillPosRef = useRef(pillPos); pillPosRef.current = pillPos;
-  const [lang, setLang] = useState<Lang>(readLang);
+  const [lang, setLang] = useState<Lang>(() => externalLang ?? readLang());
   const [speak, setSpeak] = useAiVoice('coworker');   // off until switched on
+  useEffect(() => {
+    if (embedded && externalLang) setLang(externalLang);
+  }, [embedded, externalLang]);
+  useEffect(() => {
+    if (embedded && typeof externalSpeak === 'boolean') setSpeak(externalSpeak);
+  }, [embedded, externalSpeak, setSpeak]);
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
@@ -745,8 +769,9 @@ export function Copilot() {
     }
   }, [open, loadPipeline]);
 
-  // Listen to open events
+  // Listen to open events (standalone mode only)
   useEffect(() => {
+    if (embedded) return;
     const on = (e: Event) => {
       const want = (e as CustomEvent<{ on?: boolean }>).detail?.on;
       if (want === true) { void wakeRef.current(); return; }
@@ -754,11 +779,12 @@ export function Copilot() {
     };
     window.addEventListener('argus:copilot', on);
     return () => window.removeEventListener('argus:copilot', on);
-  }, []);
+  }, [embedded]);
 
   useEffect(() => {
+    if (embedded) return;
     if (open) takeFloor('coworker'); else releaseFloor('coworker');
-  }, [open]);
+  }, [open, embedded]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -787,6 +813,7 @@ export function Copilot() {
 
   // Adviser and Teaching use the microphone / speakers too: Co-worker steps aside while they run, then resumes.
   useEffect(() => {
+    if (embedded) return;
     const handleMode = (e: Event) => {
       const d = (e as CustomEvent<{ mode: string; on: boolean }>).detail;
       if (!d || d.mode === 'coworker') return;
@@ -801,7 +828,7 @@ export function Copilot() {
     };
     window.addEventListener('argus:mode', handleMode);
     return () => window.removeEventListener('argus:mode', handleMode);
-  }, [abortRec, scheduleRestart]);
+  }, [abortRec, scheduleRestart, embedded]);
 
   // Forward refs for closures
   const submitRef = useRef<(raw: string) => Promise<void>>(async () => {});
@@ -1108,9 +1135,9 @@ export function Copilot() {
     haltedRef.current = false;
     setMicError(null);
     greetedRef.current = true;
-    takeFloor('coworker');
+    if (!embedded) takeFloor('coworker');
     setOpen(true);
-  }, []);
+  }, [embedded]);
 
   // One recognition run = one utterance. Every handler checks `mine()`, so a late event from an old, aborted run can never
   // clear or restart the current one (that cross-talk is what used to stop the microphone hearing anything).
@@ -1754,7 +1781,7 @@ export function Copilot() {
     setMicMuted(false);
     micMutedRef.current = false;
     setMicError(null);
-    takeFloor('coworker');
+    if (!embedded) takeFloor('coworker');
     setOpen(true);
     greetedRef.current = true;
     const welcome = L(
@@ -1849,48 +1876,83 @@ export function Copilot() {
     await requestMicPermission();
     startRecognition();
     playWakeChime();
-    takeFloor('coworker');
+    if (!embedded) takeFloor('coworker');
     setOpen(true);
   };
   wakeRef.current = wake;
-  // The AI button shows whether the Co-worker is listening for "Hi Raaju".
+  // Clean up mic & speech when an embedded Co-worker unmounts (e.g. user switches Adviser tabs)
+  useEffect(() => () => {
+    if (embedded) {
+      abortRec();
+      stopSpeaking('coworker');
+    }
+  }, [embedded, abortRec]);
+  // Run any data-entry command handed off from Adviser's Ask tab immediately
+  const lastConsumedCmdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!embedded || !initialCommand || initialCommand === lastConsumedCmdRef.current) return;
+    lastConsumedCmdRef.current = initialCommand;
+    const cmd = initialCommand;
+    const timer = window.setTimeout(() => {
+      void submitRef.current(cmd);
+      onCommandConsumed?.();
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [embedded, initialCommand, onCommandConsumed]);
+  // The AI button shows whether the Co-worker is listening for "Hi Raaju" (standalone only).
   const cwState = micMuted ? 'muted' : listening ? 'listening' : micError ? 'error' : 'start';
   useEffect(() => {
+    if (embedded) return;
     (window as unknown as { __coworkerState?: string }).__coworkerState = cwState;
     window.dispatchEvent(new CustomEvent('argus:coworker-status', { detail: { state: cwState, note: micError ?? '' } }));
-  }, [cwState, micError]);
+  }, [cwState, micError, embedded]);
   useEffect(() => () => {
+    if (embedded) return;
     (window as unknown as { __coworkerState?: string }).__coworkerState = 'off';
     window.dispatchEvent(new CustomEvent('argus:coworker-status', { detail: { state: 'off', note: '' } }));
-  }, []);
+  }, [embedded]);
 
   // No separate pill: the Co-worker lives in the AI button (its menu shows this status; the button gets a small dot).
-  if (!open) return null;
+  if (!embedded && !open) return null;
 
   return (
     <div
-      role="dialog"
+      role={embedded ? 'region' : 'dialog'}
       aria-label="Co-worker"
       data-voice-ignore
-      className="fixed bottom-[4.5rem] left-[5.5rem] z-[75] flex flex-col rounded-2xl border border-slate-200 bg-white font-sans shadow-2xl max-lg:bottom-[8.5rem] max-lg:left-2 overflow-hidden"
-      style={panelSize.style}
+      className={
+        embedded
+          ? 'flex min-h-0 flex-1 flex-col overflow-hidden bg-white font-sans'
+          : 'fixed bottom-[4.5rem] left-[5.5rem] z-[75] flex flex-col rounded-2xl border border-slate-200 bg-white font-sans shadow-2xl max-lg:bottom-[8.5rem] max-lg:left-2 overflow-hidden'
+      }
+      style={embedded ? undefined : panelSize.style}
     >
-      <ResizeGrip corner="right" onPointerDown={panelSize.begin(1)} onDoubleClick={panelSize.reset} />
+      {!embedded && <ResizeGrip corner="right" onPointerDown={panelSize.begin(1)} onDoubleClick={panelSize.reset} />}
       {/* Header */}
-      <div className="flex items-center gap-2 bg-gradient-to-r from-violet-700 via-purple-700 to-indigo-700 px-3.5 py-2.5 text-white shadow-sm shrink-0">
-        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/20 text-amber-300">
-          <Sparkles size={16} />
-        </div>
+      <div className={
+        embedded
+          ? 'flex items-center gap-2 border-b border-emerald-100 bg-emerald-50/70 px-3 py-1.5 text-slate-800 shrink-0'
+          : 'flex items-center gap-2 bg-gradient-to-r from-violet-700 via-purple-700 to-indigo-700 px-3.5 py-2.5 text-white shadow-sm shrink-0'
+      }>
+        {!embedded && (
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/20 text-amber-300">
+            <Sparkles size={16} />
+          </div>
+        )}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 flex-wrap">
-            <p className="text-sm font-bold leading-tight">Co-worker</p>
+            <p className={embedded ? 'text-xs font-bold text-emerald-800 leading-tight' : 'text-sm font-bold leading-tight'}>
+              {embedded ? 'Oral Data Entry (Co-worker)' : 'Co-worker'}
+            </p>
             <span
-              className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.2 text-[9px] font-semibold ${
-                hasApiKey ? 'bg-emerald-500/30 text-emerald-100' : 'bg-blue-400/20 text-blue-100'
+              className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${
+                embedded
+                  ? (hasApiKey ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-blue-50 text-blue-700 border border-blue-200')
+                  : (hasApiKey ? 'bg-emerald-500/30 text-emerald-100' : 'bg-blue-400/20 text-blue-100')
               }`}
               title={hasApiKey ? 'Online AI connected' : 'Built-in understanding'}
             >
-              <span className={`h-1.5 w-1.5 rounded-full ${hasApiKey ? 'bg-emerald-300 animate-pulse' : 'bg-blue-200'}`} />
+              <span className={`h-1.5 w-1.5 rounded-full ${hasApiKey ? (embedded ? 'bg-emerald-500 animate-pulse' : 'bg-emerald-300 animate-pulse') : (embedded ? 'bg-blue-500' : 'bg-blue-200')}`} />
               {hasApiKey ? 'Online AI' : 'Local'}
             </span>
 
@@ -1899,24 +1961,30 @@ export function Copilot() {
               type="button"
               onClick={toggleMicMute}
               title={micMuted ? 'Mic is Muted. Click to enable continuous listening.' : 'Mic is Always ON. Click to mute.'}
-              className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.2 text-[9px] font-bold transition-all ${
-                micMuted
-                  ? 'bg-rose-500/30 text-rose-200 border border-rose-400/40 hover:bg-rose-500/50'
-                  : 'bg-emerald-400/30 text-emerald-100 border border-emerald-300/40 hover:bg-emerald-400/40'
+              className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-bold transition-all cursor-pointer ${
+                embedded
+                  ? (micMuted
+                      ? 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'
+                      : 'bg-emerald-100 text-emerald-800 border border-emerald-300 hover:bg-emerald-200')
+                  : (micMuted
+                      ? 'bg-rose-500/30 text-rose-200 border border-rose-400/40 hover:bg-rose-500/50'
+                      : 'bg-emerald-400/30 text-emerald-100 border border-emerald-300/40 hover:bg-emerald-400/40')
               }`}
             >
               <span className="relative flex h-1.5 w-1.5">
                 {!micMuted && (
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-300 opacity-75"></span>
+                  <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${embedded ? 'bg-emerald-500' : 'bg-emerald-300'}`}></span>
                 )}
-                <span className={`relative inline-flex rounded-full h-1.5 w-1.5 ${micMuted ? 'bg-rose-400' : 'bg-emerald-300'}`}></span>
+                <span className={`relative inline-flex rounded-full h-1.5 w-1.5 ${micMuted ? 'bg-rose-500' : (embedded ? 'bg-emerald-600' : 'bg-emerald-300')}`}></span>
               </span>
               <span>{micMuted ? 'Mic Muted' : 'Mic: Always ON'}</span>
             </button>
           </div>
-          <p className="truncate text-[10px] text-white/70">
-            {L('🎙️ Say "Hi Raaju!" anytime · Ask what to add, edit or delete', '🎙️ "Hi Raaju!" என்று எப்போது வேண்டுமானாலும் சொல்லலாம்')}
-          </p>
+          {!embedded && (
+            <p className="truncate text-[10px] text-white/70">
+              {L('🎙️ Say "Hi Raaju!" anytime · Ask what to add, edit or delete', '🎙️ "Hi Raaju!" என்று எப்போது வேண்டுமானாலும் சொல்லலாம்')}
+            </p>
+          )}
         </div>
 
         {/* API Key settings toggle */}
@@ -1925,50 +1993,64 @@ export function Copilot() {
           aria-label="AI settings"
           title="Set the AI key"
           onClick={() => setShowKeyModal((v) => !v)}
-          className={`rounded p-1.5 transition-colors ${showKeyModal ? 'bg-white/30 text-amber-300' : 'hover:bg-white/15 text-white/90'}`}
+          className={`rounded p-1.5 transition-colors cursor-pointer ${
+            embedded
+              ? (showKeyModal ? 'bg-emerald-200 text-emerald-900' : 'hover:bg-emerald-100 text-slate-600')
+              : (showKeyModal ? 'bg-white/30 text-amber-300' : 'hover:bg-white/15 text-white/90')
+          }`}
         >
-          <Key size={15} />
+          <Key size={14} />
         </button>
 
-        <button
-          type="button"
-          aria-label={speak ? 'Mute replies' : 'Speak replies'}
-          title={speak ? 'Mute replies' : 'Speak replies'}
-          onClick={toggleSpeak}
-          className="rounded p-1.5 hover:bg-white/15 text-white/90"
-        >
-          {speak ? <Volume2 size={15} /> : <VolumeX size={15} />}
-        </button>
+        {!embedded && (
+          <>
+            <button
+              type="button"
+              aria-label={speak ? 'Mute replies' : 'Speak replies'}
+              title={speak ? 'Mute replies' : 'Speak replies'}
+              onClick={toggleSpeak}
+              className="rounded p-1.5 hover:bg-white/15 text-white/90"
+            >
+              {speak ? <Volume2 size={15} /> : <VolumeX size={15} />}
+            </button>
 
-        <button
-          type="button"
-          aria-label="Language"
-          title="தமிழ் / English"
-          onClick={toggleLang}
-          className="flex items-center gap-1 rounded p-1.5 text-[11px] font-bold hover:bg-white/15 text-white/90"
-        >
-          <Languages size={14} />
-          {ta ? 'EN' : 'தமிழ்'}
-        </button>
+            <button
+              type="button"
+              aria-label="Language"
+              title="தமிழ் / English"
+              onClick={toggleLang}
+              className="flex items-center gap-1 rounded p-1.5 text-[11px] font-bold hover:bg-white/15 text-white/90"
+            >
+              <Languages size={14} />
+              {ta ? 'EN' : 'தமிழ்'}
+            </button>
+          </>
+        )}
 
         <button
           type="button"
           onClick={runMicTest}
           title="Test your microphone hardware & speech engine"
-          className="flex items-center gap-1 rounded bg-white/20 hover:bg-white/30 px-2 py-1 text-[10px] font-bold text-white transition-colors cursor-pointer select-none"
+          className={`flex items-center gap-1 rounded px-2 py-1 text-[10px] font-bold transition-colors cursor-pointer select-none ${
+            embedded
+              ? 'bg-white border border-emerald-200 text-emerald-700 hover:bg-emerald-100'
+              : 'bg-white/20 hover:bg-white/30 text-white'
+          }`}
         >
           <span>🎙️</span>
           <span>{L('Test Mic', 'மைக் டெஸ்ட்')}</span>
         </button>
 
-        <button
-          type="button"
-          aria-label="Close Co-worker"
-          onClick={() => setOpen(false)}
-          className="rounded p-1.5 hover:bg-white/15 text-white/90"
-        >
-          <X size={16} />
-        </button>
+        {!embedded && (
+          <button
+            type="button"
+            aria-label="Close Co-worker"
+            onClick={() => setOpen(false)}
+            className="rounded p-1.5 hover:bg-white/15 text-white/90"
+          >
+            <X size={16} />
+          </button>
+        )}
       </div>
 
       {/* OpenAI API Key Popover */}

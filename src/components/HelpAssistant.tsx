@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import type { AiAccess } from '@/lib/aiAccess';
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -18,6 +18,20 @@ import { useDraggable } from '@/lib/useDraggable';
 import { useDockDrag } from './AssistantDock';
 import { useResizable, ResizeGrip } from '@/lib/useResizable';
 import { getOpenAIApiKey } from '@/lib/copilot/openai';
+import { ACTION_INTENTS, understandLocal } from '@/lib/copilot/understand';
+import { stageFromSpeech } from '@/lib/copilot/wizard';
+
+const EmbeddedCopilot = lazy(() => import('@/components/Copilot').then((m) => ({ default: m.Copilot })));
+const DATA_ACTION_VERB = /\b(add|create|new|enter|insert|record|log|make|move|advance|convert|edit|update|change|delete|remove)\b|சேர்|உருவாக்கு|போடு|மாற்று|நீக்கு/i;
+const HELP_QUESTION_START = /^\s*(how|what|why|where|when|can i|could i|explain|tell me|show me how|எப்படி|என்ன)\b/i;
+function isOralDataEntryCommand(text: string): boolean {
+  const t = text.trim();
+  if (!t || HELP_QUESTION_START.test(t)) return false;
+  const u = understandLocal(t);
+  if (u && ACTION_INTENTS.includes(u.intent)) return true;
+  if (DATA_ACTION_VERB.test(t) && stageFromSpeech(t)) return true;
+  return false;
+}
 import { rankNotes } from '../../supabase/functions/help-assistant/knowledge';
 
 // "உதவி / Help": a VOICE assistant, no chat window. Press Help and it says "yes, tell me", listens, answers out loud, then
@@ -677,7 +691,8 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
   const overHit = useRef(false);      // the person said "over"
   const [tips, setTips] = useState(false);
   // The Adviser opens on its automatic report; "Ask" is the chat for questions.
-  const [view, setView] = useState<'both' | 'report' | 'chat'>('both');
+  const [view, setView] = useState<'both' | 'report' | 'chat' | 'coworker'>('both');
+  const [coworkerCmd, setCoworkerCmd] = useState<string | null>(null);
   // The Adviser panel can be dragged bigger or smaller by its top corner.
   const advSize = useResizable('adviser-panel-size', { w: 432, h: 576 }, { w: 320, h: 360 });
   const SPLIT_KEY = 'adviser-split-w';
@@ -754,6 +769,16 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
     const q = question.trim();
     const wantsChart = /graph|chart|plot|diagram|pie|bar|trend|pdf|report|download|print|mail|e-mail|letter|whatsapp|whats app|msg|message|வாட்ஸ்|மெசேஜ்|மெயில்|கடிதம்|வரைபட|அறிக்கை|ரிப்போர்ட்|கிராப்/i.test(q);
     if (!q || busyRef.current) return;
+    // If the user speaks or types a data-entry command in Adviser, seamlessly hand it off to the embedded Co-worker tab.
+    if (allowedRef.current.coworker && isOralDataEntryCommand(q)) {
+      stopListening();
+      stopSpeaking('adviser');
+      setHeard('');
+      setPhase('ready');
+      setCoworkerCmd(q);
+      setView('coworker');
+      return;
+    }
     busyRef.current = true;
     const aid = ++chatSeq;
     setMsgs((m) => [...m, { id: ++chatSeq, role: 'user', text: q }, { id: aid, role: 'assistant', text: '', pending: true }]);
@@ -1205,7 +1230,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/20"><Lightbulb size={17} /></span>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-bold leading-tight">Adviser</p>
-              <p className="truncate text-[10px] text-emerald-50">Ask anything · Argus BI, CNC machining and more</p>
+              <p className="truncate text-[10px] text-emerald-50">Report, Ask &amp; Oral Data Input (Co-worker)</p>
             </div>
             <button type="button" aria-label="E-mail" title={mail.state?.connected ? `E-mail connected: ${mail.state.mail?.smtp_user ?? ''}` : 'Connect your e-mail so the Adviser can send e-mails for you'}
               onClick={() => setMailOpen((v) => !v)} className={`relative rounded p-1.5 hover:bg-white/15 ${mailOpen ? 'bg-white/20' : ''}`}>
@@ -1243,17 +1268,33 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
           </div>
 
           <div className="flex border-b border-slate-100 bg-white text-[12px] font-bold" role="tablist">
-            {([{ id: 'both', label: 'Both (Side by side)', icon: Columns2 }, { id: 'report', label: 'Report & ideas', icon: BarChart3 }, { id: 'chat', label: 'Ask', icon: MessageCircle }] as const).map((t) => (
+            {([
+              { id: 'both' as const, label: 'Both', icon: Columns2, show: true },
+              { id: 'report' as const, label: 'Report & ideas', icon: BarChart3, show: true },
+              { id: 'chat' as const, label: 'Ask', icon: MessageCircle, show: true },
+              { id: 'coworker' as const, label: 'Co-worker (Input)', icon: Bot, show: allowed.coworker },
+            ]).filter((t) => t.show).map((t) => (
               <button key={t.id} type="button" role="tab" aria-selected={view === t.id}
                 onClick={() => {
                   setView(t.id);
-                  if (t.id === 'report') { stopListening(); stopSpeaking(); }
+                  if (t.id === 'report' || t.id === 'coworker') { stopListening(); stopSpeaking('adviser'); }
                   // two halves need room: widen the chat panel when it is narrow
                   if (t.id === 'both' && splitW < 720) { const w = Math.min(splitMax(), 760); setSplitW(w); store.set(SPLIT_KEY, String(w)); }
                 }}
-                className={`flex flex-1 items-center justify-center gap-1.5 border-b-2 px-3 py-2 ${view === t.id ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}><t.icon size={13} />{t.label}</button>
+                className={`flex flex-1 items-center justify-center gap-1.5 border-b-2 px-2 py-2 whitespace-nowrap ${view === t.id ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}><t.icon size={13} />{t.label}</button>
             ))}
           </div>
+          {view === 'coworker' ? (
+            <Suspense fallback={<div className="flex flex-1 items-center justify-center gap-2 text-xs text-slate-500"><Loader2 size={16} className="animate-spin text-emerald-600" /> Loading Co-worker…</div>}>
+              <EmbeddedCopilot
+                embedded
+                externalLang={lang}
+                externalSpeak={speakOn}
+                initialCommand={coworkerCmd}
+                onCommandConsumed={() => setCoworkerCmd(null)}
+              />
+            </Suspense>
+          ) : (
           <div className={view === 'both' ? 'flex min-h-0 flex-1' : 'contents'}>
           {view !== 'chat' && (
             <div className={view === 'both' ? 'flex min-h-0 w-1/2 min-w-0 flex-col border-r border-slate-200 bg-slate-50/40' : 'contents'}>
@@ -1392,6 +1433,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
           </div>
           )}
           </div>
+          )}
         </div>,
         document.body,
       )}
