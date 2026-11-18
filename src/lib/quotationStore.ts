@@ -81,23 +81,51 @@ export function takeReuse(companyId: string | null | undefined): SavedQuote | nu
 export interface DbQuoteRow {
   id: string; quote_no: string | null; customer: string | null; phone: string | null; email: string | null; description: string | null;
   total_value: number | string | null; date: string | null; created_at: string | null; remarks: string | null; gst_percent: number | string | null; part_name: string | null;
+  payment_terms?: string | null;
 }
 
-/** Rebuilds a library entry from a database quotation. `seq` continues after the browser-saved numbers. Terms / seller are not kept in the database. */
+/** Rebuilds a library entry from a database quotation. `seq` continues after the browser-saved numbers. */
 export function quoteFromDb(r: DbQuoteRow, seq: number): SavedQuote {
   let items: Record<string, unknown>[] = [];
   try { const v = JSON.parse(r.description || '[]'); if (Array.isArray(v)) items = v; } catch { /* description is plain text: no line items */ }
-  const half = String((Number(r.gst_percent) || 0) / 2);
+  const first = items[0] || {};
+  let tax = { cgst: '', sgst: '', igst: '' };
+  if (first.cgst !== undefined || first.sgst !== undefined || first.igst !== undefined) {
+    tax = {
+      cgst: String(first.cgst ?? ''),
+      sgst: String(first.sgst ?? ''),
+      igst: String(first.igst ?? ''),
+    };
+  } else {
+    const gstNum = Number(first.gst ?? r.gst_percent ?? 18);
+    const half = Number.isFinite(gstNum) && gstNum > 0 ? String(Math.round((gstNum / 2) * 100) / 100) : '0';
+    tax = { cgst: half, sgst: half, igst: '' };
+  }
   const lines = items.map((i, n) => ({
-    id: `db${r.id}-${n}`, hsn: '', description: String(i.partName ?? ''), qty: String(i.quantity ?? '1'), unit: 'Nos', unitPrice: String(i.unitPrice ?? ''),
-    discount: String(i.discount ?? '0'), ...(i.workings ? { workings: i.workings as never } : {}),
+    id: `db${r.id}-${n}`,
+    hsn: String(i.hsn ?? i.hsnCode ?? ''),
+    description: String(i.partName ?? i.productName ?? i.part_name ?? i.description ?? ''),
+    qty: String(i.quantity ?? i.qty ?? '1'),
+    unit: String(i.unit ?? 'Nos'),
+    unitPrice: String(i.unitPrice ?? i.rate ?? ''),
+    discount: String(i.discount ?? i.discount_percent ?? '0'),
+    ...(i.workings ? { workings: i.workings as never } : {}),
   }));
   const name = String(r.customer ?? '').trim();
   const date = String(r.date ?? r.created_at ?? '').slice(0, 10);
   return {
-    id: `db-${r.id}`, seq, quoteNo: r.quote_no || `QT-${r.id.slice(0, 6)}`, date, sellerName: '', clients: name ? [{ key: name.toLowerCase(), name, email: r.email ?? '', phone: r.phone ?? '', address: '', gstin: '' }] : [],
+    id: `db-${r.id}`,
+    seq,
+    quoteNo: r.quote_no || `QT-${r.id.slice(0, 6)}`,
+    date,
+    sellerName: '',
+    clients: name ? [{ key: name.toLowerCase(), name, email: r.email ?? '', phone: r.phone ?? '', address: '', gstin: '' }] : [],
     lines: lines.length ? lines : [{ id: `db${r.id}-0`, hsn: '', description: String(r.part_name ?? ''), qty: '1', unit: 'Nos', unitPrice: String(Number(r.total_value) || 0), discount: '0' }],
-    tax: { cgst: half, sgst: half, igst: '0' }, terms: '', notes: r.remarks ?? '', savedAt: String(r.created_at ?? new Date(0).toISOString()), total: Number(r.total_value) || 0,
+    tax,
+    terms: String(r.payment_terms ?? ''),
+    notes: r.remarks ?? '',
+    savedAt: String(r.created_at ?? new Date(0).toISOString()),
+    total: Number(r.total_value) || 0,
   };
 }
 

@@ -9277,7 +9277,7 @@ export function SalesPipelinePage() {
               {quoteTool === '/quotation/client-library' && <ClientLibraryPage />}
               {quoteTool === '/quotation/product-library' && <ProductLibraryPage />}
               {quoteTool === '/quotation/terms-library' && <TermsLibraryPage />}
-              {quoteTool === '/quotation/library' && <QuotationLibraryPage />}
+              {quoteTool === '/quotation/library' && <QuotationLibraryPage onChanged={() => { fetchPipeline(); setListRefresh(n => n + 1); }} />}
               {quoteTool === '/quotation/company-profile' && <CompanyProfilePage />}
             </div>
           ) : (
