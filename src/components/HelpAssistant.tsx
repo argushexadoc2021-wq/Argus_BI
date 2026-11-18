@@ -2,15 +2,15 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import type { AiAccess } from '@/lib/aiAccess';
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { BarChart3, Bot, Columns2, Download, Mail, CheckCircle2, GraduationCap, Lightbulb, Loader2, MessageCircle, Mic, Send, Sparkles, Volume2, VolumeX, X, History, Plus, Trash2 } from 'lucide-react';
+import { BarChart3, Bot, Columns2, Crosshair, Download, Mail, CheckCircle2, GraduationCap, Lightbulb, Loader2, MessageCircle, Mic, Send, Sparkles, Volume2, VolumeX, X, History, Plus, Trash2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { AdviserReportPanel } from '@/components/AdviserReport';
 import { serverChat, serverSpeech, ServerAiError } from '@/lib/adviser/serverAi';
 import { businessData } from '@/lib/adviser/dataContext';
-import { ChartView, parseBlocks, saveReportPdf, speakablePart } from '@/lib/adviser/charts';
+import { ChartView, parseBlocks, saveReportPdf, speakablePart, type TeachBlock } from '@/lib/adviser/charts';
 import { EmailCard, MailConnect, useAdviserMail } from '@/lib/adviser/mail';
 import { WhatsAppCard } from '@/lib/adviser/whatsapp';
-import { AnimatedTeachCard } from '@/lib/adviser/AnimatedTeachCard';
+import { LiveScreenGuide, collectVisibleScreenTargets } from '@/lib/adviser/LiveScreenGuide';
 import { deleteChat, groupByDay, loadChats, saveChat, type SavedChat } from '@/lib/adviser/chatHistory';
 import { boostAudio } from '@/lib/voiceBoost';
 import { supabase } from '@/lib/supabase';
@@ -608,7 +608,7 @@ const STARTERS: { en: string; ta: string }[] = [
 ];
 
 /** The same rules as the server's prompt, used only when the browser's own key answers. */
-function adviserPrompt(lang: Lang, page: string, title: string, notes: string, data = '', spoken = false): string {
+function adviserPrompt(lang: Lang, page: string, title: string, notes: string, data = '', spoken = false, visibleControls: string[] = []): string {
   const langRule = lang === 'ta' ? 'Reply in Tamil script; keep technical terms and screen / button names in English.' : lang === 'tanglish' ? 'Reply in Tanglish (Tamil in English letters).' : 'Reply in clear, natural English.';
   const styleRule = spoken
     ? 'Voice read-aloud is ON: keep sentences clear and easy to listen to, avoid raw markdown clutter, while still giving complete, exact answers.'
@@ -620,7 +620,7 @@ CORE CAPABILITIES — act as a full ChatGPT assistant that can do WHATEVER the u
 3. FULL CHATGPT GENERAL INTELLIGENCE: Answer ANY request on ANY topic — writing proposals/letters/SOPs/emails/WhatsApp messages, CNC machining engineering (G-code/M-code, feeds & speeds, tooling, GD&T, costing, OEE), spreadsheets/math/finance, coding, brainstorming, translation, planning, or general knowledge. Never refuse a normal question.
 4. TAMIL / TANGLISH / VOICE UNDERSTANDING: Staff often speak in Tamil, Tanglish, or mixed Tamil-English. Speech-to-text may write English words in Tamil script (e.g. என்குயரி = enquiry, கொட்டேஷன் = quotation, இன்வாய்ஸ் = invoice, ஆர்டர் = order, சலான் = challan, ஸ்டாக் = stock, ஷெட்யூல் = schedule). Ignore a trailing "over" / "ஓவர்".
 ${styleRule} ${langRule}
-CURRENT PAGE: ${page}${title ? ` (${title})` : ''}
+CURRENT PAGE: ${page}${title ? ` (${title})` : ''}${visibleControls.length ? `\nCURRENT SCREEN VISIBLE CONTROLS (exact clickable labels on screen right now): ${visibleControls.join(' | ')}` : ''}
 PAGE NOTES (about Argus BI)
 ${notes}${data ? `
 
@@ -632,9 +632,20 @@ type is "bar" (compare), "line" (trend over time) or "pie" (share of a whole, on
 E-MAILS: when the person asks you to write, draft or send an e-mail (payment reminder, quotation follow-up, delivery update, thank-you, anything), write one short line saying the draft is below for them to check, then at the VERY END add exactly one block per e-mail, on its own line (valid JSON; use \n for new lines in the body):
 [[EMAIL {"to":"customer@example.com","cc":"","subject":"...","body":"Dear ...,\n\n...\n\nRegards,\n<sender name>\n<company>"}]]
 Write a polite, clear, professional e-mail in the language they ask for (English by default), with the real figures, invoice / order numbers and dates from COMPANY DATA. Take the receiver's address from CUSTOMER CONTACTS; if it is not there, leave "to" empty and say they must type it. Sign it with the SENDER's name and company. Never say the e-mail was sent: the person checks it and presses Send.
-ANIMATED TEACHING WALKTHROUGHS: whenever the person asks "how to...", "teach me...", "show me...", "explain...", "steps for...", "workflow...", or asks to learn ANY screen/feature in Argus BI OR any CNC machining / business / general concept, first write your clear explanation, then at the VERY END add one interactive animated lesson block on its own line (valid JSON, 3 to 6 crisp steps):
-[[TEACH {"title":"How to Create a Quotation","subtitle":"Step-by-step animated guide","route":"/sales/in-house","steps":[{"title":"Open Dashboard","detail":"Go to Dashboard (Sales Pipeline) and click + Add Quotation or convert an Enquiry.","action":"Click + Add Quotation","route":"/sales/in-house"},{"title":"Select Client & Items","detail":"Pick the client company, enter HSN/SAC, quantity, and click Workings for metal & process costing.","action":"Click Select Client -> Workings"},{"title":"Save or Share PDF","detail":"Choose a PDF template and click Save Quote, Download PDF, or Send to WhatsApp.","action":"Click Send to Whatsapp / Save Quote"}]}]]
-Include real Argus BI routes (like "/sales/in-house", "/production/process-master", "/finance/invoices", "/inventory/stock", "/admin/users", "/mind-map") when teaching Argus BI screens, or omit "route" for general/CNC machining lessons. Never read the [[TEACH ...]] JSON aloud.
+LIVE ON-SCREEN SPOTLIGHT & POINTER GUIDE: whenever the person asks "how to...", "where is...", "show me...", "teach me...", "explain...", "steps for...", "எப்படி...", "எங்கே...", "காட்டு..." about ANY screen, button, tile, section, or workflow inside Argus BI, first write a brief clear answer, then at the VERY END add ONE [[TEACH ...]] block on its own line (valid JSON, 2 to 5 steps). The app will AUTOMATICALLY navigate to the route and shine a live glowing spotlight + bouncing arrow DIRECTLY onto each exact real UI element on the right-side screen while explaining it!
+Format:
+[[TEACH {"title":"Enquiry சேர்க்கும் வழி","route":"/sales/in-house","steps":[{"target":"ENQUIRY","route":"/sales/in-house","title":"Enquiry பிரிவு","detail":"இங்கு Sales Pipeline-ல் உள்ள ENQUIRY column-ல் அனைத்து enquiries-ம் காட்டப்படும்."},{"target":"+ Add Enquiry","route":"/sales/in-house","title":"+ Add Enquiry பட்டன்","detail":"புதிய enquiry சேர்க்க இந்த '+ Add Enquiry' பட்டனை கிளிக் செய்து வாடிக்கையாளர் மற்றும் பொருள் விவரங்களை உள்ளிட்டு சேமிக்கவும்."},{"target":"ENQUIRIES","route":"/sales/in-house","title":"ENQUIRIES Tile","detail":"மேலே உள்ள ENQUIRIES tile-ஐ கிளிக் செய்தால் முழு enquiry பட்டியலைப் பார்க்கலாம் மற்றும் Quotation-ஆக மாற்றலாம்."}]}]]
+CRITICAL RULES for [[TEACH ...]]:
+- "target" MUST be the EXACT English label text visible on the real Argus BI screen (use labels from CURRENT SCREEN VISIBLE CONTROLS above, or exact labels from these real screens):
+  * Dashboard / Sales Pipeline ("/sales/in-house"): top tiles "ENQUIRIES", "QUOTATIONS", "SALES ORDERS", "INWARD", "FINISHED GOODS", "REJECTED", "DELIVERY CHALLAN", "INVOICES", "QTY TRACKING"; view tabs "Kanban Board", "List View", "Calendar"; top actions "+ Add Company", "All Company Library", "Search cards..."; column headers & buttons "ENQUIRY", "+ Add Enquiry", "QUOTATION", "+ Add Quotation", "SALES ORDER", "+ Add Sales Order", "INWARD", "+ Add Inward", "FINISHED GOODS", "+ Add Finished Good", "DELIVERY CHALLAN", "+ Add Delivery Challan", "INVOICE", "+ Add Invoice".
+  * Report / Command Center ("/dashboard"): "OPEN WORK ORDERS", "ACTIVE JOBS", "MACHINES RUNNING", "QUALITY RATE", "OPEN SALES ORDERS", "INVOICES RAISED", "INVOICE VALUE", "TO COLLECT", "TOTAL EXPENSES", "INVENTORY VALUE", "All Time".
+  * Process Master ("/production/process-master"): "+ Add Process", "In-House", "Outsource Process".
+  * Product Costing ("/costing/job-costing"): "Select Client", "Workings", "Create Process".
+  * User Management ("/admin/users"): "+ Create User", "EXPORT".
+  * Company Management ("/admin/companies"): "+ Add Company".
+  * Other routes: "/production/scheduling", "/inventory/stock", "/inventory/adjustments", "/finance/bank-entry", "/finance/petty-cash", "/accounts/ledger", "/accounts/trial-balance", "/accounts/profit-loss", "/accounts/balance-sheet", "/accounts/opening-balances", "/admin/access", "/mind-map", "/bi-chat", "/settings", "/hr/ai-attendance".
+- Write "title" and "detail" in the user's selected language (Tamil / Tanglish / English), clearly explaining where the highlighted item is and what to do. Keep "target" in exact English as shown on screen!
+- Only emit [[TEACH ...]] for Argus BI UI / workflow / navigation / "where is" / "how to" questions. Do NOT emit [[TEACH ...]] for pure general knowledge or CNC machining theory questions that have no UI button on screen. Never read the [[TEACH ...]] JSON aloud.
 WHATSAPP: when the person asks to send / write a WhatsApp message (or just "message" / "msg" / "text" a customer), write one short line saying the message is below for them to check, then at the VERY END add exactly one block per message, on its own line (valid JSON; use \n for new lines):
 [[WHATSAPP {"to":"9876543210","name":"<customer / contact name>","text":"Hello ...,\n\n...\n\n- <sender name>, <company>"}]]
 Keep it short and friendly like a WhatsApp chat (no subject line), in the language they ask for (English by default), with the real figures, invoice / order numbers and dates from COMPANY DATA. Take the number from the phone in CUSTOMER CONTACTS; if it is not there, leave "to" empty and say they can type it or pick the chat in WhatsApp. If they ask for both an e-mail and a WhatsApp message, give both blocks. Never say the message was sent: the person presses Send in WhatsApp.
@@ -701,6 +712,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
   // The Adviser opens on its automatic report; "Ask" is the chat for questions.
   const [view, setView] = useState<'both' | 'report' | 'chat' | 'coworker'>('both');
   const [coworkerCmd, setCoworkerCmd] = useState<string | null>(null);
+  const [liveGuide, setLiveGuide] = useState<TeachBlock | null>(null);
   // The Adviser panel can be dragged bigger or smaller by its top corner.
   const advSize = useResizable('adviser-panel-size', { w: 432, h: 576 }, { w: 320, h: 360 });
   const SPLIT_KEY = 'adviser-split-w';
@@ -768,6 +780,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
     busyRef.current = false;
     stopListening();
     stopSpeaking('adviser');   // only our own voice: another AI may have just taken over
+    setLiveGuide(null);
     setHeard('');
     if (goodbye && wasActive && speakRef.current) { setPhase('speaking'); say(GOODBYE[langRef.current], () => setPhase('idle'), undefined, 'adviser'); } else setPhase('idle');
   }, [stopListening]);
@@ -775,7 +788,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
   // ------------------------------------------------ the answer: stream it, show it, and speak each sentence as it completes
   const ask = useCallback(async (question: string) => {
     const q = question.trim();
-    const wantsChart = /graph|chart|plot|diagram|pie|bar|trend|pdf|report|download|print|mail|e-mail|letter|whatsapp|whats app|msg|message|teach|how|explain|show me|guide|steps|workflow|animat|வாட்ஸ்|மெசேஜ்|மெயில்|கடிதம்|வரைபட|அறிக்கை|ரிப்போர்ட்|கிராப்|எப்படி|சொல்லி/i.test(q);
+    const wantsChart = /graph|chart|plot|diagram|pie|bar|trend|pdf|report|download|print|mail|e-mail|letter|whatsapp|whats app|msg|message|teach|how|where|find|locate|explain|show me|guide|steps|workflow|animat|வாட்ஸ்|மெசேஜ்|மெயில்|கடிதம்|வரைபட|அறிக்கை|ரிப்போர்ட்|கிராப்|எப்படி|எங்கே|எங்க|சொல்லி|காட்டு/i.test(q);
     if (!q || busyRef.current) return;
     // If the user speaks or types a data-entry command in Adviser, seamlessly hand it off to the embedded Co-worker tab.
     if (allowedRef.current.coworker && isOralDataEntryCommand(q)) {
@@ -788,6 +801,8 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
       return;
     }
     busyRef.current = true;
+    setLiveGuide(null);
+    const visibleControls = collectVisibleScreenTargets();
     const aid = ++chatSeq;
     setMsgs((m) => [...m, { id: ++chatSeq, role: 'user', text: q }, { id: aid, role: 'assistant', text: '', pending: true }]);
     setPhase('thinking');
@@ -825,7 +840,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
       try {
         const notesFirst = rankNotes(withEnglishTerms(q), pageRef.current.page).filter((r) => r.total > 0).slice(0, 2).map((r) => `## ${r.n.title}\n${r.n.body}`).join('\n\n');
         const data = await liveData();
-        for await (const piece of serverChat(adviserPrompt(langRef.current, pageRef.current.page, pageRef.current.title, notesFirst, data, speakRef.current), [...history.current.slice(-16), { role: 'user', text: q }], { maxTokens: wantsChart ? 3200 : speakRef.current ? 1100 : 2800 })) {
+        for await (const piece of serverChat(adviserPrompt(langRef.current, pageRef.current.page, pageRef.current.title, notesFirst, data, speakRef.current, visibleControls), [...history.current.slice(-16), { role: 'user', text: q }], { maxTokens: wantsChart ? 3200 : speakRef.current ? 1100 : 2800 })) {
           if (!activeRef.current) break;
           servedFirst = true; push(piece);
         }
@@ -873,7 +888,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
           /* the server's ChatGPT answered */
         } else if (key) {
           const notes = rankNotes(withEnglishTerms(q), pageRef.current.page).filter((r) => r.total > 0).slice(0, 2).map((r) => `## ${r.n.title}\n${r.n.body}`).join('\n\n');
-          for await (const piece of openAiDirect(key, adviserPrompt(langRef.current, pageRef.current.page, pageRef.current.title, notes, await liveData(), speakRef.current), [...history.current.slice(-16), { role: 'user', text: q }])) push(piece);
+          for await (const piece of openAiDirect(key, adviserPrompt(langRef.current, pageRef.current.page, pageRef.current.title, notes, await liveData(), speakRef.current, visibleControls), [...history.current.slice(-16), { role: 'user', text: q }])) push(piece);
         } else {
           setNote('The online help service is not reachable, so this answer is read from the built-in notes.');
           const off = offlineAnswer(withEnglishTerms(q), pageRef.current.page, langRef.current);
@@ -885,6 +900,10 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
       if (full.trim()) {
         history.current.push({ role: 'user', text: q }, { role: 'assistant', text: full });
         history.current = history.current.slice(-16);
+        const parsedDone = parseBlocks(full);
+        if (parsedDone.teaches.length > 0 && activeRef.current) {
+          setLiveGuide(parsedDone.teaches[0]);
+        }
       } else { failed = true; show('No answer came back. Please try again.', true); }
     } catch (e) {
       failed = true;
@@ -1083,6 +1102,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
   const newChat = () => {
     if (busyRef.current) return;
     stopSpeaking('adviser');
+    setLiveGuide(null);
     chatIdRef.current = null;
     setChatTitle('');
     history.current = [];
@@ -1168,6 +1188,17 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
   return (
     <>
     <TamilVoiceNotice lang={lang} />
+    {liveGuide && (
+      <LiveScreenGuide
+        lesson={liveGuide}
+        lang={lang}
+        currentPath={location.pathname}
+        onNavigate={(route) => navigate(route.startsWith('/') ? route : `/${route}`)}
+        onSpeakStep={(text) => say(text, () => {}, setNote, 'adviser')}
+        onStopSpeak={() => stopSpeaking('adviser')}
+        onClose={() => setLiveGuide(null)}
+      />
+    )}
     <div ref={rootRef} data-voice-ignore
       className={`dock-help fixed z-[60] flex flex-col gap-2 font-sans pointer-events-none ${rightSide ? 'items-end' : 'items-start'}`}>
       {menu && (
@@ -1374,21 +1405,33 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
                         {!m.pending && b.emails.map((e, i) => <EmailCard key={i} draft={e} onConnect={() => setMailOpen(true)} />)}
                         {m.pending && /\[\[\s*WHATSAPP/.test(m.text) && <span className="mt-1 flex items-center gap-1 text-[11px] text-slate-400"><Loader2 size={12} className="animate-spin" />Writing the WhatsApp message…</span>}
                         {!m.pending && b.whatsapps.map((w, i) => <WhatsAppCard key={`wa${i}`} draft={w} />)}
-                        {m.pending && /\[\[\s*TEACH/.test(m.text) && <span className="mt-1 flex items-center gap-1 text-[11px] text-indigo-500 font-medium"><Loader2 size={12} className="animate-spin" />Building animated lesson…</span>}
-                        {!m.pending && b.teaches.map((lesson, i) => (
-                          <AnimatedTeachCard
-                            key={`teach${i}`}
-                            lesson={lesson}
-                            onOpenRoute={(route) => navigate(route.startsWith('/') ? route : `/${route}`)}
-                            onStartLiveTour={(route) => {
-                              if (route) navigate(route.startsWith('/') ? route : `/${route}`);
-                              endSession(false);
-                              window.setTimeout(() => {
-                                window.dispatchEvent(new CustomEvent('argus:teach', { detail: { on: true, fullErp: false } }));
-                              }, 350);
-                            }}
-                          />
-                        ))}
+                        {m.pending && /\[\[\s*TEACH/.test(m.text) && (
+                          <span className="mt-1.5 flex items-center gap-1.5 text-[11px] font-semibold text-orange-600">
+                            <Loader2 size={12} className="animate-spin" />
+                            {lang === 'ta' ? 'திரையில் சரியான இடத்தைக் காட்டுகிறது…' : 'Pointing to exact spot on screen…'}
+                          </span>
+                        )}
+                        {!m.pending && b.teaches.map((lesson, i) => {
+                          const isShowing = liveGuide?.title === lesson.title && liveGuide?.steps.length === lesson.steps.length;
+                          return (
+                            <div key={`teach${i}`} className="mt-2 flex flex-wrap items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setLiveGuide(isShowing ? null : lesson)}
+                                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-bold shadow-sm transition-all ${
+                                  isShowing
+                                    ? 'bg-orange-600 text-white hover:bg-orange-700'
+                                    : 'border border-orange-300 bg-orange-50 text-orange-700 hover:bg-orange-100'
+                                }`}
+                              >
+                                <Crosshair size={13} />
+                                {isShowing
+                                  ? (lang === 'ta' ? 'திரையில் காட்டுகிறது · நிறுத்து' : 'Showing on screen · Stop')
+                                  : (lang === 'ta' ? `திரையில் காட்டு (${lesson.steps.length} படிகள்)` : `Show on Screen (${lesson.steps.length} steps)`)}
+                              </button>
+                            </div>
+                          );
+                        })}
                         {!m.pending && (b.charts.length > 0 || b.pdf) && (
                           <button type="button" onClick={() => void saveReportPdf(b.pdf?.title || b.charts[0]?.title || 'Adviser report', b.visible, b.charts, company?.company_name ?? '')}
                             className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700">

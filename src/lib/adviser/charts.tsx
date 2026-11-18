@@ -14,7 +14,7 @@ export interface ChartSpec {
 }
 export interface EmailBlock { to: string; cc: string; subject: string; body: string }
 export interface WaBlock { to: string; name: string; text: string }
-export interface TeachStep { title: string; detail: string; action?: string; route?: string }
+export interface TeachStep { title: string; detail: string; target?: string; action?: string; route?: string }
 export interface TeachBlock { title: string; subtitle?: string; route?: string; steps: TeachStep[] }
 export interface Blocks { visible: string; charts: ChartSpec[]; pdf: { title: string } | null; emails: EmailBlock[]; whatsapps: WaBlock[]; teaches: TeachBlock[] }
 
@@ -43,6 +43,7 @@ export function parseBlocks(text: string): Blocks {
           .map((s: any, idx: number) => ({
             title: String(s?.title || `Step ${idx + 1}`),
             detail: String(s?.detail || s?.description || ''),
+            target: s?.target ? String(s.target) : undefined,
             action: s?.action ? String(s.action) : undefined,
             route: s?.route ? String(s.route) : undefined,
           }))
