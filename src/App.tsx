@@ -165,7 +165,7 @@ function MainLayout() {
   const position = narrow ? 'bottom' : chosenPosition;
 
   // Remove leading slash for matching with Lovable's navigation config
-  const currentPage = location.pathname.substring(1) || 'sales/pipeline';
+  const currentPage = location.pathname.substring(1) || 'sales/in-house';
 
 
   const handleNavigate = (page: string) => {
@@ -459,7 +459,7 @@ const isAttendanceRoute = (path: string) =>
 function HomeRedirect() {
   const { canView, permissions } = useAuth();
   if (permissions === null) return null;
-  if (canView('sales-pipeline')) return <Navigate to="/sales/pipeline" replace />;
+  if (canView('sales-pipeline')) return <Navigate to="/sales/in-house" replace />;
   const first = MODULE_CATALOG.find((m) => m.pages.length > 0 && canView(m.key));
   return <Navigate to={first ? `/${first.pages[0]}` : '/dashboard'} replace />;
 }
