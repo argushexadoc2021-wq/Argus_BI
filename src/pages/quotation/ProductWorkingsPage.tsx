@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Calculator, Cog, Package, Plus, RotateCcw, Save, Trash2 } from 'lucide-react';
+import { ArrowLeft, Calculator, Cog, Package, Plus, PlusCircle, RotateCcw, Save, Trash2 } from 'lucide-react';
 import { formatINR } from '@/lib/format';
 import { calcWorkings, emptyWorkings, rowCost, type WorkRow, type Workings } from '@/lib/quotationWorkings';
 import { MetalCalculatorPage, type BomMetalItem } from './MetalCalculatorPage';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { Modal } from '@/components/ui/Modal';
 
 interface ProcessMasterOption {
   id: string;
   processCode: string;
   processName: string;
+  processCategory: string;
   costPerHour: number;
 }
 
@@ -32,6 +34,14 @@ export function ProductWorkingsPage({ title, initial, onBack, onSave }: {
   const [note, setNote] = useState<string | null>(null);
   const [processMaster, setProcessMaster] = useState<ProcessMasterOption[]>([]);
   const [loadingProcesses, setLoadingProcesses] = useState(false);
+
+  // Create Outsource Process modal state
+  const [createOpen, setCreateOpen] = useState(false);
+  const [cpName, setCpName] = useState('');
+  const [cpRate, setCpRate] = useState('');
+  const [cpDesc, setCpDesc] = useState('');
+  const [cpSaving, setCpSaving] = useState(false);
+  const [cpError, setCpError] = useState<string | null>(null);
 
   // Load active processes live from Process Master (cnc_processes)
   useEffect(() => {
@@ -61,6 +71,7 @@ export function ProductWorkingsPage({ title, initial, onBack, onSave }: {
               id: r.id,
               processCode: r.process_code ?? '',
               processName: String(r.process_name).trim(),
+              processCategory: r.process_category ?? '',
               costPerHour: Number(r.cost_per_hour) || 0,
             }));
           setProcessMaster(list);
@@ -91,6 +102,101 @@ export function ProductWorkingsPage({ title, initial, onBack, onSave }: {
       if (!currentRow?.qty?.trim()) patch.qty = '1';
     }
     upd('processes', rowId, patch);
+  };
+
+  const generateOutsourceCode = (name: string): string => {
+    const base = name
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .substring(0, 14) || 'OUT';
+    let code = `OUT-${base}`;
+    let counter = 1;
+    while (processMaster.some(p => p.processCode.toLowerCase() === code.toLowerCase())) {
+      counter++;
+      code = `OUT-${base}-${counter}`;
+    }
+    return code;
+  };
+
+  const openCreateProcess = () => {
+    setCpName('');
+    setCpRate('');
+    setCpDesc('');
+    setCpError(null);
+    setCreateOpen(true);
+  };
+
+  const handleCreateOutsourceProcess = async () => {
+    const name = cpName.trim();
+    if (!name) { setCpError('Process Name is required.'); return; }
+    if (cpRate.trim() === '') { setCpError('Cost Per Hour / Rate is required.'); return; }
+    const rateNum = Number(cpRate.replace(/,/g, ''));
+    if (!Number.isFinite(rateNum) || rateNum < 0) { setCpError('Enter a valid non-negative rate.'); return; }
+
+    setCpSaving(true);
+    setCpError(null);
+    try {
+      const id = crypto.randomUUID();
+      let code = generateOutsourceCode(name);
+      const buildPayload = (procCode: string) => ({
+        id,
+        process_code: procCode,
+        process_name: name,
+        process_category: 'Outsource Process',
+        machine_type: 'Outsource',
+        description: cpDesc.trim() || null,
+        cost_per_hour: rateNum,
+        status: 'Active',
+        notes: 'Created from Quotation Product Workings (Outsource Process)',
+        updated_at: new Date().toISOString(),
+      });
+
+      let { error } = await supabase.from('cnc_processes').insert([buildPayload(code)]);
+      // Handle unique process_code collision seamlessly
+      if (error?.code === '23505') {
+        code = `${code}-${Math.random().toString(36).substring(2, 5).toUpperCase()}`;
+        const retry = await supabase.from('cnc_processes').insert([buildPayload(code)]);
+        error = retry.error;
+      }
+      if (error) throw error;
+
+      const created: ProcessMasterOption = {
+        id,
+        processCode: code,
+        processName: name,
+        processCategory: 'Outsource Process',
+        costPerHour: rateNum,
+      };
+      setProcessMaster(prev =>
+        [...prev, created].sort((a, b) => a.processName.localeCompare(b.processName, undefined, { sensitivity: 'base' }))
+      );
+
+      // Add directly into Process Costing table (reuse an empty row if present, else append)
+      change(p => {
+        const emptyIdx = p.processes.findIndex(row => !row.description.trim());
+        const nextProcesses = [...p.processes];
+        if (emptyIdx >= 0) {
+          nextProcesses[emptyIdx] = {
+            ...nextProcesses[emptyIdx],
+            description: created.processName,
+            qty: nextProcesses[emptyIdx].qty.trim() || '1',
+            rate: rateNum > 0 ? String(rateNum) : nextProcesses[emptyIdx].rate,
+          };
+        } else {
+          nextProcesses.push(newRow(created.processName, '1', rateNum > 0 ? String(rateNum) : ''));
+        }
+        return { ...p, processes: nextProcesses };
+      });
+
+      setCreateOpen(false);
+      setNote(`Outsource process "${name}" saved to Process Master and added to Process Costing.`);
+    } catch (err: any) {
+      setCpError(err?.message || 'Failed to create process in Process Master.');
+    } finally {
+      setCpSaving(false);
+    }
   };
 
   const addMetal = (it: BomMetalItem) => {
@@ -149,6 +255,7 @@ export function ProductWorkingsPage({ title, initial, onBack, onSave }: {
                   {processMaster.map(pm => (
                     <option key={pm.id} value={pm.processName}>
                       {pm.processCode ? `${pm.processName} (${pm.processCode})` : pm.processName}
+                      {pm.processCategory === 'Outsource Process' ? ' [Outsource]' : ''}
                       {pm.costPerHour > 0 ? ` — ₹${pm.costPerHour}/hr` : ''}
                     </option>
                   ))}
@@ -200,23 +307,33 @@ export function ProductWorkingsPage({ title, initial, onBack, onSave }: {
       {/* 2 + 3. process and other expenses */}
       <div className="grid lg:grid-cols-2 gap-4">
         <section className="rounded-xl border border-rose-200 bg-rose-50/40 p-4">
-          <div className="flex items-start justify-between gap-2 mb-3">
+          <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
             <div>
               <h2 className="flex items-center gap-2 text-sm font-bold text-slate-800"><Cog size={15} className="text-rose-500" /> Process Costing (Machinery/Labour)</h2>
-              <p className="text-[11px] text-slate-500">Click Add Process to select from Process Master, hours/qty and rate.</p>
+              <p className="text-[11px] text-slate-500">Select from Process Master or create an Outsource Process directly.</p>
             </div>
-            <button
-              type="button"
-              data-testid="add-process"
-              onClick={() => setRows('processes', [...w.processes, newRow()])}
-              className="flex items-center gap-1 h-8 px-3 rounded-md bg-rose-600 text-white text-xs font-bold hover:bg-rose-700 shadow-xs cursor-pointer shrink-0"
-            >
-              <Plus size={13} /> Add Process
-            </button>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                data-testid="create-process"
+                onClick={openCreateProcess}
+                className="flex items-center gap-1 h-8 px-3 rounded-md border border-rose-300 bg-white text-rose-700 text-xs font-bold hover:bg-rose-50 shadow-xs cursor-pointer"
+              >
+                <PlusCircle size={13} /> Create Process
+              </button>
+              <button
+                type="button"
+                data-testid="add-process"
+                onClick={() => setRows('processes', [...w.processes, newRow()])}
+                className="flex items-center gap-1 h-8 px-3 rounded-md bg-rose-600 text-white text-xs font-bold hover:bg-rose-700 shadow-xs cursor-pointer"
+              >
+                <Plus size={13} /> Add Process
+              </button>
+            </div>
           </div>
           <div className="bg-white rounded-lg border border-slate-200 overflow-hidden"><table className="w-full">
             <thead className="bg-slate-50 text-[10px] uppercase text-slate-500"><tr><th className="text-left px-3 py-2">Process</th><th className="px-2 py-2 w-28 text-left">Hours / Qty</th><th className="px-2 py-2 w-28 text-left">Rate (₹)</th><th className="px-2 py-2 w-28 text-right">Total Cost</th><th className="w-10" /></tr></thead>
-            <tbody>{rowsOf('processes', 'No processes configured. Click "Add Process" above.')}</tbody></table></div>
+            <tbody>{rowsOf('processes', 'No processes configured. Click "Add Process" or "Create Process" above.')}</tbody></table></div>
           <p className="flex justify-between text-xs font-bold text-slate-600 mt-3 px-1"><span>TOTAL PROCESS COST:</span><span className="font-mono text-rose-600" data-testid="total-process">{inr(r.processes)}</span></p>
         </section>
 
@@ -268,6 +385,90 @@ export function ProductWorkingsPage({ title, initial, onBack, onSave }: {
           <button type="button" data-testid="clear-sheet" onClick={() => { change(() => emptyWorkings()); setNote(null); }} className="flex items-center gap-2 h-9 px-4 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50"><RotateCcw size={14} /> Clear Sheet</button>
         </div>
       </section>
+
+      {/* Create Outsource Process Modal */}
+      <Modal
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        title="Create Process"
+        subtitle="Creates a new process in Process Master saved as an Outsource Process"
+        size="md"
+        zIndex={95}
+        footer={
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setCreateOpen(false)}
+              className="h-9 px-4 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={cpSaving}
+              onClick={() => void handleCreateOutsourceProcess()}
+              className="h-9 px-4 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-xs disabled:opacity-50 cursor-pointer"
+            >
+              {cpSaving ? 'Saving…' : 'Save Outsource Process'}
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-3.5 text-sm">
+          <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-xs">
+            <span className="font-semibold text-amber-800">Process Master Type</span>
+            <span className="px-2 py-0.5 rounded-full bg-amber-100 border border-amber-300 font-bold text-amber-900">
+              Outsource Process
+            </span>
+          </div>
+
+          {cpError && (
+            <p className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+              {cpError}
+            </p>
+          )}
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              Process Name <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={cpName}
+              onChange={e => setCpName(e.target.value)}
+              placeholder="e.g. Heat Treatment, Anodizing, Zinc Plating"
+              className="w-full h-9 px-3 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-500/20"
+              autoFocus
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              Cost Per Hour / Rate (₹) <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={cpRate}
+              onChange={e => setCpRate(e.target.value)}
+              placeholder="e.g. 500"
+              className="w-full h-9 px-3 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-500/20"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">Description</label>
+            <textarea
+              rows={2}
+              value={cpDesc}
+              onChange={e => setCpDesc(e.target.value)}
+              placeholder="Optional vendor or outsource operation notes"
+              className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-500/20"
+            />
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

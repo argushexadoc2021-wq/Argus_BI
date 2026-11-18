@@ -326,6 +326,19 @@ export function ProcessMasterPage() {
       render: (r) => <span className="font-semibold text-slate-800">{r.processName}</span>,
     },
     {
+      key: 'processCategory',
+      label: 'Process Type',
+      sortable: true,
+      render: (r) =>
+        r.processCategory === 'Outsource Process' ? (
+          <Badge variant="warning">Outsource Process</Badge>
+        ) : r.processCategory ? (
+          <Badge variant="info">{r.processCategory}</Badge>
+        ) : (
+          <Badge variant="neutral">In-House</Badge>
+        ),
+    },
+    {
       key: 'costPerHour',
       label: 'Cost / Hour',
       sortable: true,
@@ -429,7 +442,7 @@ export function ProcessMasterPage() {
           data={processes}
           columns={columns}
           title="Processes"
-          searchKeys={['processCode', 'processName', 'description']}
+          searchKeys={['processCode', 'processName', 'processCategory', 'description']}
           filterOptions={[
             { label: 'Active', value: 'Active' },
             { label: 'Inactive', value: 'Inactive' },
@@ -467,6 +480,18 @@ export function ProcessMasterPage() {
                 />
               </FormField>
               {errText('processName')}
+            </div>
+            <div>
+              <FormField label="Process Type">
+                <select
+                  value={form.processCategory}
+                  onChange={(e) => set('processCategory', e.target.value)}
+                  className={inputClass}
+                >
+                  <option value="">In-House</option>
+                  <option value="Outsource Process">Outsource Process</option>
+                </select>
+              </FormField>
             </div>
             <div>
               <FormField label="Description">
