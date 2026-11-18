@@ -158,6 +158,26 @@ export const DEFAULT_PROCESS_RATES = [
 ];
 
 /** Get the benchmark rate for a material, converted to the requested price unit */
+/** Human-friendly market benchmark label shown under Material Presets (matches reference suite). */
+export function getMaterialCommodityLabel(materialId: string): string {
+  if (materialId === 'steel') return 'Steel / Iron (Market Benchmark)';
+  if (materialId.startsWith('aluminum') || materialId === 'aluminium') return 'Aluminium (Market Benchmark)';
+  if (materialId.startsWith('stainless')) return 'Stainless Steel (Market Benchmark)';
+  if (materialId.startsWith('nickel')) return 'Nickel Alloy (Market Benchmark)';
+  if (materialId === 'copper') return 'Copper (Market Benchmark)';
+  if (materialId === 'brass') return 'Brass (Market Benchmark)';
+  if (materialId === 'bronze') return 'Bronze (Market Benchmark)';
+  if (materialId === 'titanium') return 'Titanium (Market Benchmark)';
+  if (materialId === 'cast-iron') return 'Cast Iron (Market Benchmark)';
+  if (materialId === 'zinc') return 'Zinc (Market Benchmark)';
+  if (materialId === 'lead') return 'Lead (Market Benchmark)';
+  if (materialId === 'gold') return 'Gold (MCX Benchmark)';
+  if (materialId === 'silver') return 'Silver (MCX Benchmark)';
+  if (materialId === 'platinum' || materialId === 'palladium') return 'Precious Metal (Market Benchmark)';
+  if (materialId.startsWith('carbide') || materialId === 'tungsten') return 'Carbide / Refractory (Market Benchmark)';
+  return 'Metal (Market Benchmark)';
+}
+
 export function getMaterialBenchmarkRate(materialId: string, unit: PriceUnit = 'kg'): number | null {
   const perKg = BENCHMARK_RATES_INR_KG[materialId];
   if (perKg == null) return null;
@@ -205,57 +225,57 @@ const f = (key: string, label: string, short: string, def: string): FieldSpec =>
 
 export const PROFILES: ProfileSpec[] = [
   {
-    id: 'round-bar', name: 'Round Bar', chip: 'Round Bar',
-    fields: [f('d', 'Diameter (D)', 'Ø', '50')], lengthLabel: 'Length (L)', lengthDefault: '1000',
+    id: 'round-bar', name: 'Round Bar', chip: 'Round Bar / Wire / Rod',
+    fields: [f('d', 'Diameter (d)', 'd', '50')], lengthLabel: 'Length (L)', lengthDefault: '1000',
     dimLines: { horizontal: 'd' }, area: d => (PI / 4) * d.d ** 2, check: () => null,
   },
   {
     id: 'square-bar', name: 'Square Bar', chip: 'Square Bar',
-    fields: [f('a', 'Side (A)', 'A', '50')], lengthLabel: 'Length (L)', lengthDefault: '1000',
+    fields: [f('a', 'Side Width (w)', 'w', '50')], lengthLabel: 'Length (L)', lengthDefault: '1000',
     dimLines: { horizontal: 'a', vertical: 'a' }, area: d => d.a ** 2, check: () => null,
   },
   {
-    id: 'flat-bar', name: 'Flat Bar', chip: 'Flat Bar',
-    fields: [f('w', 'Width (W)', 'W', '50'), f('t', 'Thickness (T)', 'T', '6')], lengthLabel: 'Length (L)', lengthDefault: '1000',
+    id: 'flat-bar', name: 'Flat Bar', chip: 'Flat Bar / Sheet / Plate',
+    fields: [f('w', 'Width (w)', 'w', '100'), f('t', 'Thickness (t)', 't', '10')], lengthLabel: 'Length (L)', lengthDefault: '1000',
     dimLines: { horizontal: 'w', vertical: 't' }, area: d => d.w * d.t, check: () => null,
   },
   {
     id: 'hex-bar', name: 'Hexagonal Bar', chip: 'Hexagonal Bar',
-    fields: [f('s', 'Across Flats (S)', 'S', '30')], lengthLabel: 'Length (L)', lengthDefault: '1000',
+    fields: [f('s', 'Across Flats (s)', 's', '50')], lengthLabel: 'Length (L)', lengthDefault: '1000',
     dimLines: { vertical: 's' }, area: d => (Math.sqrt(3) / 2) * d.s ** 2, check: () => null,
   },
   {
     id: 'octagonal-bar', name: 'Octagonal Bar', chip: 'Octagonal Bar',
-    fields: [f('s', 'Across Flats (S)', 'S', '30')], lengthLabel: 'Length (L)', lengthDefault: '1000',
+    fields: [f('s', 'Across Flats (s)', 's', '50')], lengthLabel: 'Length (L)', lengthDefault: '1000',
     dimLines: { horizontal: 's', vertical: 's' }, area: d => 2 * (Math.SQRT2 - 1) * d.s ** 2, check: () => null,
   },
   {
-    id: 'round-tube', name: 'Round Tube', chip: 'Round Tube',
-    fields: [f('d', 'Outer Diameter (D)', 'Ø', '60'), f('t', 'Wall Thickness (t)', 't', '3')], lengthLabel: 'Length (L)', lengthDefault: '1000',
+    id: 'round-tube', name: 'Round Tube', chip: 'Round Tube / Pipe',
+    fields: [f('d', 'Outer Diameter (d)', 'd', '50'), f('t', 'Wall Thickness (t)', 't', '3')], lengthLabel: 'Length (L)', lengthDefault: '1000',
     dimLines: { horizontal: 'd' }, area: d => (PI / 4) * (d.d ** 2 - (d.d - 2 * d.t) ** 2),
     check: d => (2 * d.t >= d.d ? { key: 't', message: 'Wall thickness must be less than half the outer diameter' } : null),
   },
   {
-    id: 'square-tube', name: 'Square Tube', chip: 'Square Tube',
-    fields: [f('a', 'Side (A)', 'A', '50'), f('t', 'Wall Thickness (t)', 't', '3')], lengthLabel: 'Length (L)', lengthDefault: '1000',
+    id: 'square-tube', name: 'Square Tube', chip: 'Square Tube / Box Section',
+    fields: [f('a', 'Outer Width (w)', 'w', '50'), f('t', 'Wall Thickness (t)', 't', '3')], lengthLabel: 'Length (L)', lengthDefault: '1000',
     dimLines: { horizontal: 'a', vertical: 'a' }, area: d => d.a ** 2 - (d.a - 2 * d.t) ** 2,
     check: d => (2 * d.t >= d.a ? { key: 't', message: 'Wall thickness must be less than half the side' } : null),
   },
   {
-    id: 'rect-tube', name: 'Rectangular Tube', chip: 'Rectangular Tube',
-    fields: [f('h', 'Height (H)', 'H', '60'), f('b', 'Width (B)', 'B', '40'), f('t', 'Wall Thickness (t)', 't', '3')], lengthLabel: 'Length (L)', lengthDefault: '1000',
+    id: 'rect-tube', name: 'Rectangular Tube', chip: 'Rectangular Tube / Box Section',
+    fields: [f('b', 'Outer Width (w)', 'w', '80'), f('h', 'Outer Height (h)', 'h', '40'), f('t', 'Wall Thickness (t)', 't', '3')], lengthLabel: 'Length (L)', lengthDefault: '1000',
     dimLines: { horizontal: 'b', vertical: 'h' }, area: d => d.h * d.b - (d.h - 2 * d.t) * (d.b - 2 * d.t),
     check: d => (2 * d.t >= Math.min(d.h, d.b) ? { key: 't', message: 'Wall thickness must be less than half the shorter side' } : null),
   },
   {
     id: 'angle', name: 'Angle (L-profile)', chip: 'Angle (L-profile)',
-    fields: [f('a', 'Leg A (horizontal)', 'A', '50'), f('b', 'Leg B (vertical)', 'B', '50'), f('t', 'Thickness (t)', 't', '5')], lengthLabel: 'Length (L)', lengthDefault: '1000',
+    fields: [f('a', 'Leg 1 Width (w)', 'w', '50'), f('b', 'Leg 2 Width (h)', 'h', '50'), f('t', 'Thickness (t)', 't', '5')], lengthLabel: 'Length (L)', lengthDefault: '1000',
     dimLines: { horizontal: 'a', vertical: 'b' }, area: d => d.t * (d.a + d.b - d.t),
     check: d => (d.t >= Math.min(d.a, d.b) ? { key: 't', message: 'Thickness must be less than the shorter leg' } : null),
   },
   {
     id: 'channel', name: 'Channel (U-profile)', chip: 'Channel (U-profile)',
-    fields: [f('h', 'Height (H)', 'H', '100'), f('b', 'Flange Width (B)', 'B', '50'), f('tf', 'Flange Thickness (Tf)', 'Tf', '8'), f('tw', 'Web Thickness (Tw)', 'Tw', '5')], lengthLabel: 'Length (L)', lengthDefault: '1000',
+    fields: [f('h', 'Web Height (H)', 'H', '100'), f('b', 'Flange Width (W)', 'W', '50'), f('tf', 'Flange Thickness (Tf)', 'Tf', '6'), f('tw', 'Web Thickness (Tw)', 'Tw', '6')], lengthLabel: 'Length (L)', lengthDefault: '1000',
     dimLines: { horizontal: 'b', vertical: 'h' }, area: d => 2 * d.b * d.tf + (d.h - 2 * d.tf) * d.tw,
     check: d =>
       2 * d.tf >= d.h ? { key: 'tf', message: 'Two flange thicknesses must be less than the height' }
@@ -263,7 +283,7 @@ export const PROFILES: ProfileSpec[] = [
   },
   {
     id: 't-profile', name: 'T-profile', chip: 'T-profile',
-    fields: [f('b', 'Flange Width (B)', 'B', '50'), f('h', 'Height (H)', 'H', '50'), f('tf', 'Flange Thickness (Tf)', 'Tf', '6'), f('tw', 'Web Thickness (Tw)', 'Tw', '6')], lengthLabel: 'Length (L)', lengthDefault: '1000',
+    fields: [f('b', 'Flange Width (W)', 'W', '50'), f('h', 'Stem Height (H)', 'H', '50'), f('tf', 'Flange Thickness (Tf)', 'Tf', '5'), f('tw', 'Web Thickness (Tw)', 'Tw', '5')], lengthLabel: 'Length (L)', lengthDefault: '1000',
     dimLines: { horizontal: 'b', vertical: 'h' }, area: d => d.b * d.tf + (d.h - d.tf) * d.tw,
     check: d =>
       d.tf >= d.h ? { key: 'tf', message: 'Flange thickness must be less than the height' }
@@ -278,8 +298,8 @@ export const PROFILES: ProfileSpec[] = [
       : d.tw >= d.w ? { key: 'tw', message: 'Web thickness must be less than the flange width' } : null,
   },
   {
-    id: 'ring', name: 'Ring', chip: 'Ring',
-    fields: [f('od', 'Outer Diameter (OD)', 'OD', '100'), f('id', 'Inner Diameter (ID)', 'ID', '60')], lengthLabel: 'Thickness (T)', lengthDefault: '20',
+    id: 'ring', name: 'Ring', chip: 'Ring / Washer / Hollow Disc',
+    fields: [f('od', 'Outer Diameter (OD)', 'OD', '80'), f('id', 'Inner Diameter (ID)', 'ID', '40')], lengthLabel: 'Thickness (T)', lengthDefault: '10',
     dimLines: { horizontal: 'od' }, area: d => (PI / 4) * (d.od ** 2 - d.id ** 2),
     check: d => (d.id >= d.od ? { key: 'id', message: 'Inner diameter must be less than the outer diameter' } : null),
   },

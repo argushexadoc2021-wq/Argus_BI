@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, Search, Check, Calculator, Layers, PencilRuler, Shapes, BarChart3, RotateCcw, Info } from 'lucide-react';
+import { ChevronDown, Search, Check, Calculator, Layers, PencilRuler, Shapes, BarChart3, RotateCcw, Info, TrendingUp } from 'lucide-react';
 import { formatINR } from '@/lib/format';
 import { supabase } from '@/lib/supabase';
 import { LIVE_METAL_OF, LIVE_METALS, ageLabel, describeRateIssue, inrLabel, quoteStamp, isStale, needsRefresh, parseRates, rateInUnit, type LiveMetal, type MarketRate } from '@/lib/marketRates';
 import {
   PROFILES, PROFILE_BY_ID, MATERIALS, UNITS, PRICE_UNITS, LENGTH_KEY,
-  calculate, convertDims, defaultDims, BENCHMARK_RATES_INR_KG, getMaterialBenchmarkRate,
+  calculate, convertDims, defaultDims, BENCHMARK_RATES_INR_KG, getMaterialBenchmarkRate, getMaterialCommodityLabel,
   type DimMap, type DimValue, type PriceUnit, type ProfileId, type Unit,
 } from '@/lib/metalCalc';
 import { ProfileGlyph, ProfilePreview } from './MetalProfilePreview';
@@ -29,14 +29,23 @@ const sectionTitle = 'text-[11px] font-bold text-slate-700 uppercase tracking-wi
 
 const numeric = (v: string) => v.replace(/[^0-9.,-]/g, '');
 
-function DimField({ label, v, error, onValue, onUnit }: {
-  label: string; v: DimValue; error?: string; onValue: (s: string) => void; onUnit: (u: Unit) => void;
+function DimField({ label, v, error, onValue, onUnit, onHighlight }: {
+  label: string; v: DimValue; error?: string; onValue: (s: string) => void; onUnit: (u: Unit) => void; onHighlight?: (active: boolean) => void;
 }) {
   return (
-    <div>
+    <div onMouseEnter={() => onHighlight?.(true)} onMouseLeave={() => onHighlight?.(false)}>
       <label className={labelCls}>{label}</label>
       <div className={fieldBox(!!error)}>
-        <input className={inputCls} inputMode="decimal" aria-label={label} aria-invalid={!!error} value={v.value} onChange={e => onValue(numeric(e.target.value))} />
+        <input
+          className={inputCls}
+          inputMode="decimal"
+          aria-label={label}
+          aria-invalid={!!error}
+          value={v.value}
+          onFocus={() => onHighlight?.(true)}
+          onBlur={() => onHighlight?.(false)}
+          onChange={e => onValue(numeric(e.target.value))}
+        />
         <select className={unitSelectCls} aria-label={`${label} unit`} value={v.unit} onChange={e => onUnit(e.target.value as Unit)}>
           {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
         </select>
@@ -351,7 +360,8 @@ export interface BomMetalItem { description: string; weightKg: number; ratePerKg
 
 /** `embedded`: used inside the Product Workings page (no page header, adds an "Add to Product BOM" button). */
 export function MetalCalculatorPage({ embedded }: { embedded?: { onAdd: (item: BomMetalItem) => void } } = {}) {
-  const [profileId, setProfileId] = useState<ProfileId>('i-beam');
+  const [profileId, setProfileId] = useState<ProfileId>('round-bar');
+  const [activeDim, setActiveDim] = useState<string | null>(null);
   const [all, setAll] = useState<AllDims>(initialDims);
   const [unitMode, setUnitMode] = useState<'mm' | 'in'>('mm');
   const [materialId, setMaterialId] = useState('steel');
@@ -481,21 +491,23 @@ export function MetalCalculatorPage({ embedded }: { embedded?: { onAdd: (item: B
         <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] gap-5">
           {/* ---------------- left column ---------------- */}
           <div className="space-y-5 min-w-0">
-            <section className="rounded-xl border border-orange-100 bg-orange-50/40 p-4">
+            <section className="rounded-xl border border-purple-200/80 bg-purple-50/60 p-4">
               <div className="flex items-center justify-between mb-3 gap-2">
-                <h2 className="flex items-center gap-2 text-sm font-bold text-slate-800"><Layers size={15} className="text-violet-600" /> Select Metal Profile</h2>
-                <span className="text-[11px] font-semibold text-orange-600 bg-orange-50 border border-orange-200 rounded px-2 py-0.5">{profile.chip}</span>
+                <h2 className="flex items-center gap-2 text-sm font-bold text-purple-950"><Layers size={15} className="text-purple-600" /> Select Metal Profile</h2>
+                <span className="text-[11px] font-semibold text-orange-600 bg-orange-50 border border-orange-200/80 rounded-full px-2.5 py-0.5">{profile.chip}</span>
               </div>
               <div className="grid grid-cols-3 sm:grid-cols-4 xl:grid-cols-6 gap-2">
                 {PROFILES.map(p => {
                   const active = p.id === profileId;
                   return (
                     <button
-                      key={p.id} type="button" aria-pressed={active} onClick={() => setProfileId(p.id)}
-                      className={`flex flex-col items-center justify-center gap-1.5 h-[58px] rounded-lg border text-[11px] font-semibold px-1 text-center leading-tight transition-all ${
-                        active ? 'bg-brand-600 border-brand-600 text-white shadow-md shadow-brand-600/25' : 'bg-white border-slate-200 text-slate-700 hover:border-brand-300 hover:text-brand-700'}`}
+                      key={p.id} type="button" aria-pressed={active} onClick={() => { setProfileId(p.id); setActiveDim(null); }}
+                      className={`flex flex-col items-center justify-center gap-1 min-h-[64px] py-2 px-1.5 rounded-lg border text-[11px] font-bold text-center leading-tight transition-all cursor-pointer ${
+                        active ? 'bg-orange-500 border-orange-500 text-white shadow-md shadow-orange-500/25' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-orange-300'}`}
                     >
-                      <ProfileGlyph id={p.id} size={22} />
+                      <span className={`p-1.5 rounded-md transition-colors ${active ? 'bg-white/20 text-white' : 'bg-slate-50 text-slate-500'}`}>
+                        <ProfileGlyph id={p.id} size={16} />
+                      </span>
                       <span>{p.name}</span>
                     </button>
                   );
@@ -510,6 +522,23 @@ export function MetalCalculatorPage({ embedded }: { embedded?: { onAdd: (item: B
                 <div>
                   <label className={`${labelCls} uppercase tracking-wide`}>Material presets</label>
                   <MaterialSelect value={materialId} onChange={pickMaterial} density={density} asOf={newestQuote(rates)} rates={rates} />
+                  {autoPerKg !== undefined && (
+                    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-slate-500 mt-1.5">
+                      <TrendingUp size={12} className="text-emerald-500 shrink-0" />
+                      <button
+                        type="button"
+                        onClick={() => { setPrice(rateInUnit(autoPerKg, priceUnit)); setPriceFromLive(true); }}
+                        className="font-bold text-emerald-700 hover:underline cursor-pointer"
+                        title="Click to apply this benchmark rate"
+                      >
+                        ₹{fmt(autoPerKg, 2)}/kg
+                      </button>
+                      <span className="text-slate-400">• {getMaterialCommodityLabel(materialId)}</span>
+                      <span className="text-slate-400">
+                        • {new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </span>
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className={`${labelCls} uppercase tracking-wide`}>Density (g/cm³)</label>
@@ -534,9 +563,11 @@ export function MetalCalculatorPage({ embedded }: { embedded?: { onAdd: (item: B
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
                 {profile.fields.map(f => (
                   <DimField key={f.key} label={f.label} v={dims[f.key]} error={errorOf[f.key]}
+                    onHighlight={active => setActiveDim(active ? f.key : null)}
                     onValue={s => setField(f.key, { value: s })} onUnit={u => setField(f.key, { unit: u })} />
                 ))}
                 <DimField label={profile.lengthLabel} v={dims[LENGTH_KEY]} error={errorOf[LENGTH_KEY]}
+                  onHighlight={active => setActiveDim(active ? LENGTH_KEY : null)}
                   onValue={s => setField(LENGTH_KEY, { value: s })} onUnit={u => setField(LENGTH_KEY, { unit: u })} />
               </div>
               {generalIssues.map(i => <p key={i.message} className="text-xs text-red-600 mt-3">{i.message}</p>)}
@@ -596,7 +627,7 @@ export function MetalCalculatorPage({ embedded }: { embedded?: { onAdd: (item: B
           <div className="space-y-5 min-w-0">
             <section className="rounded-xl border border-slate-200 p-4">
               <h2 className="flex items-center gap-2 text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2"><Shapes size={14} /> Component preview</h2>
-              <div className="flex items-center justify-center min-h-[210px]"><ProfilePreview profile={profile} dims={dims} /></div>
+              <div className="flex items-center justify-center min-h-[210px]"><ProfilePreview profile={profile} dims={dims} activeDim={activeDim} /></div>
             </section>
 
             <section className="rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50/70 via-white to-white p-4">
