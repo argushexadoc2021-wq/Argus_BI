@@ -21,6 +21,7 @@ import {
   Box,
   LayoutGrid,
   Loader2,
+  Plus,
 } from 'lucide-react';
 
 // @ts-ignore - JSX 3D scene chunk
@@ -583,6 +584,14 @@ export function MindMapPage() {
 
         {/* Simple Controls */}
         <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={() => navigate('/mind-map/workspace')}
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-sm shadow-blue-600/30 transition-colors cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Create Mind Map</span>
+          </button>
           <button
             type="button"
             onClick={handleToggleAll}

@@ -108,6 +108,8 @@ import {
 import { JdBuildPage } from '@/pages/admin/JdBuildPage';
 import { SupportCenterPage } from './pages/support/SupportCenterPage';
 import { MindMapPage } from './pages/MindMapPage';
+import { MindMapWorkspacePage } from './pages/mindmap/MindMapWorkspacePage';
+import { MindMapEditorPage } from './pages/mindmap/MindMapEditorPage';
 import { AssistantDock } from '@/components/AssistantDock';
 import { RequireModule, moduleForPage } from '@/components/auth/RequireModule';
 import { displayScale as scaleOf, useDisplaySize, useDisplaySizeShortcuts } from '@/lib/displaySize';
@@ -230,6 +232,9 @@ function MainLayout() {
             <Route path="/dashboard" element={<Dashboard onNavigate={handleNavigate} />} />
             <Route path="/bi-chat" element={<BiChatPage />} />
             <Route path="/mind-map" element={<MindMapPage />} />
+            <Route path="/mind-map/workspace" element={<MindMapWorkspacePage />} />
+            <Route path="/mind-map/create" element={<Navigate to="/mind-map/workspace" replace />} />
+            <Route path="/mind-map/editor/:id" element={<MindMapEditorPage />} />
             <Route path="/mindmap" element={<Navigate to="/mind-map" replace />} />
             
             {/* Sales */}
