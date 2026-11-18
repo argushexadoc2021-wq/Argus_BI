@@ -240,7 +240,7 @@ export function MindMapWorkspacePage() {
     <div className="min-h-[calc(100vh-56px)] bg-[#f8fbff] pb-12">
       {/* Page Header matching Argus BI design system */}
       <div className="border-b border-slate-200 bg-white px-4 sm:px-6 py-4">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3">
+        <div className="w-full flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -291,7 +291,7 @@ export function MindMapWorkspacePage() {
         </div>
       </div>
 
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 pt-6 space-y-8">
+      <div className="w-full px-4 sm:px-6 pt-5 space-y-7">
         {error && (
           <div className="flex items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-semibold text-rose-700">
             <span>{error}</span>
@@ -318,7 +318,7 @@ export function MindMapWorkspacePage() {
               </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3">
               {MIND_MAP_TEMPLATES.map((tpl) => {
                 const isBlank = tpl.id === 'blank';
                 return (
@@ -436,7 +436,7 @@ export function MindMapWorkspacePage() {
               )}
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {filteredMaps.map((m) => {
                 const isOwner = m.my_role === 'owner';
                 const canEditMap = m.my_role === 'owner' || m.my_role === 'editor';
