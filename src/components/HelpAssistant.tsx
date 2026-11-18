@@ -1497,7 +1497,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
           <div className="flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 px-3 py-2.5 text-white">
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/20"><Lightbulb size={17} /></span>
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5"><p className="text-sm font-bold leading-tight">Adviser</p><span className="rounded-full bg-white/20 px-1.5 py-0.5 text-[9px] font-bold tracking-wide text-emerald-50">ChatGPT · Full DB</span></div>
+              <p className="text-sm font-bold leading-tight">Adviser</p>
               <p className="truncate text-[10px] text-emerald-50">Ask anything · Live DB Analysis, Actions &amp; Guidance</p>
             </div>
             <button type="button" aria-label="E-mail" title={mail.state?.connected ? `E-mail connected: ${mail.state.mail?.smtp_user ?? ''}` : 'Connect your e-mail so the Adviser can send e-mails for you'}
