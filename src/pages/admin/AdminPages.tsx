@@ -4,7 +4,7 @@ import { Eye, Edit, Edit2, Trash2, Users as UsersIcon, Building2, ShieldCheck, S
 import { fetchJobDescriptions, createJobDescription, EMPTY_JD, type JobDescription } from '@/lib/jdBuild';
 import { fetchUserJdMap, saveUserJd, getUserJdId } from '@/lib/userJd';
 import { JobDescriptionModal, JobDescriptionViewModal, JobDescriptionFormFields, toDraft, fromDraft, type JdDraft } from '@/components/admin/JobDescriptionModal';
-import { NEVER_OFF, fetchDisabledModules, setModuleOff } from '@/lib/moduleSwitches';
+import { NEVER_OFF, RETAIL_LINKED_MODULES, fetchDisabledModules, setModuleOff } from '@/lib/moduleSwitches';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { DataTable, type Column } from '@/components/ui/DataTable';
 import { Badge, Button, StatCard } from '@/components/ui/Card';
@@ -85,7 +85,7 @@ const emptyUserForm = { id: null as string | null, full_name: '', email: '', rol
 
 export function UsersPage({ embeddedCompanyId }: { embeddedCompanyId?: string } = {}) {
   const navigate = useNavigate();
-  const { profile, company, isSuperAdmin, isCompanyAdmin } = useAuth();
+  const { profile, company, isSuperAdmin, isCompanyAdmin, retailEnabled } = useAuth();
   const [searchParams] = useSearchParams();
   const { companies } = useCompanies();
   const [users, setUsers] = useState<UserRow[]>([]);
@@ -101,7 +101,29 @@ export function UsersPage({ embeddedCompanyId }: { embeddedCompanyId?: string } 
   const [formError, setFormError] = useState<string | null>(null);
   const [retailRoles, setRetailRoles] = useState<RetailRole[]>([]);
   const [showRoles, setShowRoles] = useState(false);
+  const [companyRetailMap, setCompanyRetailMap] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    if (!isSuperAdmin) return;
+    let live = true;
+    supabase.from('companies').select('id, retail_enabled').then(({ data, error }) => {
+      if (!live || error || !data) return;
+      const map: Record<string, boolean> = {};
+      (data as any[]).forEach((c) => { map[c.id] = c.retail_enabled !== false; });
+      setCompanyRetailMap(map);
+    });
+    return () => { live = false; };
+  }, [isSuperAdmin]);
+
+  const effectiveCompanyId = embeddedCompanyId || companyFilter || (!isSuperAdmin ? (company?.id ?? '') : '');
+  const showRetailHeader = isSuperAdmin
+    ? (effectiveCompanyId ? companyRetailMap[effectiveCompanyId] !== false : true)
+    : retailEnabled;
+  const showRetailInForm = isSuperAdmin
+    ? (form.company_id ? companyRetailMap[form.company_id] !== false : true)
+    : retailEnabled;
+
   const loadRetailRoles = useCallback(async () => {
+    if (!isSuperAdmin && !retailEnabled) { setRetailRoles([]); return; }
     const keep = (rows: RetailRole[]) => (rows || []).filter(x => x.id !== 'super_admin' && x.id !== 'company_admin' && x.active !== false);
     const { data, error } = await supabase.from('retail_roles').select('id, name, category, markup_pct, require_terms, terms, active').order('name');
     if (!error && data && data.length) {
@@ -110,7 +132,7 @@ export function UsersPage({ embeddedCompanyId }: { embeddedCompanyId?: string } 
     }
     // table not created yet / still empty: the roles held by the Retail Store
     retailApi.get('/api/roles').then((rows: RetailRole[]) => setRetailRoles(keep(rows))).catch(() => setRetailRoles([]));
-  }, []);
+  }, [isSuperAdmin, retailEnabled]);
   useEffect(() => { void loadRetailRoles(); }, [loadRetailRoles]);
 
   // Job Description state
@@ -235,16 +257,19 @@ export function UsersPage({ embeddedCompanyId }: { embeddedCompanyId?: string } 
     }
     // Retail Store details (mobile, Retail Store role): saved with the user; a failure here never undoes the user itself
     const savedId = next.id || (savedData as any)?.id;
+    const allowRetail = isSuperAdmin
+      ? (next.company_id ? companyRetailMap[next.company_id] !== false : true)
+      : retailEnabled;
     if (savedId) {
       const { error: dErr } = await supabase.rpc('erp_save_user_details', {
         p_id: savedId,
-        p_data: { mobile: next.mobile, retail_role: next.role === 'USER' ? next.retail_role : '', terms_accepted: next.terms || undefined },
+        p_data: { mobile: next.mobile, retail_role: allowRetail && next.role === 'USER' ? next.retail_role : '', terms_accepted: allowRetail ? (next.terms || undefined) : undefined },
       });
       if (dErr) console.warn('Could not save the mobile / Retail Store role (apply the company hub migration):', dErr.message);
     }
     // the person is also set up in the Retail Store right away (otherwise it happens on their first login)
     const retailRole = next.role === 'SUPER_ADMIN' ? 'super_admin' : next.role === 'COMPANY_ADMIN' ? 'company_admin' : next.retail_role;
-    if (!next.id && retailRole) {
+    if (allowRetail && !next.id && retailRole) {
       const co = companies.find(c => c.id === (next.company_id || profile?.company_id));
       try {
         await retailApi.post('/api/users', {
@@ -260,7 +285,7 @@ export function UsersPage({ embeddedCompanyId }: { embeddedCompanyId?: string } 
 
   const handleSubmit = async () => {
     if (!form.email.trim()) { setFormError('Google account email is required'); return; }
-    if (form.role === 'USER' && form.retail_role && retailRoles.find(x => x.id === form.retail_role)?.requireTerms && !form.terms && !form.id) { setFormError('Accept the sales terms for this Retail Store role'); return; }
+    if (showRetailInForm && form.role === 'USER' && form.retail_role && retailRoles.find(x => x.id === form.retail_role)?.requireTerms && !form.terms && !form.id) { setFormError('Accept the sales terms for this Retail Store role'); return; }
     if (isSuperAdmin && form.role !== 'SUPER_ADMIN' && !form.company_id) { setFormError('Select a company'); return; }
 
     setSaving(true);
@@ -490,7 +515,7 @@ export function UsersPage({ embeddedCompanyId }: { embeddedCompanyId?: string } 
         >
           EXPORT
         </Button>
-        {(isSuperAdmin || isCompanyAdmin) && (
+        {(isSuperAdmin || isCompanyAdmin) && showRetailHeader && (
           <Button variant="secondary" size="sm" icon={<ShieldCheck size={13} />} onClick={() => setShowRoles(true)} className="h-7 py-1 text-xs px-2.5 shadow-sm font-semibold">
             RETAIL ROLES
           </Button>
@@ -510,7 +535,7 @@ export function UsersPage({ embeddedCompanyId }: { embeddedCompanyId?: string } 
       setHeaderCenter(null);
       setTabActions(null);
     };
-  }, [setHeader, setHeaderCenter, setTabActions, visibleUsers.length, activeCount, inactiveCount, isSuperAdmin, companyFilter, companies, search, embeddedCompanyId]);
+  }, [setHeader, setHeaderCenter, setTabActions, visibleUsers.length, activeCount, inactiveCount, isSuperAdmin, isCompanyAdmin, showRetailHeader, companyFilter, companies, search, embeddedCompanyId]);
 
   return (
     <div className={embeddedCompanyId ? 'space-y-2' : 'p-3 sm:p-4 lg:px-4 lg:pt-1.5 lg:pb-4 bg-grid min-h-full space-y-2'}>
@@ -519,7 +544,7 @@ export function UsersPage({ embeddedCompanyId }: { embeddedCompanyId?: string } 
           <span className="text-xs text-slate-500"><b className="text-slate-800">{visibleUsers.length}</b> users · <b className="text-emerald-700">{activeCount}</b> active</span>
           <div className="ml-auto flex flex-wrap items-center gap-2">
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search users…" className="h-8 w-44 px-2.5 text-xs rounded-md border border-slate-200 bg-white focus:outline-none focus:ring-1 focus:ring-brand-500/30 focus:border-brand-500" />
-            {(isSuperAdmin || isCompanyAdmin) && <Button variant="secondary" size="sm" icon={<ShieldCheck size={13} />} onClick={() => setShowRoles(true)} className="h-8 text-xs">RETAIL ROLES</Button>}
+            {(isSuperAdmin || isCompanyAdmin) && showRetailHeader && <Button variant="secondary" size="sm" icon={<ShieldCheck size={13} />} onClick={() => setShowRoles(true)} className="h-8 text-xs">RETAIL ROLES</Button>}
             <Button size="sm" icon={<Plus size={14} />} onClick={openCreate} className="h-8 text-xs">Create User</Button>
           </div>
         </div>
@@ -551,7 +576,7 @@ export function UsersPage({ embeddedCompanyId }: { embeddedCompanyId?: string } 
         hideToolbar
       />
 
-      <RetailRolesPanel open={showRoles} onClose={() => setShowRoles(false)} onChanged={() => void loadRetailRoles()} canEdit={isSuperAdmin} />
+      {showRetailHeader && <RetailRolesPanel open={showRoles} onClose={() => setShowRoles(false)} onChanged={() => void loadRetailRoles()} canEdit={isSuperAdmin} />}
 
       <Modal
         open={showForm}
@@ -593,7 +618,7 @@ export function UsersPage({ embeddedCompanyId }: { embeddedCompanyId?: string } 
           <FormField label="Mobile Number">
             <input className={inputClass} value={form.mobile} onChange={(e) => setForm({ ...form, mobile: e.target.value })} placeholder="Optional" />
           </FormField>
-          {form.role === 'USER' && (
+          {form.role === 'USER' && showRetailInForm && (
             <FormField label="Retail Store Role">
               <select className={inputClass} value={form.retail_role} onChange={(e) => setForm({ ...form, retail_role: e.target.value, terms: false })}>
                 <option value="">No Retail Store access</option>
@@ -608,7 +633,7 @@ export function UsersPage({ embeddedCompanyId }: { embeddedCompanyId?: string } 
             </select>
           </FormField>
         </div>
-        {form.role === 'USER' && retailRoles.find(x => x.id === form.retail_role)?.requireTerms && (
+        {form.role === 'USER' && showRetailInForm && retailRoles.find(x => x.id === form.retail_role)?.requireTerms && (
           <label className="mt-3 flex items-start gap-2 text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-3 cursor-pointer">
             <input type="checkbox" className="mt-0.5" checked={form.terms} onChange={(e) => setForm({ ...form, terms: e.target.checked })} />
             <span><b>Sales terms accepted.</b> {retailRoles.find(x => x.id === form.retail_role)?.terms}</span>
@@ -2033,7 +2058,22 @@ export function PermissionEditor({ userId, userEmail, userRole, companyId, compa
   // matrix rows still control the pipeline column, KPI tile and list access.
   const emptyFlags0 = { view: false, create: false, edit: false, delete: false, approve: false, export: false };
   const PIPELINE_ONLY: Record<string, boolean> = { enquiries: true, rejected: true, inward: true };
-  const { profile, isSuperAdmin, refreshPermissions } = useAuth();
+  const { profile, isSuperAdmin, retailEnabled, refreshPermissions } = useAuth();
+  const [targetRetailEnabled, setTargetRetailEnabled] = useState<boolean>(retailEnabled);
+  useEffect(() => {
+    if (!isSuperAdmin) { setTargetRetailEnabled(retailEnabled); return; }
+    if (!companyId) { setTargetRetailEnabled(true); return; }
+    let live = true;
+    supabase.from('companies').select('retail_enabled').eq('id', companyId).maybeSingle().then(({ data, error }) => {
+      if (!live) return;
+      setTargetRetailEnabled(error || !data ? true : (data as any).retail_enabled !== false);
+    });
+    return () => { live = false; };
+  }, [isSuperAdmin, retailEnabled, companyId]);
+  const activeModules = useMemo(
+    () => (targetRetailEnabled ? VISIBLE_MODULES : VISIBLE_MODULES.filter((m) => !RETAIL_LINKED_MODULES.includes(m.key))),
+    [targetRetailEnabled],
+  );
   const [matrix, setMatrix] = useState<PermMatrix>(emptyMatrix);
   const [saved, setSaved] = useState<PermMatrix | null>(null);
   const [loading, setLoading] = useState(true);
@@ -2071,7 +2111,7 @@ export function PermissionEditor({ userId, userEmail, userRole, companyId, compa
   const setCategoryView = (cat: string, on: boolean) => {
     setMatrix((prev) => {
       const next = { ...prev };
-      VISIBLE_MODULES.filter((m) => m.category === cat).forEach((m) => {
+      activeModules.filter((m) => m.category === cat).forEach((m) => {
         if (lockedForCaller(m.key) || isSuperTarget) return;
         next[m.key] = on
           ? { ...next[m.key], view: true }
@@ -2084,7 +2124,7 @@ export function PermissionEditor({ userId, userEmail, userRole, companyId, compa
   const setCategoryAction = (cat: string, action: PermAction | 'clear') => {
     setMatrix((prev) => {
       const next = { ...prev };
-      VISIBLE_MODULES.filter((m) => m.category === cat).forEach((m) => {
+      activeModules.filter((m) => m.category === cat).forEach((m) => {
         if (lockedForCaller(m.key) || isSuperTarget) return;
         if (action === 'clear') {
           next[m.key] = { ...next[m.key], create: false, edit: false, delete: false, approve: false, export: false };
@@ -2118,7 +2158,7 @@ export function PermissionEditor({ userId, userEmail, userRole, companyId, compa
   useEffect(() => { load(); }, [load]);
 
   const dirty = saved !== null && JSON.stringify(matrix) !== JSON.stringify(saved);
-  const grantedCount = VISIBLE_MODULES.filter((m) => matrix[m.key]?.view).length;
+  const grantedCount = activeModules.filter((m) => matrix[m.key]?.view).length;
 
   const setModule = (key: string, patch: Partial<Record<PermAction, boolean>>) => {
     setMatrix((prev) => {
@@ -2135,7 +2175,7 @@ export function PermissionEditor({ userId, userEmail, userRole, companyId, compa
 
   const selectAll = () => {
     const next = emptyMatrix();
-    VISIBLE_MODULES.forEach((m) => {
+    activeModules.forEach((m) => {
       if (lockedForCaller(m.key)) return;
       m.actions.forEach((a) => { next[m.key][a] = true; });
     });
@@ -2169,7 +2209,7 @@ export function PermissionEditor({ userId, userEmail, userRole, companyId, compa
       <div className="flex flex-wrap items-center gap-2">
         <div className="min-w-0">
           <h3 className="text-sm font-bold text-slate-800 truncate">User Access — {userEmail}</h3>
-          <p className="text-[11px] text-slate-500">{grantedCount} of {VISIBLE_MODULES.length} modules enabled{dirty ? ' · unsaved changes' : ''}</p>
+          <p className="text-[11px] text-slate-500">{grantedCount} of {activeModules.length} modules enabled{dirty ? ' · unsaved changes' : ''}</p>
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-2">
           <Button variant="secondary" size="sm" onClick={selectAll}>Select All Allowed</Button>
@@ -2183,7 +2223,8 @@ export function PermissionEditor({ userId, userEmail, userRole, companyId, compa
       {isSuperTarget && <p className="text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm">Super Admins always have full access across all companies — there is nothing to configure here.</p>}
       {(() => {
         const renderCategoryCard = (cat: string) => {
-          const mods = VISIBLE_MODULES.filter((m) => m.category === cat);
+          const mods = activeModules.filter((m) => m.category === cat);
+          if (mods.length === 0) return null;
           const isCollapsed = collapsed.has(cat);
           const selectable = isSuperTarget ? [] : mods.filter((m) => !lockedForCaller(m.key));
           const viewOn = selectable.filter((m) => matrix[m.key]?.view).length;

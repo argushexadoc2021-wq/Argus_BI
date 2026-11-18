@@ -1,5 +1,6 @@
 import React, { useState, useRef, useLayoutEffect, useCallback, useEffect, Suspense, lazy } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   TrendingUp,
   Cog,
@@ -242,6 +243,16 @@ const DEFAULT_CAM = {
 
 export function MindMapPage() {
   const navigate = useNavigate();
+  const { retailEnabled, attendanceEnabled, canView } = useAuth();
+  const visibleBranches = React.useMemo(
+    () =>
+      BRANCHES.filter((b) => (retailEnabled || b.id !== 'retail') && (attendanceEnabled || b.id !== 'attendance'))
+        .map((b) => ({
+          ...b,
+          children: b.children.filter((c) => canView('bi-chat') || c.id !== 'bi-chat'),
+        })),
+    [retailEnabled, attendanceEnabled, canView],
+  );
 
   // Default: 3D curved amphitheater with ALL branches cleanly visible & zero overlap!
   const [viewMode, setViewMode] = useState<'3d' | '2d'>('3d');
@@ -405,8 +416,8 @@ export function MindMapPage() {
     };
   }, [computeCurves, viewMode]);
 
-  const leftBranches = BRANCHES.filter((b) => b.side === 'left');
-  const rightBranches = BRANCHES.filter((b) => b.side === 'right');
+  const leftBranches = visibleBranches.filter((b) => b.side === 'left');
+  const rightBranches = visibleBranches.filter((b) => b.side === 'right');
 
   const render2DMap = () => (
     <div
@@ -664,7 +675,7 @@ export function MindMapPage() {
               }
             >
               <MindMap3DScene
-                branches={BRANCHES}
+                branches={visibleBranches}
                 expanded={expanded}
                 focusedId={focusedId}
                 autoRotate={false}
