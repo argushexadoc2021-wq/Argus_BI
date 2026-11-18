@@ -12,7 +12,7 @@ import { fillClientDetails } from '@/lib/quoteClients';
 import { hasWorkings } from '@/lib/quotationWorkings';
 import { CreateQuotationPage, type QuotationEmbed } from './CreateQuotationPage';
 
-const inputCls = 'h-10 px-3 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20';
+const inputCls = 'h-9 px-2.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20';
 const dmy = (iso: string) => (iso ? iso.split('-').reverse().join('-') : '—');
 const money = (n: number) => formatINR(n, { decimals: 'always' });
 const itemNames = (q: SavedQuote) => q.lines.filter(l => calcLine(l).active).map(l => l.description.trim() || 'Item');
@@ -221,9 +221,32 @@ export function QuotationLibraryPage({ onChanged }: { onChanged?: () => void } =
   return (
     <div className="p-4 lg:p-6 bg-grid min-h-full">
       <div className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3">
-        <div>
-          <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-900"><FolderOpen className="text-orange-500" size={26} /> Saved Quotation Library</h1>
-          <p className="text-sm text-slate-500 mt-1">View, edit, download PDF, and manage all your saved quotations in one place.</p>
+        <div className="flex flex-wrap xl:flex-nowrap items-center gap-2">
+          <h1 className="flex items-center gap-1.5 text-base font-bold text-slate-900 whitespace-nowrap shrink-0 mr-1">
+            <FolderOpen className="text-orange-500 shrink-0" size={18} /> Saved Quotation Library
+          </h1>
+          <div className="relative w-44 shrink-0">
+            <Search size={13} className="absolute left-2.5 top-2.5 text-slate-400" />
+            <input aria-label="Search client or item" className={`${inputCls} w-full pl-8`} placeholder="Search client or item…" value={f.text} onChange={e => set({ text: e.target.value })} />
+          </div>
+          <div className="relative w-32 shrink-0">
+            <Hash size={13} className="absolute left-2.5 top-2.5 text-slate-400" />
+            <input aria-label="Quote number" className={`${inputCls} w-full pl-7`} placeholder="Quote #" value={f.quoteNo} onChange={e => set({ quoteNo: e.target.value })} />
+          </div>
+          <select aria-label="Filter by company" className={`${inputCls} w-36 shrink-0`} value={f.client} onChange={e => set({ client: e.target.value })}>
+            <option value="">All Companies</option>
+            {names.map(n => <option key={n} value={n}>{n}</option>)}
+          </select>
+          <div className="flex items-center gap-1.5 border border-slate-200 rounded-lg px-2 h-9 bg-slate-50/60 shrink-0">
+            <span className="text-[10px] font-bold text-slate-500">FROM:</span>
+            <input type="date" aria-label="From date" className="h-7 px-1.5 text-xs bg-white border border-slate-200 rounded focus:outline-none focus:border-orange-500" value={f.from} onChange={e => set({ from: e.target.value })} />
+            <span className="text-[10px] font-bold text-slate-500">TO:</span>
+            <input type="date" aria-label="To date" className="h-7 px-1.5 text-xs bg-white border border-slate-200 rounded focus:outline-none focus:border-orange-500" value={f.to} onChange={e => set({ to: e.target.value })} />
+          </div>
+          {filtered && <button type="button" onClick={() => setF(noFilter)} className="text-xs font-semibold text-orange-600 underline whitespace-nowrap shrink-0">Clear</button>}
+          <span data-testid="count" className="ml-auto text-xs font-semibold text-orange-600 bg-orange-50 border border-orange-200 rounded-lg px-3 h-9 flex items-center whitespace-nowrap shrink-0">
+            {all.length} Saved {all.length === 1 ? 'Quote' : 'Quotes'}{filtered && ` · ${shown.length} shown`}
+          </span>
         </div>
 
         {notice && (
@@ -232,31 +255,6 @@ export function QuotationLibraryPage({ onChanged }: { onChanged?: () => void } =
             <button type="button" aria-label="Dismiss" onClick={() => setNotice(null)}>×</button>
           </div>
         )}
-
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative w-full sm:w-64">
-            <Search size={15} className="absolute left-3 top-3 text-slate-400" />
-            <input aria-label="Search client or item" className={`${inputCls} w-full pl-9`} placeholder="Search client or item…" value={f.text} onChange={e => set({ text: e.target.value })} />
-          </div>
-          <div className="relative w-full sm:w-44">
-            <Hash size={15} className="absolute left-3 top-3 text-slate-400" />
-            <input aria-label="Quote number" className={`${inputCls} w-full pl-9`} placeholder="Quote # (Exact)" value={f.quoteNo} onChange={e => set({ quoteNo: e.target.value })} />
-          </div>
-          <select aria-label="Filter by company" className={`${inputCls} w-full sm:w-52`} value={f.client} onChange={e => set({ client: e.target.value })}>
-            <option value="">All Companies</option>
-            {names.map(n => <option key={n} value={n}>{n}</option>)}
-          </select>
-          <div className="flex items-center gap-2 border border-slate-200 rounded-lg px-2 h-12 bg-slate-50/60">
-            <span className="text-[10px] font-bold text-slate-500">FROM:</span>
-            <input type="date" aria-label="From date" className={`${inputCls} h-9`} value={f.from} onChange={e => set({ from: e.target.value })} />
-            <span className="text-[10px] font-bold text-slate-500">TO:</span>
-            <input type="date" aria-label="To date" className={`${inputCls} h-9`} value={f.to} onChange={e => set({ to: e.target.value })} />
-          </div>
-          {filtered && <button type="button" onClick={() => setF(noFilter)} className="text-xs font-semibold text-orange-600 underline">Clear filters</button>}
-          <span data-testid="count" className="ml-auto text-sm font-semibold text-orange-600 bg-orange-50 border border-orange-200 rounded-lg px-4 h-10 flex items-center">
-            {all.length} Saved {all.length === 1 ? 'Quote' : 'Quotes'}{filtered && ` · ${shown.length} shown`}
-          </span>
-        </div>
 
         <div className="border border-slate-200 rounded-xl overflow-x-auto">
           <table className="w-full text-sm min-w-[840px]">
