@@ -352,32 +352,79 @@ export function EmailIntegrationPage() {
 
   return (
     <div className="min-h-full p-4 sm:p-6 lg:p-8 space-y-6 bg-[#f8fbff] text-slate-800 font-sans">
-      {/* Top Banner Header: Title + Top Adding Button */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs">
-        <div className="flex items-center gap-3.5">
-          <div className="w-11 h-11 rounded-2xl bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center shadow-xs shrink-0">
-            <Mail className="w-6 h-6" />
+      {/* Single Compact Header & Controls Bar */}
+      <div className="bg-white px-4 py-3 rounded-2xl border border-slate-200 shadow-2xs flex flex-wrap xl:flex-nowrap items-center justify-between gap-3">
+        {/* Title */}
+        <div className="flex items-center gap-2.5 shrink-0">
+          <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center shrink-0">
+            <Mail className="w-4 h-4" />
           </div>
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-              Email Integration
-            </h1>
-            <p className="text-xs text-slate-500 font-medium mt-0.5">
-              Manage connected mail IDs and assign which team members each mail ID supports.
-            </p>
+          <h1 className="text-base sm:text-lg font-black text-slate-900 tracking-tight whitespace-nowrap">
+            Email Integration
+          </h1>
+        </div>
+
+        {/* Search & Type Filter */}
+        <div className="flex flex-wrap items-center gap-2.5 flex-1 justify-start xl:justify-center min-w-0">
+          <div className="relative w-full sm:w-64 lg:w-72">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Search by mail ID, user, or provider..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-8 pr-3 py-1.5 text-xs rounded-xl bg-slate-50 border border-slate-200 text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs shrink-0">
+            {(
+              [
+                { id: 'all', label: 'All Mail IDs' },
+                { id: 'both', label: 'Send & Receive' },
+                { id: 'sending', label: 'Sending' },
+                { id: 'receiving', label: 'Receiving' },
+              ] as const
+            ).map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setTypeFilter(t.id)}
+                className={`px-2.5 py-1 rounded-lg font-bold text-[11px] cursor-pointer transition-all whitespace-nowrap ${
+                  typeFilter === t.id
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
           </div>
         </div>
 
-        {canManage && (
+        {/* Right Actions: Refresh + Connect Mail ID */}
+        <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
-            onClick={() => handleOpenConnect()}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 font-bold text-xs text-white shadow-md shadow-blue-500/25 transition-all cursor-pointer self-start sm:self-auto shrink-0"
+            onClick={loadData}
+            disabled={loading}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 transition-colors shadow-2xs cursor-pointer"
           >
-            <Plus className="w-4 h-4" />
-            <span>+ Connect Mail ID</span>
+            <RefreshCw className={`w-3.5 h-3.5 text-blue-600 ${loading ? 'animate-spin' : ''}`} />
+            <span>Refresh</span>
           </button>
-        )}
+
+          {canManage && (
+            <button
+              type="button"
+              onClick={() => handleOpenConnect()}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 font-bold text-xs text-white shadow-sm shadow-blue-500/25 transition-all cursor-pointer whitespace-nowrap"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Connect Mail ID</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Global Feedback Banner */}
@@ -407,60 +454,6 @@ export function EmailIntegrationPage() {
         </div>
       )}
 
-      {/* Controls Bar: Search & Type Filter & Refresh */}
-      <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3">
-          {/* Search Box */}
-          <div className="relative w-full md:w-80">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input
-              type="text"
-              placeholder="Search by mail ID, user, or provider..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-1.5 text-xs rounded-xl bg-slate-50 border border-slate-200 text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-
-          {/* Type Filter Pills */}
-          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs">
-            {(
-              [
-                { id: 'all', label: 'All Mail IDs' },
-                { id: 'both', label: 'Send & Receive' },
-                { id: 'sending', label: 'Sending' },
-                { id: 'receiving', label: 'Receiving' },
-              ] as const
-            ).map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => setTypeFilter(t.id)}
-                className={`px-3 py-1 rounded-lg font-bold text-[11px] cursor-pointer transition-all ${
-                  typeFilter === t.id
-                    ? 'bg-blue-600 text-white shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 justify-end">
-          <button
-            type="button"
-            onClick={loadData}
-            disabled={loading}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 transition-colors shadow-2xs cursor-pointer"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 text-blue-600 ${loading ? 'animate-spin' : ''}`} />
-            <span>Refresh</span>
-          </button>
-        </div>
-      </div>
-
       {/* Connected Mail IDs List / Table */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
         {filteredAccounts.length === 0 ? (
@@ -479,7 +472,7 @@ export function EmailIntegrationPage() {
                 className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 font-bold text-xs text-white shadow-md shadow-blue-500/25 transition-all cursor-pointer mt-2"
               >
                 <Plus className="w-4 h-4" />
-                <span>+ Connect Your First Mail ID</span>
+                <span>Connect Your First Mail ID</span>
               </button>
             )}
           </div>
