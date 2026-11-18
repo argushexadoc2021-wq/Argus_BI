@@ -607,20 +607,24 @@ const STARTERS: { en: string; ta: string }[] = [
 ];
 
 /** The same rules as the server's prompt, used only when the browser's own key answers. */
-function adviserPrompt(lang: Lang, page: string, title: string, notes: string, data = ''): string {
-  const langRule = lang === 'ta' ? 'Reply in Tamil script; keep technical terms and screen / button names in English.' : lang === 'tanglish' ? 'Reply in Tanglish (Tamil in English letters).' : 'Reply in simple English.';
-  return `You are the Adviser of Argus Business Intelligence, used by a CNC machining company. Answer ANY question on ANY topic the person asks (general knowledge, maths, science, coding, writing, business, health basics, language, ideas, anything) with a genuinely helpful answer. You are also an expert who (1) teaches staff how to use Argus BI and (2) answers CNC machining and manufacturing questions like an experienced production engineer: milling, turning, drilling, grinding, EDM, sheet metal, G-code / M-code, CAD/CAM, tooling, speeds and feeds, materials, workholding, tolerances / GD&T, inspection and quality, machine maintenance and troubleshooting, safety, production planning, OEE and machining cost estimating.
-HOW PEOPLE ASK: staff talk in a mix of Tamil and English, often by voice. The speech-to-text writes English words in Tamil letters and makes mistakes, e.g. என்குயரி = enquiry, கொட்டேஷன் = quotation, இன்வாய்ஸ் = invoice, ஆர்டர் = order, சலான் = challan, ஸ்டாக் = stock, ஷெட்யூல் = schedule. A stray word at the end like ஓர் / ஓவர் / over is just the person saying "over" to finish; ignore it. Always work out what they mean by sound before deciding anything; if it is still unclear, ask one short question back instead of refusing.
-Business and factory words (enquiry, quotation, order, inward, production, scheduling, stock, finished goods, rejection, delivery challan, invoice, payment, customer, vendor, purchase, expense, petty cash, costing, reports) are ALWAYS in scope: explain what the word means in a machining company and how it is done in Argus BI.
-Never refuse a question because it is not about Argus BI or machining: answer it well. For medical, legal or money decisions give useful general information and suggest checking with a professional when it really matters.
-For how-to steps in Argus BI use the NOTES; if they do not cover the exact steps, still explain the idea in general and say where in Argus BI to look (for example the Sales Pipeline tiles), without inventing button names. For machining questions answer from engineering knowledge with typical numbers and units, say they are starting values to check against the tool maker's catalogue, and add a short safety caution where relevant.
-Talk like a friendly colleague in a real conversation: short natural sentences, plain words, no lists or markdown symbols, because it is read aloud. Keep it to about 8 short lines. ${langRule}
-PAGE: ${page}${title ? ` (${title})` : ''}
-NOTES (about Argus BI)
+function adviserPrompt(lang: Lang, page: string, title: string, notes: string, data = '', spoken = false): string {
+  const langRule = lang === 'ta' ? 'Reply in Tamil script; keep technical terms and screen / button names in English.' : lang === 'tanglish' ? 'Reply in Tanglish (Tamil in English letters).' : 'Reply in clear, natural English.';
+  const styleRule = spoken
+    ? 'Voice read-aloud is ON: keep sentences clear and easy to listen to, avoid raw markdown clutter, while still giving complete, exact answers.'
+    : 'Act just like full ChatGPT: give thorough, intelligent, well-structured answers tailored to the depth of the request (use clean bullet points, numbered steps, clear breakdowns, formulas, code, drafts, or deep multi-table analysis whenever helpful). Do not artificially truncate useful analysis.';
+  return `You are the ChatGPT-powered Adviser inside Argus Business Intelligence (a complete CNC manufacturing ERP, Quotation Suite, Finance, Inventory, AI Attendance & Retail platform).
+CORE CAPABILITIES — act as a full ChatGPT assistant that can do WHATEVER the user asks:
+1. WHOLE-DATABASE & BUSINESS ANALYSIS: Analyze across ALL live company records provided below (Enquiries, Quotations, Sales Orders, Inwards/Purchases, Delivery Challans, Invoices & Unpaid Receivables, Bank & Petty Cash Cashflow, Work Orders, Job Cards, Process Master including In-House & Outsource Processes, Machines, Products & Drawings, Costing Sheets, Inventory/Low Stock, Suppliers, Purchase Orders, GRNs, Team Users, Customer Contacts, 6-month trends, and executive anomalies). Cross-compare tables, compute ratios/conversion rates/margins/cash gaps, spot bottlenecks, and recommend concrete actions using exact numbers and names. Never invent database figures.
+2. WHOLE-PROJECT EXPERTISE: You understand the entire Argus BI project architecture, every screen, route, button, and workflow listed in the ARGUS BI COMPLETE PROJECT MAP and NOTES below. Answer architecture, workflow, troubleshooting, and how-to questions accurately.
+3. FULL CHATGPT GENERAL INTELLIGENCE: Answer ANY request on ANY topic — writing proposals/letters/SOPs/emails/WhatsApp messages, CNC machining engineering (G-code/M-code, feeds & speeds, tooling, GD&T, costing, OEE), spreadsheets/math/finance, coding, brainstorming, translation, planning, or general knowledge. Never refuse a normal question.
+4. TAMIL / TANGLISH / VOICE UNDERSTANDING: Staff often speak in Tamil, Tanglish, or mixed Tamil-English. Speech-to-text may write English words in Tamil script (e.g. என்குயரி = enquiry, கொட்டேஷன் = quotation, இன்வாய்ஸ் = invoice, ஆர்டர் = order, சலான் = challan, ஸ்டாக் = stock, ஷெட்யூல் = schedule). Ignore a trailing "over" / "ஓவர்".
+${styleRule} ${langRule}
+CURRENT PAGE: ${page}${title ? ` (${title})` : ''}
+PAGE NOTES (about Argus BI)
 ${notes}${data ? `
 
-COMPANY DATA (live from this company's records in Argus BI, read just now)
-Use it for every question about reports, figures, customers, enquiries, quotations, orders, deliveries, invoices, payments, stock or production: answer with the exact numbers, amounts and names from it, and compare (this month vs last month, top customers) when useful. If the answer is not in it, say what you can see and which Argus BI screen or report shows the rest. Never invent figures.
+WHOLE PROJECT MAP & LIVE DATABASE (read live from this company's Argus BI database just now)
+Use every section below to perform full cross-module analysis whenever the user asks about business performance, financials, pipeline conversion, customers, suppliers, processes, machines, inventory, costing, or operations. Always cite exact real figures, document numbers, and names. If a specific sub-detail is not in this snapshot, state what you can see and tell them which exact Argus BI screen shows the full line-level detail.
 GRAPHS AND PDF REPORTS: when the person asks for a graph, chart, diagram, trend or a PDF / printable / downloadable report, first write the short explanation (the findings in plain words), then at the VERY END add one block per chart, each on its own line, exactly in this form (valid JSON, plain numbers without commas or symbols):
 [[CHART {"title":"Billing per month","type":"bar","labels":["Jun 26","Jul 26"],"series":[{"name":"Billed","values":[120000,98000]}],"unit":"₹"}]]
 type is "bar" (compare), "line" (trend over time) or "pie" (share of a whole, one series only). Use only figures from COMPANY DATA (month by month, by customer, by status...). Give 1 to 4 useful charts. When they ask for a PDF or a report to download / print / share, also add on its own last line: [[PDF {"title":"<report title>"}]]. Never put these blocks in the middle of the text and never read them out.
@@ -638,7 +642,7 @@ async function* openAiDirect(key: string, system: string, hist: { role: 'user' |
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: { Authorization: `Bearer ${key}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ model: 'gpt-4o-mini', stream: true, temperature: 0.2, max_tokens: 700, messages: [{ role: 'system', content: system }, ...hist.map((m) => ({ role: m.role, content: m.text }))] }),
+    body: JSON.stringify({ model: 'gpt-4o', stream: true, temperature: 0.3, max_tokens: 2500, messages: [{ role: 'system', content: system }, ...hist.map((m) => ({ role: m.role, content: m.text }))] }),
   });
   if (!res.ok || !res.body) throw new Error(res.status === 401 ? 'The AI key saved in this browser was rejected.' : `The AI is not available right now (code ${res.status}).`);
   const reader = res.body.getReader();
@@ -817,7 +821,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
       try {
         const notesFirst = rankNotes(withEnglishTerms(q), pageRef.current.page).filter((r) => r.total > 0).slice(0, 2).map((r) => `## ${r.n.title}\n${r.n.body}`).join('\n\n');
         const data = await liveData();
-        for await (const piece of serverChat(adviserPrompt(langRef.current, pageRef.current.page, pageRef.current.title, notesFirst, data), [...history.current.slice(-6), { role: 'user', text: q }], { maxTokens: wantsChart ? 1600 : 700 })) {
+        for await (const piece of serverChat(adviserPrompt(langRef.current, pageRef.current.page, pageRef.current.title, notesFirst, data, speakRef.current), [...history.current.slice(-16), { role: 'user', text: q }], { maxTokens: wantsChart ? 3200 : speakRef.current ? 1100 : 2800 })) {
           if (!activeRef.current) break;
           servedFirst = true; push(piece);
         }
@@ -865,7 +869,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
           /* the server's ChatGPT answered */
         } else if (key) {
           const notes = rankNotes(withEnglishTerms(q), pageRef.current.page).filter((r) => r.total > 0).slice(0, 2).map((r) => `## ${r.n.title}\n${r.n.body}`).join('\n\n');
-          for await (const piece of openAiDirect(key, adviserPrompt(langRef.current, pageRef.current.page, pageRef.current.title, notes, await liveData()), [...history.current.slice(-6), { role: 'user', text: q }])) push(piece);
+          for await (const piece of openAiDirect(key, adviserPrompt(langRef.current, pageRef.current.page, pageRef.current.title, notes, await liveData(), speakRef.current), [...history.current.slice(-16), { role: 'user', text: q }])) push(piece);
         } else {
           setNote('The online help service is not reachable, so this answer is read from the built-in notes.');
           const off = offlineAnswer(withEnglishTerms(q), pageRef.current.page, langRef.current);
@@ -876,7 +880,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
       speakReady(true);
       if (full.trim()) {
         history.current.push({ role: 'user', text: q }, { role: 'assistant', text: full });
-        history.current = history.current.slice(-8);
+        history.current = history.current.slice(-16);
       } else { failed = true; show('No answer came back. Please try again.', true); }
     } catch (e) {
       failed = true;
@@ -1229,7 +1233,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
           <div className="flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 px-3 py-2.5 text-white">
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/20"><Lightbulb size={17} /></span>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-bold leading-tight">Adviser</p>
+              <div className="flex items-center gap-1.5"><p className="text-sm font-bold leading-tight">Adviser</p><span className="rounded-full bg-white/20 px-1.5 py-0.5 text-[9px] font-bold tracking-wide text-emerald-50">ChatGPT · Full DB</span></div>
               <p className="truncate text-[10px] text-emerald-50">Report, Ask &amp; Oral Data Input (Co-worker)</p>
             </div>
             <button type="button" aria-label="E-mail" title={mail.state?.connected ? `E-mail connected: ${mail.state.mail?.smtp_user ?? ''}` : 'Connect your e-mail so the Adviser can send e-mails for you'}

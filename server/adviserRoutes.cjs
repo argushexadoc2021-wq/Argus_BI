@@ -52,13 +52,13 @@ module.exports = function mountAdviser(app, SB) {
     if (!(await who(req, res))) return;
     if (!key()) return res.status(503).json({ error: 'The AI is not set up yet. Please ask your administrator to switch it on.' });
     const b = req.body || {};
-    const system = String(b.system || '').slice(0, 40000);   // room for the company's live figures
-    const msgs = (Array.isArray(b.messages) ? b.messages : []).slice(-14).map((m) => ({
+    const system = String(b.system || '').slice(0, 90000);   // room for full project map + live company DB
+    const msgs = (Array.isArray(b.messages) ? b.messages : []).slice(-24).map((m) => ({
       role: m && m.role === 'assistant' ? 'assistant' : 'user',
-      content: String((m && (m.text ?? m.content)) || '').slice(0, 5000),
+      content: String((m && (m.text ?? m.content)) || '').slice(0, 8000),
     })).filter((m) => m.content.trim());
     if (!system || !msgs.length) return res.status(400).json({ error: 'Nothing to answer.' });
-    const maxTokens = Math.min(Math.max(Number(b.maxTokens) || 700, 100), 1500);
+    const maxTokens = Math.min(Math.max(Number(b.maxTokens) || 1800, 100), 4096);
     const temperature = typeof b.temperature === 'number' ? Math.min(Math.max(b.temperature, 0), 1) : 0.3;
 
     const ctl = new AbortController();
