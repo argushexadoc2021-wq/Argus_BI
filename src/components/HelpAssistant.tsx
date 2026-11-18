@@ -7,10 +7,11 @@ import { useAuth } from '@/contexts/AuthContext';
 import { AdviserReportPanel } from '@/components/AdviserReport';
 import { serverChat, serverSpeech, ServerAiError } from '@/lib/adviser/serverAi';
 import { businessData } from '@/lib/adviser/dataContext';
-import { ChartView, parseBlocks, saveReportPdf, speakablePart, type TeachBlock } from '@/lib/adviser/charts';
+import { ChartView, parseBlocks, saveReportPdf, speakablePart, type DbActionBlock, type TeachBlock } from '@/lib/adviser/charts';
 import { EmailCard, MailConnect, useAdviserMail } from '@/lib/adviser/mail';
 import { WhatsAppCard } from '@/lib/adviser/whatsapp';
 import { LiveScreenGuide, collectVisibleScreenTargets } from '@/lib/adviser/LiveScreenGuide';
+import { DbActionCard, executeAdviserDbAction, type DbActionUiState } from '@/lib/adviser/DbActionCard';
 import { deleteChat, groupByDay, loadChats, saveChat, type SavedChat } from '@/lib/adviser/chatHistory';
 import { boostAudio } from '@/lib/voiceBoost';
 import { supabase } from '@/lib/supabase';
@@ -19,20 +20,9 @@ import { useDraggable } from '@/lib/useDraggable';
 import { useDockDrag } from './AssistantDock';
 import { useResizable, ResizeGrip } from '@/lib/useResizable';
 import { getOpenAIApiKey } from '@/lib/copilot/openai';
-import { ACTION_INTENTS, understandLocal } from '@/lib/copilot/understand';
-import { stageFromSpeech } from '@/lib/copilot/wizard';
-
 const EmbeddedCopilot = lazy(() => import('@/components/Copilot').then((m) => ({ default: m.Copilot })));
-const DATA_ACTION_VERB = /\b(add|create|new|enter|insert|record|log|make|move|advance|convert|edit|update|change|delete|remove)\b|சேர்|உருவாக்கு|போடு|மாற்று|நீக்கு/i;
-const HELP_QUESTION_START = /^\s*(how|what|why|where|when|can i|could i|explain|tell me|show me how|எப்படி|என்ன)\b/i;
-function isOralDataEntryCommand(text: string): boolean {
-  const t = text.trim();
-  if (!t || HELP_QUESTION_START.test(t)) return false;
-  const u = understandLocal(t);
-  if (u && ACTION_INTENTS.includes(u.intent)) return true;
-  if (DATA_ACTION_VERB.test(t) && stageFromSpeech(t)) return true;
-  return false;
-}
+const CONFIRM_DB_RE = /^(yes|yeah|yep|yup|ok|okay|confirm|confirmed|correct|crt|right|save|save it|add|add it|insert|do it|go ahead|proceed|sure|fine|yes confirm|yes save|yes correct|ok save|ok confirm|ஆம்|ஆமாம்|சரி|சரியா இருக்கு|சரி சேமி|சேமி|சேமிக்கவும்|போடு|போடுங்க|சேர்|சேர்த்துவிடு|கன்ஃபார்ம்|ஓகே|ஓகே சரி|ok sari|sari|aam|aama|correct dhaan|save pannu|add pannu|podu|podunga|confirm pannu)\s*[.!?]*$/i;
+const CANCEL_DB_RE = /^(no|nope|cancel|don't|dont|stop|abort|nevermind|never mind|wrong|இல்லை|வேண்டாம்|வேணாம்|ரத்து|கேன்சல்|தவறு|vendam|venam|illa|illai|cancel pannu)\s*[.!?]*$/i;
 import { rankNotes } from '../../supabase/functions/help-assistant/knowledge';
 
 // "உதவி / Help": a VOICE assistant, no chat window. Press Help and it says "yes, tell me", listens, answers out loud, then
@@ -638,7 +628,27 @@ type is "bar" (compare), "line" (trend over time) or "pie" (share of a whole, on
 E-MAILS: when the person asks you to write, draft or send an e-mail (payment reminder, quotation follow-up, delivery update, thank-you, anything), write one short line saying the draft is below for them to check, then at the VERY END add exactly one block per e-mail, on its own line (valid JSON; use \n for new lines in the body):
 [[EMAIL {"to":"customer@example.com","cc":"","subject":"...","body":"Dear ...,\n\n...\n\nRegards,\n<sender name>\n<company>"}]]
 Write a polite, clear, professional e-mail in the language they ask for (English by default), with the real figures, invoice / order numbers and dates from COMPANY DATA. Take the receiver's address from CUSTOMER CONTACTS; if it is not there, leave "to" empty and say they must type it. Sign it with the SENDER's name and company. Never say the e-mail was sent: the person checks it and presses Send.
-LIVE ON-SCREEN SPOTLIGHT & POINTER GUIDE: whenever the person asks "how to...", "where is...", "show me...", "teach me...", "explain...", "steps for...", "எப்படி...", "எங்கே...", "காட்டு..." about ANY screen, button, tile, section, or workflow inside Argus BI, first write a brief clear answer, then at the VERY END add ONE [[TEACH ...]] block on its own line (valid JSON, 2 to 5 steps). The app will AUTOMATICALLY navigate to the route and shine a live glowing spotlight + bouncing arrow DIRECTLY onto each exact real UI element on the right-side screen while explaining it!
+DIRECT DATABASE INSERT / EDIT / DELETE / STAGE MOVE (WITH USER CONFIRMATION — TOP PRIORITY!):
+Whenever the user asks you TO ACTUALLY DO / ADD / CREATE / INSERT / ENTER / PUT / RECORD / EDIT / UPDATE / DELETE / MOVE a record in Argus BI (in Tamil, Tanglish, or English — for example: "ஒரு என்குயரி ஒன்னு போடணும் கம்பெனி நேம் சிஸ்டம் ப்ராடக்ட் நேம் ஃபிகர் குவாண்டிட்டி ரெண்டு", "add enquiry for System, product Figure, qty 2", "add company XYZ", "create quotation ...", "create sales order ...", "add process Powder Coating outsource rate 250", "add supplier Metro Steel", "move 1002 to quotation", "edit enquiry 1002 qty to 10", "delete enquiry 1002"):
+- NEVER give manual step-by-step instructions and NEVER emit [[TEACH ...]]! You CAN execute this directly in the database after the user confirms!
+- Extract every field accurately: convert spoken Tamil/English numbers (ஒன்னு=1, ரெண்டு=2, மூணு=3, நாலு=4, அஞ்சு=5, ஆறு=6, ஏழு=7, எட்டு=8, ஒன்பது=9, பத்து=10, இருபது=20, ஐம்பது=50, நூறு=100) into numeric values; transliterate Tamil-script English names cleanly into readable English (e.g. சிஸ்டம் -> System, ஃபிகர் -> Figure, ஷாஃப்ட் -> Shaft), and match an existing company name from COMPANY DATA if it closely matches.
+- First write a brief, clear confirmation question in the user's selected language showing the extracted fields and explicitly asking "Is this correct? Click Confirm & Save or say 'Yes / சரி' to insert into the database."
+- Then at the VERY END add ONE [[DB_ACTION ...]] block on its own line (valid JSON):
+  * Add Enquiry: [[DB_ACTION {"action":"add_enquiry","title":"Add Enquiry","summary":"Insert new enquiry","params":{"company":"System","products":[{"name":"Figure","qty":2}],"remarks":""}}]]
+  * Edit Enquiry: [[DB_ACTION {"action":"edit_enquiry","title":"Edit Enquiry","summary":"Update enquiry","params":{"identifier":"1002","updates":{"quantity":10,"part_name":"","customer":""}}}]]
+  * Delete Enquiry: [[DB_ACTION {"action":"delete_enquiry","title":"Delete Enquiry","summary":"Delete enquiry","params":{"identifier":"1002"}}}]]
+  * Add Company/Client: [[DB_ACTION {"action":"add_company","title":"Add Company","summary":"Add new client company","params":{"name":"System","phone":"","email":"","address":"","gst":"","contact_person":""}}]]
+  * Add Quotation: [[DB_ACTION {"action":"add_quotation","title":"Add Quotation","summary":"Create draft quotation","params":{"company":"System","products":[{"name":"Figure","qty":2,"price":500,"gst":18}],"remarks":""}}]]
+  * Add Sales Order: [[DB_ACTION {"action":"add_sales_order","title":"Create Sales Order","summary":"Insert new sales order","params":{"company":"System","products":[{"name":"Figure","qty":2,"price":500,"gst":18}],"po_no":"","delivery_date":""}}]]
+  * Edit Sales Order: [[DB_ACTION {"action":"edit_sales_order","title":"Edit Sales Order","summary":"Update sales order","params":{"identifier":"SO-2026-1001","updates":{"quantity":10,"unit_price":500,"po_no":"","delivery_date":""}}}]]
+  * Delete Sales Order: [[DB_ACTION {"action":"delete_sales_order","title":"Delete Sales Order","summary":"Delete sales order","params":{"identifier":"SO-2026-1001"}}}]]
+  * Move Pipeline Stage: [[DB_ACTION {"action":"move_stage","title":"Move Stage","summary":"Move record stage","params":{"identifier":"1002","target_stage":"Quotation","price":0}}]]
+  * Add Process (Process Master): [[DB_ACTION {"action":"add_process","title":"Add Process","summary":"Add process to Process Master","params":{"process_name":"Powder Coating","process_category":"Outsource Process","cost_per_hour":250,"machine_type":"","description":""}}]]
+  * Add Supplier: [[DB_ACTION {"action":"add_supplier","title":"Add Supplier","summary":"Add supplier","params":{"name":"Metro Steel","category":"Raw Material","phone":"","email":"","city":"","gst":""}}]]
+- If a critical required field is completely missing (e.g. user said "add enquiry" without naming company or product), ask for the missing detail in 1 short question and wait before emitting [[DB_ACTION ...]].
+- NEVER say the record is already saved before the user confirms! Never read the [[DB_ACTION ...]] JSON aloud.
+
+LIVE ON-SCREEN SPOTLIGHT & POINTER GUIDE: ONLY when the person asks "how to...", "where is...", "show me...", "teach me...", "explain...", "steps for...", "எப்படி...", "எங்கே...", "காட்டு..." (NOT when asking you to add/create/insert/edit/delete data!) about ANY screen, button, tile, section, or workflow inside Argus BI, first write a brief clear answer, then at the VERY END add ONE [[TEACH ...]] block on its own line (valid JSON, 2 to 5 steps). The app will AUTOMATICALLY navigate to the route and shine a live glowing spotlight + bouncing arrow DIRECTLY onto each exact real UI element on the right-side screen while explaining it!
 Format:
 [[TEACH {"title":"Enquiry சேர்க்கும் வழி","route":"/sales/in-house","steps":[{"target":"ENQUIRY","route":"/sales/in-house","title":"Enquiry பிரிவு","detail":"இங்கு Sales Pipeline-ல் உள்ள ENQUIRY column-ல் அனைத்து enquiries-ம் காட்டப்படும்."},{"target":"+ Add Enquiry","route":"/sales/in-house","title":"+ Add Enquiry பட்டன்","detail":"புதிய enquiry சேர்க்க இந்த '+ Add Enquiry' பட்டனை கிளிக் செய்து வாடிக்கையாளர் மற்றும் பொருள் விவரங்களை உள்ளிட்டு சேமிக்கவும்."},{"target":"ENQUIRIES","route":"/sales/in-house","title":"ENQUIRIES Tile","detail":"மேலே உள்ள ENQUIRIES tile-ஐ கிளிக் செய்தால் முழு enquiry பட்டியலைப் பார்க்கலாம் மற்றும் Quotation-ஆக மாற்றலாம்."}]}]]
 CRITICAL RULES for [[TEACH ...]]:
@@ -736,8 +746,11 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
   const [natural, setNatural] = useState(neuralVoiceOn);
   const [tamilPick, setTamilPick] = useState<TamilEngine>(tamilEngine);
   useEffect(() => { store.set(NEURAL_KEY, natural ? '1' : '0'); if (natural) neuralDownUntil = 0; }, [natural]);
-  const { canView, company, profile } = useAuth();
+  const { canView, canDo, company, profile } = useAuth();
   const senderRef = useRef(''); senderRef.current = `SENDER (the person using this chat): ${profile?.full_name ?? ''}${profile?.email ? ` <${profile.email}>` : ''}, company ${company?.company_name ?? ''}`;
+  const [dbActionStates, setDbActionStates] = useState<Record<string, DbActionUiState>>({});
+  const pendingDbRef = useRef<{ key: string; block: DbActionBlock } | null>(null);
+  const canDoRef = useRef(canDo); canDoRef.current = canDo;
   const [mailOpen, setMailOpen] = useState(false);
   // chat history (kept per person and company)
   const owner = `${profile?.id ?? profile?.email ?? ''}.${company?.id ?? 'all'}`;
@@ -836,23 +849,82 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
     syncVoiceDraft([]);
     setVoiceInterim('');
     setVoiceHint('');
+    pendingDbRef.current = null;
     if (goodbye && wasActive && speakRef.current) { setPhase('speaking'); say(GOODBYE[langRef.current], () => setPhase('idle'), undefined, 'adviser'); } else setPhase('idle');
   }, [stopListening, syncVoiceDraft]);
+
+  const confirmDbAction = useCallback(async (key: string, block: DbActionBlock, appendReply = false) => {
+    setDbActionStates((prev) => ({ ...prev, [key]: { status: 'saving' } }));
+    const res = await executeAdviserDbAction(block, {
+      companyId: companyRef.current || null,
+      canDo: (m, a) => canDoRef.current(m, a),
+    });
+    if (pendingDbRef.current?.key === key) pendingDbRef.current = null;
+    if (res.ok) {
+      setDbActionStates((prev) => ({ ...prev, [key]: { status: 'saved', message: res.message, where: res.where } }));
+      const okMsg = langRef.current === 'ta'
+        ? `✓ DB-ல் சேமிக்கப்பட்டது! ${res.message}`
+        : `✓ Saved to database! ${res.message}`;
+      if (appendReply) {
+        setMsgs((ms) => [...ms, { id: ++chatSeq, role: 'assistant', text: okMsg }]);
+        history.current.push({ role: 'assistant', text: okMsg });
+      }
+      if (speakRef.current) {
+        setPhase('speaking');
+        say(okMsg, () => { if (handsFreeRef.current && SR && activeRef.current) listenRef.current(); else setPhase('ready'); }, setNote, 'adviser');
+      } else if (handsFreeRef.current && SR && activeRef.current) {
+        listenRef.current();
+      } else {
+        setPhase('ready');
+      }
+    } else {
+      setDbActionStates((prev) => ({ ...prev, [key]: { status: 'error', message: res.message } }));
+      const errMsg = langRef.current === 'ta' ? `சேமிக்க முடியவில்லை: ${res.message}` : `Could not save: ${res.message}`;
+      if (appendReply) {
+        setMsgs((ms) => [...ms, { id: ++chatSeq, role: 'assistant', text: errMsg, error: true }]);
+      }
+      setPhase('ready');
+    }
+  }, [SR]);
+
+  const cancelDbAction = useCallback((key: string, appendReply = false) => {
+    if (pendingDbRef.current?.key === key) pendingDbRef.current = null;
+    setDbActionStates((prev) => ({ ...prev, [key]: { status: 'cancelled' } }));
+    if (appendReply) {
+      const msg = langRef.current === 'ta' ? 'ரத்து செய்யப்பட்டது. DB-ல் எதுவும் சேமிக்கப்படவில்லை.' : 'Cancelled. Nothing was saved to the database.';
+      setMsgs((ms) => [...ms, { id: ++chatSeq, role: 'assistant', text: msg }]);
+      if (speakRef.current) {
+        setPhase('speaking');
+        say(msg, () => { if (handsFreeRef.current && SR && activeRef.current) listenRef.current(); else setPhase('ready'); }, setNote, 'adviser');
+      } else if (handsFreeRef.current && SR && activeRef.current) {
+        listenRef.current();
+      } else {
+        setPhase('ready');
+      }
+    }
+  }, [SR]);
 
   // ------------------------------------------------ the answer: stream it, show it, and speak each sentence as it completes
   const ask = useCallback(async (question: string) => {
     const q = question.trim();
-    const wantsChart = /graph|chart|plot|diagram|pie|bar|trend|pdf|report|download|print|mail|e-mail|letter|whatsapp|whats app|msg|message|teach|how|where|find|locate|explain|show me|guide|steps|workflow|animat|வாட்ஸ்|மெசேஜ்|மெயில்|கடிதம்|வரைபட|அறிக்கை|ரிப்போர்ட்|கிராப்|எப்படி|எங்கே|எங்க|சொல்லி|காட்டு/i.test(q);
+    const wantsChart = /graph|chart|plot|diagram|pie|bar|trend|pdf|report|download|print|mail|e-mail|letter|whatsapp|whats app|msg|message|teach|how|where|find|locate|explain|show me|guide|steps|workflow|animat|add|create|insert|save|enter|edit|update|delete|move|record|வாட்ஸ்|மெசேஜ்|மெயில்|கடிதம்|வரைபட|அறிக்கை|ரிப்போர்ட்|கிராப்|எப்படி|எங்கே|எங்க|சொல்லி|காட்டு|போடணும்|போடு|சேர்|உருவாக்கு|மாற்று|நீக்கு/i.test(q);
     if (!q || busyRef.current) return;
-    // If the user speaks or types a data-entry command in Adviser, seamlessly hand it off to the embedded Co-worker tab.
-    if (allowedRef.current.coworker && isOralDataEntryCommand(q)) {
-      stopListening();
-      stopSpeaking('adviser');
-      setHeard('');
-      setPhase('ready');
-      setCoworkerCmd(q);
-      setView('coworker');
-      return;
+
+    // Direct voice / text confirmation or cancellation for a pending DB insert/update card
+    if (pendingDbRef.current) {
+      const pending = pendingDbRef.current;
+      if (CONFIRM_DB_RE.test(q)) {
+        setMsgs((m) => [...m, { id: ++chatSeq, role: 'user', text: q }]);
+        history.current.push({ role: 'user', text: q });
+        await confirmDbAction(pending.key, pending.block, true);
+        return;
+      }
+      if (CANCEL_DB_RE.test(q)) {
+        setMsgs((m) => [...m, { id: ++chatSeq, role: 'user', text: q }]);
+        history.current.push({ role: 'user', text: q });
+        cancelDbAction(pending.key, true);
+        return;
+      }
     }
     busyRef.current = true;
     setLiveGuide(null);
@@ -955,7 +1027,9 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
         history.current.push({ role: 'user', text: q }, { role: 'assistant', text: full });
         history.current = history.current.slice(-16);
         const parsedDone = parseBlocks(full);
-        if (parsedDone.teaches.length > 0 && activeRef.current) {
+        if (parsedDone.dbActions.length > 0) {
+          pendingDbRef.current = { key: `${aid}-0`, block: parsedDone.dbActions[0] };
+        } else if (parsedDone.teaches.length > 0 && activeRef.current) {
           setLiveGuide(parsedDone.teaches[0]);
         }
       } else { failed = true; show('No answer came back. Please try again.', true); }
@@ -967,7 +1041,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
       setMsgs((ms) => ms.map((x) => (x.id === aid ? { ...x, pending: false } : x)));
       finish();
     }
-  }, [SR]);
+  }, [SR, confirmDbAction, cancelDbAction]);
 
   // ------------------------------------------------ listening for the next question
   const listen = useCallback(() => {
@@ -1245,6 +1319,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
     if (busyRef.current) return;
     stopSpeaking('adviser');
     setLiveGuide(null);
+    pendingDbRef.current = null;
     chatIdRef.current = null;
     setChatTitle('');
     history.current = [];
@@ -1551,7 +1626,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
                 <div className={`max-w-[88%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-[13px] leading-relaxed ${m.role === 'user' ? 'bg-emerald-600 text-white' : m.error ? 'border border-red-200 bg-red-50 text-red-800' : 'border border-slate-100 bg-slate-100 text-slate-800'}`}>
                   {m.role === 'assistant' && !m.error ? (() => {
                     const b = parseBlocks(m.text);
-                    if (!b.visible && !b.charts.length && !b.teaches.length) return m.pending ? <span className="inline-flex items-center gap-1 text-slate-400"><Loader2 size={13} className="animate-spin" />Thinking…</span> : '';
+                    if (!b.visible && !b.charts.length && !b.teaches.length && !b.dbActions.length) return m.pending ? <span className="inline-flex items-center gap-1 text-slate-400"><Loader2 size={13} className="animate-spin" />Thinking…</span> : '';
                     return (
                       <>
                         {b.visible}
@@ -1561,6 +1636,26 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
                         {!m.pending && b.emails.map((e, i) => <EmailCard key={i} draft={e} onConnect={() => setMailOpen(true)} />)}
                         {m.pending && /\[\[\s*WHATSAPP/.test(m.text) && <span className="mt-1 flex items-center gap-1 text-[11px] text-slate-400"><Loader2 size={12} className="animate-spin" />Writing the WhatsApp message…</span>}
                         {!m.pending && b.whatsapps.map((w, i) => <WhatsAppCard key={`wa${i}`} draft={w} />)}
+                        {m.pending && /\[\[\s*DB_ACTION/.test(m.text) && (
+                          <span className="mt-1.5 flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700">
+                            <Loader2 size={12} className="animate-spin" />
+                            {lang === 'ta' ? 'DB பதிவைத் தயாரிக்கிறது…' : 'Preparing database entry…'}
+                          </span>
+                        )}
+                        {!m.pending && b.dbActions.map((act, i) => {
+                          const key = `${m.id}-${i}`;
+                          return (
+                            <DbActionCard
+                              key={key}
+                              block={act}
+                              lang={lang}
+                              state={dbActionStates[key] ?? { status: 'pending' }}
+                              onConfirm={(edited) => void confirmDbAction(key, edited, false)}
+                              onCancel={() => cancelDbAction(key, false)}
+                              onOpenRoute={(route) => navigate(route.startsWith('/') ? route : `/${route}`)}
+                            />
+                          );
+                        })}
                         {m.pending && /\[\[\s*TEACH/.test(m.text) && (
                           <span className="mt-1.5 flex items-center gap-1.5 text-[11px] font-semibold text-orange-600">
                             <Loader2 size={12} className="animate-spin" />

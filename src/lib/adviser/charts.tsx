@@ -16,7 +16,25 @@ export interface EmailBlock { to: string; cc: string; subject: string; body: str
 export interface WaBlock { to: string; name: string; text: string }
 export interface TeachStep { title: string; detail: string; target?: string; action?: string; route?: string }
 export interface TeachBlock { title: string; subtitle?: string; route?: string; steps: TeachStep[] }
-export interface Blocks { visible: string; charts: ChartSpec[]; pdf: { title: string } | null; emails: EmailBlock[]; whatsapps: WaBlock[]; teaches: TeachBlock[] }
+export type DbActionType =
+  | 'add_enquiry'
+  | 'edit_enquiry'
+  | 'delete_enquiry'
+  | 'add_company'
+  | 'add_quotation'
+  | 'add_sales_order'
+  | 'edit_sales_order'
+  | 'delete_sales_order'
+  | 'move_stage'
+  | 'add_process'
+  | 'add_supplier';
+export interface DbActionBlock {
+  action: DbActionType;
+  title: string;
+  summary?: string;
+  params: Record<string, any>;
+}
+export interface Blocks { visible: string; charts: ChartSpec[]; pdf: { title: string } | null; emails: EmailBlock[]; whatsapps: WaBlock[]; teaches: TeachBlock[]; dbActions: DbActionBlock[] }
 
 const COLORS = ['#2563eb', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4', '#ec4899', '#84cc16'];
 
@@ -29,7 +47,8 @@ export function parseBlocks(text: string): Blocks {
   const emails: EmailBlock[] = [];
   const whatsapps: WaBlock[] = [];
   const teaches: TeachBlock[] = [];
-  const re = /\[\[\s*(CHART|PDF|EMAIL|WHATSAPP|TEACH)\s*(\{[\s\S]*?\})\s*\]\]/g;
+  const dbActions: DbActionBlock[] = [];
+  const re = /\[\[\s*(CHART|PDF|EMAIL|WHATSAPP|TEACH|DB_ACTION)\s*(\{[\s\S]*?\})\s*\]\]/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
     try {
@@ -37,6 +56,18 @@ export function parseBlocks(text: string): Blocks {
       if (m[1] === 'PDF') { pdf = { title: String(j.title || 'Report') }; continue; }
       if (m[1] === 'WHATSAPP') { whatsapps.push({ to: String(j.to ?? ''), name: String(j.name ?? ''), text: String(j.text ?? '') }); continue; }
       if (m[1] === 'EMAIL') { emails.push({ to: String(j.to ?? ''), cc: String(j.cc ?? ''), subject: String(j.subject ?? ''), body: String(j.body ?? '') }); continue; }
+      if (m[1] === 'DB_ACTION') {
+        const act = String(j.action || '').trim() as DbActionType;
+        if (act) {
+          dbActions.push({
+            action: act,
+            title: String(j.title || act.replace(/_/g, ' ')),
+            summary: j.summary ? String(j.summary) : undefined,
+            params: (j.params && typeof j.params === 'object') ? j.params : {},
+          });
+        }
+        continue;
+      }
       if (m[1] === 'TEACH') {
         const steps: TeachStep[] = (Array.isArray(j.steps) ? j.steps : [])
           .slice(0, 8)
@@ -68,7 +99,7 @@ export function parseBlocks(text: string): Blocks {
       charts.push({ title: String(j.title || 'Chart'), type, labels, series, unit: j.unit ? String(j.unit) : undefined });
     } catch { /* a broken block is skipped */ }
   }
-  return { visible, charts, pdf, emails, whatsapps, teaches };
+  return { visible, charts, pdf, emails, whatsapps, teaches, dbActions };
 }
 
 /** The part of a streaming answer that may be read aloud (never the chart data). */
