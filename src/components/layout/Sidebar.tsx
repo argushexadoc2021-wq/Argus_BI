@@ -42,12 +42,16 @@ export function Sidebar({
     const hs = secs.map(sectionHeight);
     const total = hs.reduce((x, y) => x + y, 0);
     const maxOf = (mask: number) => { let l = 0; hs.forEach((h, i) => { if (mask & (1 << i)) l += h; }); return Math.max(l, total - l); };
-    let ordered = (1 << secs.length) - 1, orderedMax = Infinity;
-    for (let k = 1; k <= secs.length; k++) { const m = (1 << k) - 1; if (maxOf(m) < orderedMax - 0.01) { orderedMax = maxOf(m); ordered = m; } }
-    let any = ordered, anyMax = orderedMax;
-    if (secs.length <= 12) for (let m = 1; m < (1 << secs.length); m++) if (maxOf(m) < anyMax - 0.01) { anyMax = maxOf(m); any = m; }
-    const pick = orderedMax - anyMax > 1 ? any : ordered;
-    return [secs.filter((_, i) => pick & (1 << i)), secs.filter((_, i) => !(pick & (1 << i)))];
+    let bestK = Math.ceil(secs.length / 2);
+    let orderedMax = Infinity;
+    for (let k = 1; k <= secs.length; k++) {
+      const m = (1 << k) - 1;
+      if (maxOf(m) < orderedMax - 0.01) {
+        orderedMax = maxOf(m);
+        bestK = k;
+      }
+    }
+    return [secs.slice(0, bestK), secs.slice(bestK)];
   })();
 
   const renderSection = (section: (typeof visibleSections)[number]) => {

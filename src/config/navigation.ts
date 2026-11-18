@@ -58,16 +58,14 @@ export const navSections: NavSection[] = [
   {
     label: 'Overview',
     items: [
-      { label: 'Report', icon: LayoutDashboard, page: 'dashboard', iconClass: 'text-sky-400', module: 'dashboard' },
+      { label: 'Dashboard', icon: TrendingUp, page: 'sales/in-house', iconClass: 'text-emerald-400', module: 'sales-pipeline' },
       { label: 'BI Chat', icon: MessageSquare, page: 'bi-chat', iconClass: 'text-amber-400', module: 'bi-chat' },
-      { label: 'Reports', icon: BarChart3, page: 'reports/production', iconClass: 'text-red-400', module: 'reports' },
       { label: 'Mind Map', icon: Network, page: 'mind-map', iconClass: 'text-cyan-400' },
     ],
   },
   {
     label: 'Sales',
     items: [
-      { label: 'Dashboard', icon: TrendingUp, page: 'sales/in-house', iconClass: 'text-emerald-400', module: 'sales-pipeline' },
       { label: 'Site Visit Sales', icon: MapPin, page: 'sales/site-visits', iconClass: 'text-sky-400', module: 'site-visit-sales' },
       { label: 'Partner & Online Sales', icon: ShoppingCart, page: 'sales/partner-orders', iconClass: 'text-indigo-400', module: 'partner-online-sales' },
       { label: 'Quotations', icon: FileText, page: 'sales/quotations', iconClass: 'text-amber-300', module: 'menu-quotations' },
@@ -136,6 +134,13 @@ export const navSections: NavSection[] = [
       { label: 'On-site Support', icon: Wrench, page: 'support/onsite', iconClass: 'text-emerald-400', module: 'onsite-support' },
       { label: 'Retail Store', icon: Store, page: 'store/home', iconClass: 'text-orange-400' },
       { label: 'AI Attendance', icon: Camera, page: 'attendance/dashboard', iconClass: 'text-orange-500' },
+    ],
+  },
+  {
+    label: 'Reports',
+    items: [
+      { label: 'Report', icon: LayoutDashboard, page: 'dashboard', iconClass: 'text-sky-400', module: 'dashboard' },
+      { label: 'Reports', icon: BarChart3, page: 'reports/production', iconClass: 'text-red-400', module: 'reports' },
     ],
   },
 ];
