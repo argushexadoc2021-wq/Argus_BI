@@ -19,7 +19,7 @@ export function useVisibleNavSections(): NavSection[] {
         items: s.items.filter(
           (i) =>
             (!i.roles || (profile && i.roles.includes(profile.role))) &&
-            (!i.module || i.module === 'bi-chat' || canView(i.module)) &&
+            (!i.module || canView(i.module)) &&
             (retailEnabled || i.page !== 'store/home') &&
             (attendanceEnabled || !i.page.startsWith('attendance')),
         ),

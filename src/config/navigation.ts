@@ -60,7 +60,7 @@ export const navSections: NavSection[] = [
     items: [
       { label: 'Dashboard', icon: TrendingUp, page: 'sales/in-house', iconClass: 'text-emerald-400', module: 'sales-pipeline' },
       { label: 'BI Chat', icon: MessageSquare, page: 'bi-chat', iconClass: 'text-amber-400', module: 'bi-chat' },
-      { label: 'Mind Map', icon: Network, page: 'mind-map', iconClass: 'text-cyan-400' },
+      { label: 'Mind Map', icon: Network, page: 'mind-map', iconClass: 'text-cyan-400', module: 'mind-map' },
     ],
   },
   {
