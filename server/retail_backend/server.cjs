@@ -965,6 +965,149 @@ const adviserMailHits = new Map();   // person -> send times (a small limit agai
 require('./mailIntegrationHandler.cjs')({ app, SB, db, save, mailEnc, mailDec, mailTransport, mailProblem, uid });
 require('./attendanceHandler.cjs')({ app, SB, db, save, uid });
 
+app.post('/api/quote/send-email', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const { orgName, companyName, to, cc, subject, message, pdfBase64, pdfFilename } = b;
+
+    const list = (v) => {
+      if (Array.isArray(v)) return v.map(x => String(x || '').trim()).filter(Boolean);
+      return String(v || '').split(/[,;\s]+/).map(x => String(x || '').trim()).filter(Boolean);
+    };
+
+    const extractEmail = (str) => {
+      const match = /<([^>]+)>/.exec(str);
+      if (match && match[1]) return match[1].trim();
+      return str.trim();
+    };
+
+    const toList = list(to).map(extractEmail).filter(em => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em));
+    const ccList = list(cc).map(extractEmail).filter(em => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em));
+
+    if (!toList.length) {
+      return res.status(400).json({ ok: false, error: 'Please provide at least one valid recipient email address (TO).' });
+    }
+
+    const senderName = companyName || orgName || 'Argus Technologies';
+    const emailSubject = String(subject || ('Quotation from ' + senderName)).trim().slice(0, 300);
+    const bodyText = String(message || '').trim().slice(0, 30000);
+    const cleanFilename = String(pdfFilename || 'Quotation.pdf').replace(/[^a-zA-Z0-9._-]/g, '_');
+
+    // Prepare attachments
+    const attachments = [];
+    if (pdfBase64) {
+      let rawData = String(pdfBase64);
+      if (rawData.includes(';base64,')) rawData = rawData.split(';base64,')[1];
+      attachments.push({
+        filename: cleanFilename,
+        content: Buffer.from(rawData, 'base64'),
+        contentType: 'application/pdf',
+      });
+    }
+
+    // Try finding connected mail settings:
+    let cfg = null;
+
+    // 1. Signed-in user's adviser mail
+    try {
+      const h = String(req.headers.authorization || '');
+      const user = h.startsWith('Bearer ') && SB && SB.enabled ? await SB.authUserFromToken(h.slice(7).trim()) : null;
+      if (user && user.id) {
+        cfg = await adviserMailCfg(user.id);
+      }
+    } catch (e) { /* ignore */ }
+
+    // 2. Company / digital mail account from db
+    if (!cfg && SB && SB.enabled) {
+      try {
+        const { data: accounts } = await SB.admin.from('cnc_mail_accounts').select('*').limit(1);
+        if (accounts && accounts[0] && accounts[0].smtp_pass_enc) {
+          cfg = {
+            host: accounts[0].smtp_host,
+            port: Number(accounts[0].smtp_port) || 587,
+            user: accounts[0].smtp_user,
+            pass: mailDec(accounts[0].smtp_pass_enc),
+            fromName: accounts[0].from_name || accounts[0].name || '',
+          };
+        }
+      } catch (e) { /* ignore */ }
+    }
+
+    // 3. Digital store mail config
+    if (!cfg && db && db.digitalMail && db.digitalMail.smtpPassEnc) {
+      try {
+        cfg = {
+          host: db.digitalMail.host,
+          port: Number(db.digitalMail.port) || 587,
+          user: db.digitalMail.user,
+          pass: mailDec(db.digitalMail.smtpPassEnc),
+          fromName: db.digitalMail.fromName || '',
+        };
+      } catch (e) { /* ignore */ }
+    }
+
+    // 4. Server environment variables
+    if (!cfg && process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+      cfg = {
+        host: process.env.SMTP_HOST,
+        port: Number(process.env.SMTP_PORT) || 587,
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+        fromName: process.env.SMTP_FROM_NAME || senderName,
+      };
+    }
+
+    if (!cfg) {
+      return res.status(200).json({
+        ok: false,
+        needConnect: true,
+        error: 'No server email service is connected yet. You can launch Gmail, Outlook, or your default mail app below.',
+      });
+    }
+
+    const html = '<div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;line-height:1.6;color:#1e293b;max-width:640px;margin:0 auto;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">' +
+      '<div style="background:linear-gradient(135deg,#2563eb,#1d4ed8);padding:24px;color:#ffffff;">' +
+      '<h2 style="margin:0 0 4px 0;font-size:20px;font-weight:700;">' + escHtml(senderName) + '</h2>' +
+      '<p style="margin:0;font-size:12px;opacity:0.9;">Official Commercial Quotation</p>' +
+      '</div>' +
+      '<div style="padding:24px;background:#ffffff;">' +
+      '<p style="margin:0;white-space:pre-wrap;color:#334155;">' + escHtml(bodyText) + '</p>' +
+      '</div>' +
+      '<div style="padding:16px 24px;background:#f8fafc;border-top:1px solid #e2e8f0;font-size:12px;color:#64748b;">' +
+      'Please find the official quotation document attached for detailed itemization, technical specs, and commercial terms.' +
+      '</div>' +
+      '</div>';
+
+    const transport = mailTransport(cfg);
+    const fromAddr = cfg.fromName ? ('"' + cfg.fromName.replace(/"/g, '') + '" <' + cfg.user + '>') : ('"' + senderName + '" <' + cfg.user + '>');
+
+    const info = await transport.sendMail({
+      from: fromAddr,
+      to: toList.join(', '),
+      cc: ccList.length ? ccList.join(', ') : undefined,
+      subject: emailSubject,
+      text: bodyText,
+      html,
+      attachments,
+    });
+
+    return res.json({
+      ok: true,
+      success: true,
+      messageId: info && info.messageId,
+      toList,
+      ccList,
+    });
+  } catch (err) {
+    console.error('Error in /api/quote/send-email:', err);
+    return res.status(500).json({
+      ok: false,
+      error: (typeof mailProblem === 'function' ? mailProblem(err) : null) || String(err.message || err),
+    });
+  }
+});
+
+
 app.post('/api/adviser-mail/send', async (req, res) => {
   try {
     const a = await adviserMailUser(req, res); if (!a) return;

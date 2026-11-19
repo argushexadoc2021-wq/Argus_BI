@@ -18,6 +18,7 @@ import { hasWorkings, type Workings } from '@/lib/quotationWorkings';
 import { PDF_THEMES, PDF_TEMPLATES, downloadQuotePdf, exportQuoteCsv, quoteSummaryText, type PdfThemeId, type QuoteClient, type QuoteDoc } from '@/lib/quotationDocument';
 import { PdfTemplateSelectorModal } from './PdfTemplateSelectorModal';
 import { WhatsappQuoteModal } from './WhatsappQuoteModal';
+import { EmailQuoteModal } from './EmailQuoteModal';
 import { SeparatePdfExportModal } from './SeparatePdfExportModal';
 
 const cell = 'w-full h-8 px-2 text-sm bg-white border border-slate-200 rounded-md focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20';
@@ -110,6 +111,7 @@ export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) 
   });
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [whatsappOpen, setWhatsappOpen] = useState(false);
+  const [emailOpen, setEmailOpen] = useState(false);
   const [separatePdfOpen, setSeparatePdfOpen] = useState(false);
   const [separatePdfWorkings, setSeparatePdfWorkings] = useState(false);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);

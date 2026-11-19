@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { FolderOpen, Search, Hash, Eye, Pencil, FileDown, MessageCircle, Trash2 } from 'lucide-react';
+import { FolderOpen, Search, Hash, Eye, Pencil, FileDown, MessageCircle, Trash2, Mail } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatINR } from '@/lib/format';
 import { Modal } from '@/components/ui/Modal';
@@ -11,6 +11,7 @@ import { supabase } from '@/lib/supabase';
 import { fillClientDetails } from '@/lib/quoteClients';
 import { CreateQuotationPage, type QuotationEmbed } from './CreateQuotationPage';
 import { WhatsappQuoteModal } from './WhatsappQuoteModal';
+import { EmailQuoteModal } from './EmailQuoteModal';
 
 const inputCls = 'h-9 px-2.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20';
 const dmy = (iso: string) => (iso ? iso.split('-').reverse().join('-') : '—');
@@ -69,6 +70,7 @@ export function QuotationLibraryPage({ onChanged }: { onChanged?: () => void } =
   const [pdfPreviewErr, setPdfPreviewErr] = useState<string | null>(null);
   const [editingQuote, setEditingQuote] = useState<SavedQuote | null>(null);
   const [waState, setWaState] = useState<{ doc: QuoteDoc; seller?: QuoteSeller } | null>(null);
+  const [emailState, setEmailState] = useState<{ doc: QuoteDoc; seller?: QuoteSeller } | null>(null);
   const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
   const shown = useMemo(() => filterQuotes(all, f), [all, f]);
