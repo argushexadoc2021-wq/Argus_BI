@@ -137,7 +137,7 @@ export function TopNav({
         title="Go to Dashboard"
         className="flex items-center shrink-0 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
       >
-        <img src="/arguscnc-logo.jpg" alt="ARGUSCNC Logo" className="h-9 w-auto max-w-[130px] sm:max-w-[160px] object-contain rounded-lg" />
+        <img src="/argus-bi-logo.svg" alt="Argus Business Intelligence" className="h-10 w-auto max-w-[150px] sm:max-w-[180px] object-contain" />
       </button>
 
       {/* Categories */}

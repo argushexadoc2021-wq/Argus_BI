@@ -35,7 +35,7 @@ export function AccessDenied() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 px-6">
       <div className="w-full max-w-md bg-white rounded-2xl border border-slate-200 shadow-xl p-8 text-center">
-        <img src="/arguscnc-logo.jpg" alt="ARGUSCNC Logo" className="h-16 w-auto object-contain mx-auto mb-6 rounded-md" />
+        <img src="/argus-bi-logo.svg" alt="Argus Business Intelligence" className="h-16 w-auto object-contain mx-auto mb-6 drop-shadow-md" />
         <div className="w-12 h-12 rounded-full bg-red-50 border border-red-100 flex items-center justify-center mx-auto mb-4">
           <ShieldAlert className="text-red-500" size={22} />
         </div>

@@ -134,10 +134,10 @@ export function Sidebar({
       {/* Logo */}
       <div className={`flex items-center gap-3 px-3 h-11 border-b border-navy-800 flex-shrink-0 bg-navy-950 shadow-sm relative z-10 ${isRight ? 'justify-end' : ''}`}>
         {!collapsed ? (
-          <img src="/arguscnc-logo.jpg" alt="ARGUSCNC Logo" className="w-full h-7 object-contain rounded-lg" />
+          <img src="/argus-bi-logo.svg" alt="Argus Business Intelligence" className="w-full h-9 object-contain" />
         ) : (
-          <div className="w-7 h-7 rounded-lg bg-white flex items-center justify-center flex-shrink-0 shadow-glow-orange overflow-hidden border border-brand-500/20">
-            <img src="/arguscnc-mark.jpg" alt="ARGUSCNC Mark" className="w-full h-full object-contain p-0.5" />
+          <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
+            <img src="/argus-mark.svg" alt="Argus Business Intelligence" className="w-full h-full object-contain" />
           </div>
         )}
       </div>

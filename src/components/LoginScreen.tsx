@@ -51,7 +51,7 @@ export function LoginScreen() {
 
         {/* Content overlay */}
         <div className="relative z-10 flex flex-col justify-between p-12 text-white">
-          <img src="/arguscnc-logo.jpg" alt="ARGUSCNC Logo" className="h-28 w-auto object-contain drop-shadow-xl rounded-md" />
+          <img src="/argus-bi-logo.svg" alt="Argus Business Intelligence" className="h-28 w-fit max-w-full object-contain drop-shadow-xl" />
 
           <div className="max-w-md">
             <h2 className="text-4xl font-bold leading-tight mb-4">
@@ -99,7 +99,7 @@ export function LoginScreen() {
         <div className="w-full max-w-sm">
           {/* Mobile logo */}
           <div className="lg:hidden flex items-center justify-center mb-8">
-            <img src="/arguscnc-logo.jpg" alt="ARGUSCNC Logo" className="h-24 w-auto object-contain rounded-md" />
+            <img src="/argus-bi-logo.svg" alt="Argus Business Intelligence" className="h-20 w-auto max-w-full object-contain drop-shadow-md" />
           </div>
 
           <div className="mb-8">
