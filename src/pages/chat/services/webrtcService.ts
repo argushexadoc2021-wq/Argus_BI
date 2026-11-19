@@ -1,14 +1,18 @@
 import { supabase } from '@/lib/supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
+// A relay (TURN) server is needed when the two people are on different networks that block direct connections (mobile data,
+// office firewalls, many home routers). Set VITE_TURN_URLS (comma separated, e.g. "turn:relay.example.com:3478,turns:relay.example.com:443"),
+// VITE_TURN_USERNAME and VITE_TURN_CREDENTIAL in the environment to use one.
+const TURN_URLS = String(import.meta.env.VITE_TURN_URLS ?? '').split(',').map((u) => u.trim()).filter(Boolean);
+export const HAS_TURN = TURN_URLS.length > 0;
 const ICE_SERVERS: RTCConfiguration = {
   iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' },
+    { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
     { urls: 'stun:global.stun.twilio.com:3478' },
+    ...(HAS_TURN
+      ? [{ urls: TURN_URLS, username: String(import.meta.env.VITE_TURN_USERNAME ?? ''), credential: String(import.meta.env.VITE_TURN_CREDENTIAL ?? '') }]
+      : []),
   ],
 };
 
@@ -237,8 +241,17 @@ export class WebRtcCallManager {
         this.isAccepted = true;
         this.stopAllRetries();
         this.callbacks.onCallAccepted?.();
-      } else if (state === 'failed' || state === 'closed') {
-        console.warn('[WebRTC] Connection failed or closed');
+      } else if (state === 'failed') {
+        console.warn('[WebRTC] Connection failed');
+        this.callbacks.onError?.(
+          new Error(
+            HAS_TURN
+              ? 'The call could not connect. Check the internet connection on both sides and try again.'
+              : 'The call could not connect: your two networks block a direct connection. A call relay server needs to be set up (ask your administrator).',
+          ),
+        );
+      } else if (state === 'closed') {
+        console.warn('[WebRTC] Connection closed');
       }
     };
 
@@ -556,15 +569,20 @@ export class WebRtcCallManager {
   /**
    * Creates and sends an SDP offer to the callee, with retry until answer is received.
    */
+  private offerStarted = false;
+
   private async createAndSendOffer() {
     if (!this.peerConnection || this.isCleanedUp) return;
-    try {
-      // If localDescription already exists, just resend it
-      if (this.peerConnection.localDescription && this.peerConnection.signalingState === 'have-local-offer') {
-        console.log('[WebRTC] Resending existing local SDP offer...');
+    // The offer is made only ONCE. "accept" / "ready" signals arrive several times (they are repeated on purpose); making a
+    // second offer while the first is still being made, or after the call is connected, fails ("order of m-lines...").
+    if (this.offerStarted) {
+      if (this.peerConnection.signalingState === 'have-local-offer' && this.peerConnection.localDescription) {
         this.sendSignal('sdp_offer', { sdp: this.peerConnection.localDescription });
-        return;
       }
+      return;
+    }
+    this.offerStarted = true;
+    try {
 
       console.log('[WebRTC] Creating SDP offer...');
       const offer = await this.peerConnection.createOffer({

@@ -3,6 +3,26 @@ import type { UserColleague, Conversation, ChatMessage, ChatAttachment, Meeting,
 
 const STORAGE_KEY_PREFIX = 'argus_bi_chat_';
 
+/**
+ * Sends one broadcast to a realtime topic. When this browser is not already listening on that topic, the temporary channel
+ * is removed again afterwards (it is only used to send).
+ */
+async function sendToTopic(topic: string, event: string, payload: unknown): Promise<void> {
+  const existed = supabase.getChannels().some((c) => c.topic === `realtime:${topic}`);
+  const ch = supabase.channel(topic);
+  try {
+    await ch.send({ type: 'broadcast', event, payload });
+  } catch (e) {
+    console.warn(`[BI Chat] ${event} on ${topic} failed:`, e);
+  } finally {
+    if (!existed) void supabase.removeChannel(ch);
+  }
+}
+
+/** App-wide call channels: the call ring listener (CallHost) is mounted on every page and listens here. */
+export const callTopicForUser = (userId: string) => `user_calls_${userId}`;
+export const callTopicForCompany = (companyId: string) => `company_calls_${companyId}`;
+
 // Safe localStorage cache helper
 function getCache<T>(key: string, fallback: T): T {
   try {
@@ -845,6 +865,10 @@ export const chatService = {
       }
     }
 
+    // 1b. App-wide call channels (the callee hears the ring on any page, not only in BI Chat)
+    if (call.recipient_id && call.recipient_id !== 'all') await sendToTopic(callTopicForUser(call.recipient_id), 'incoming_call', call);
+    else if (effCoId) await sendToTopic(callTopicForCompany(effCoId), 'incoming_call', call);
+
     // 2. Active Conversation Channel (reaches peer if currently in the conversation)
     if (call.conversation_id) {
       try {
@@ -917,6 +941,10 @@ export const chatService = {
         });
       } catch {}
     }
+
+    // 1b. App-wide call channels
+    if (recipientId && recipientId !== 'all') await sendToTopic(callTopicForUser(recipientId), 'cancel_call', payload);
+    else if (effCoId) await sendToTopic(callTopicForCompany(effCoId), 'cancel_call', payload);
 
     // 2. Company Channel
     if (effCoId) {
@@ -1184,7 +1212,7 @@ export const chatService = {
       start_time: params.startTime,
       end_time: params.endTime,
       meeting_type: params.meetingType,
-      locationOrLink: params.locationOrLink || `https://meet.argus-cnc.internal/${meetingId}`,
+      location_or_link: params.locationOrLink || `https://meet.argus-cnc.internal/${meetingId}`,
       status: 'scheduled',
       reminder_minutes: reminderMinutes,
       participants: (() => {

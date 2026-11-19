@@ -15,6 +15,7 @@ import {
   ArrowDown,
   ChevronLeft,
   Search,
+  Users,
 } from 'lucide-react';
 import type { Conversation, ChatMessage, UserColleague, Meeting } from '../types';
 import { MessageBubble } from './MessageBubble';

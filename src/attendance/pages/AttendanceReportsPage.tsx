@@ -111,7 +111,7 @@ export function AttendanceReportsPage() {
             <h1 className="text-xl font-bold text-slate-900 tracking-tight">Attendance & Payroll Reports</h1>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            Comprehensive shift aggregates, worked hours, late arrival counts, and payroll estimates for {company?.name || 'Argus'}.
+            Comprehensive shift aggregates, worked hours, late arrival counts, and payroll estimates for {company?.company_name || 'Argus'}.
           </p>
         </div>
 

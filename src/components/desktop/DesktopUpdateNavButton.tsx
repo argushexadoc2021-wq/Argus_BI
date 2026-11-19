@@ -18,13 +18,12 @@ import type { UpdateEventDetail } from '@/lib/desktop/updater';
 
 type NavUpdateStatus = 'idle' | 'checking' | 'available' | 'downloading' | 'ready';
 
-export function DesktopUpdateNavButton({
+function DesktopUpdateNavButtonBody({
   onNavigate,
 }: {
   onNavigate: (page: string) => void;
 }) {
   const desktop = isTauri();
-  if (!desktop) return null;
   const [version, setVersion] = useState<string>(CURRENT_APP_VERSION);
   const [status, setStatus] = useState<NavUpdateStatus>('idle');
   const [targetVersion, setTargetVersion] = useState<string | null>(null);
@@ -133,4 +132,9 @@ export function DesktopUpdateNavButton({
       )}
     </button>
   );
+}
+
+/** Shown only in the desktop app (the hooks inside always run in the same order). */
+export function DesktopUpdateNavButton(props: Parameters<typeof DesktopUpdateNavButtonBody>[0]) {
+  return isTauri() ? <DesktopUpdateNavButtonBody {...props} /> : null;
 }

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Calendar, Clock, Video, Users, X, MapPin, ExternalLink, Sparkles, Link2 } from 'lucide-react';
 import type { UserColleague } from '../types';
 
-export function ScheduleMeetingModal({
+function ScheduleMeetingModalBody({
   open,
   colleagues,
   defaultParticipantIds,
@@ -24,7 +24,6 @@ export function ScheduleMeetingModal({
     reminderMinutes: number[];
   }) => void;
 }) {
-  if (!open) return null;
 
   // Defaults: meeting starts 15 minutes from now, 30 min duration
   const now = new Date();
@@ -406,4 +405,9 @@ export function ScheduleMeetingModal({
       </div>
     </div>
   );
+}
+
+/** Mounted only while open, so its hooks always run in the same order (and the form starts fresh each time). */
+export function ScheduleMeetingModal(props: Parameters<typeof ScheduleMeetingModalBody>[0]) {
+  return props.open ? <ScheduleMeetingModalBody {...props} /> : null;
 }

@@ -100,7 +100,6 @@ function BiChatInner() {
     profile?.company_id ||
     profile?.active_company_id ||
     (user as any)?.company_id ||
-    activeConversation?.company_id ||
     companies?.[0]?.id ||
     '0255839c-a9b1-49a8-a9f6-e776fd7bdd00';
   const companyName = company?.company_name || (user as any)?.company_name || 'Argus Technologies';
@@ -261,13 +260,8 @@ function BiChatInner() {
       companyId,
       currentUserId,
       (event) => {
-        if (event.type === 'INCOMING_CALL' && event.call) {
-          playRingtone();
-          setActiveCall(event.call);
-        } else if (event.type === 'CANCEL_CALL') {
-          stopRingtone();
-          setActiveCall((prev) => (prev && prev.id === event.callId ? null : prev));
-          playEndCallTone();
+        if (event.type === 'INCOMING_CALL' || event.type === 'CANCEL_CALL') {
+          // incoming calls ring through the app-wide CallHost (on every page), so nothing to do here
         } else if (event.type === 'NEW_MESSAGE' && event.message) {
           // If message is for another conversation, increment its unread count and play chime
           if (event.message.conversation_id !== activeConversation?.id) {

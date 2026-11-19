@@ -323,9 +323,9 @@ export function CallOverlay({
     let dialogue: any[] = [];
     if (transcriptionRef.current) {
       try {
-        transcriptText = transcriptionRef.current.getFullTranscript();
-        dialogue = transcriptionRef.current.getDialogue();
-        transcriptionRef.current.stop();
+        const done = transcriptionRef.current.stop();
+        transcriptText = done.transcriptText;
+        dialogue = done.dialogue;
       } catch (err) {
         console.warn('[CallOverlay] Failed stopping transcription:', err);
       }

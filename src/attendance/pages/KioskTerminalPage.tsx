@@ -252,7 +252,7 @@ export function KioskTerminalPage() {
             </h1>
             <p className="text-xs text-slate-400 flex items-center gap-1.5">
               <MapPin className="w-3.5 h-3.5 text-blue-500" />
-              {(company as any)?.company_name || company?.name || 'Argus Technologies'} &bull; Terminal 01 (Main Gate)
+              {company?.company_name || 'Argus Technologies'} &bull; Terminal 01 (Main Gate)
             </p>
           </div>
         </div>

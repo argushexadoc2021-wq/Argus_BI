@@ -123,6 +123,7 @@ import { DesktopToasts } from './lib/desktop/toast';
 // @ts-ignore
 import { RetailApp } from './retail/app';
 import { AttendanceApp } from './attendance/AttendanceApp';
+import { CallHost } from './pages/chat/components/CallHost';
 
 // Placeholder Component for unbuilt pages
 function PlaceholderPage({ title }: { title: string }) {
@@ -394,6 +395,8 @@ function MainLayout() {
           onCloseMobile={() => setMobileMenuOpen(false)}
         />
       )}
+      {/* BI Chat calls ring on every page */}
+      <CallHost />
       {/* AI assistants: each one can be switched off in Access Management (for a company or a user) */}
       {(ai.teaching || ai.guide || ai.coworker || ai.adviser) && <AssistantDock />}
       {(ai.teaching || ai.coworker || ai.adviser) && <HelpAssistant allowed={ai} />}

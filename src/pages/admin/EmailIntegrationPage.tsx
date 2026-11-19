@@ -733,7 +733,7 @@ export function EmailIntegrationPage() {
                     <span>Support All Users (Company-wide Shared Mailbox)</span>
                   </div>
                   <p className="text-[11px] text-slate-500 mt-0.5">
-                    Every active employee in {company?.name || 'the organization'} can send and receive emails through this mail ID.
+                    Every active employee in {company?.company_name || 'the organization'} can send and receive emails through this mail ID.
                   </p>
                 </div>
               </div>

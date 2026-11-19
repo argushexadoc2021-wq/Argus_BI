@@ -18,6 +18,7 @@ import { hasWorkings, type Workings } from '@/lib/quotationWorkings';
 import { PDF_THEMES, PDF_TEMPLATES, downloadQuotePdf, exportQuoteCsv, quoteSummaryText, type PdfThemeId, type QuoteClient, type QuoteDoc } from '@/lib/quotationDocument';
 import { PdfTemplateSelectorModal } from './PdfTemplateSelectorModal';
 import { WhatsappQuoteModal } from './WhatsappQuoteModal';
+import { SeparatePdfExportModal } from './SeparatePdfExportModal';
 
 const cell = 'w-full h-8 px-2 text-sm bg-white border border-slate-200 rounded-md focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20';
 const numeric = (v: string) => v.replace(/[^0-9.,]/g, '');
@@ -109,6 +110,8 @@ export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) 
   });
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [whatsappOpen, setWhatsappOpen] = useState(false);
+  const [separatePdfOpen, setSeparatePdfOpen] = useState(false);
+  const [separatePdfWorkings, setSeparatePdfWorkings] = useState(false);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   // a message is shown at the top of the quotation: bring it into view (after the workings sheet the page is still scrolled down)
   const msgRef = useRef<HTMLDivElement>(null);
@@ -596,8 +599,28 @@ export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) 
               }}>Send to Whatsapp</ActionBtn>
             <ActionBtn cls="bg-blue-600 hover:bg-blue-700 text-white" icon={<Mail size={14} />} disabled={busy}
               onClick={() => run('Opened your mail app', () => { const d = buildDoc(); window.location.href = `mailto:${clients.map(c => c.email).filter(Boolean).join(',')}?subject=${encodeURIComponent(`Quotation ${d.quoteNo} from ${sellerName}`)}&body=${encodeURIComponent(quoteSummaryText(d))}`; })}>Send to Client</ActionBtn>
-            <ActionBtn cls="bg-orange-500 hover:bg-orange-600 text-white" icon={<FileDown size={14} />} disabled={busy} onClick={() => run('PDF downloaded', () => downloadQuotePdf(buildDoc(), false, theme, seller, templateId))}>PDF without Workings</ActionBtn>
-            <ActionBtn cls="bg-slate-700 hover:bg-slate-800 text-white" icon={<FileDown size={14} />} disabled={busy} onClick={() => run('PDF with workings downloaded', () => downloadQuotePdf(buildDoc(), true, theme, seller, templateId))}>PDF with Workings</ActionBtn>
+            <ActionBtn cls="bg-orange-500 hover:bg-orange-600 text-white" icon={<FileDown size={14} />} disabled={busy}
+              onClick={() => {
+                if (!guard()) return;
+                if (clients.length === 0) {
+                  desktopToast({ kind: 'warn', title: 'Client Required', text: 'Please select or add at least one client company for this quotation.' });
+                  setPickOpen(true);
+                  return;
+                }
+                setSeparatePdfWorkings(false);
+                setSeparatePdfOpen(true);
+              }}>PDF without Workings</ActionBtn>
+            <ActionBtn cls="bg-slate-700 hover:bg-slate-800 text-white" icon={<FileDown size={14} />} disabled={busy}
+              onClick={() => {
+                if (!guard()) return;
+                if (clients.length === 0) {
+                  desktopToast({ kind: 'warn', title: 'Client Required', text: 'Please select or add at least one client company for this quotation.' });
+                  setPickOpen(true);
+                  return;
+                }
+                setSeparatePdfWorkings(true);
+                setSeparatePdfOpen(true);
+              }}>PDF with Workings</ActionBtn>
             <ActionBtn cls="bg-emerald-600 hover:bg-emerald-700 text-white" icon={<Upload size={14} />} disabled={busy} onClick={() => run('CSV exported', () => exportQuoteCsv(buildDoc()))}>Export CSV</ActionBtn>
             <ActionBtn cls="border border-slate-200 text-slate-700 bg-white hover:bg-slate-50" icon={<Bookmark size={14} />} disabled={busy}
               onClick={() => run(embed?.isEdit ? 'Quotation updated' : 'Quotation saved', () => undefined, true)}>{embed?.isEdit ? 'Save Changes' : 'Save Quote'}</ActionBtn>
@@ -822,8 +845,20 @@ export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) 
             : { kind: 'ok', text: 'Opened WhatsApp & downloaded quotation PDF.' });
         }}
       />
+    
+      {/* Separate PDF Export Modal */}
+      <SeparatePdfExportModal
+        open={separatePdfOpen}
+        onClose={() => setSeparatePdfOpen(false)}
+        doc={buildDoc()}
+        includeWorkings={separatePdfWorkings}
+        themeId={theme}
+        templateId={templateId}
+        seller={seller}
+        onOpenThemeModal={() => setTemplateModalOpen(true)}
+      />
     </div>
-  );
+);
 }
 
 function Row({ label, value, testid, plus }: { label: string; value: number; testid: string; plus?: boolean }) {
