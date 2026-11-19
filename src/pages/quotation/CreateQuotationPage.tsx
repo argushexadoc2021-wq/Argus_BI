@@ -359,10 +359,12 @@ export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) 
         <ProductWorkingsPage key={wl.id} title={wl.description} initial={wl.workings} onBack={() => setWorkingsFor(null)}
           onSave={(w: Workings, price: number, leave: boolean) => {
             const roundedPrice = (Math.round(price * 100) / 100).toFixed(2);
-            setLine(wl.id, { workings: w, unitPrice: roundedPrice });
+            // Workings gives the price of ONE piece. A line with no quantity would show ₹0, so it starts at 1 (change it to the order quantity).
+            const noQty = !(Number(String(wl.qty ?? '').replace(/,/g, '')) > 0);
+            setLine(wl.id, { workings: w, unitPrice: roundedPrice, ...(noQty ? { qty: '1' } : {}) });
             if (leave) {
               setWorkingsFor(null);
-              setMsg({ kind: 'ok', text: `Calculations saved: unit price ${formatINR(price, { decimals: 'always' })} applied to ${wl.description.trim() ? `“${wl.description.trim()}”` : 'the quotation line'}.` });
+              setMsg({ kind: 'ok', text: `Calculations saved: unit price ${formatINR(price, { decimals: 'always' })} applied to ${wl.description.trim() ? `“${wl.description.trim()}”` : 'the quotation line'}.${noQty ? ' Quantity was 0, so it is set to 1: change it to the order quantity.' : ''}` });
             }
           }} />
       </div>
@@ -603,7 +605,7 @@ export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) 
               onClick={() => {
                 if (!guard()) return;
                 if (clients.length === 0) {
-                  desktopToast({ kind: 'warn', title: 'Client Required', text: 'Please select or add at least one client company for this quotation.' });
+                  desktopToast('error', 'Client required', 'Please select or add at least one client company for this quotation.');
                   setPickOpen(true);
                   return;
                 }
@@ -614,7 +616,7 @@ export function CreateQuotationPage({ embed }: { embed?: QuotationEmbed } = {}) 
               onClick={() => {
                 if (!guard()) return;
                 if (clients.length === 0) {
-                  desktopToast({ kind: 'warn', title: 'Client Required', text: 'Please select or add at least one client company for this quotation.' });
+                  desktopToast('error', 'Client required', 'Please select or add at least one client company for this quotation.');
                   setPickOpen(true);
                   return;
                 }

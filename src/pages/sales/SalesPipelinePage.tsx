@@ -6715,17 +6715,6 @@ export function SalesPipelinePage() {
       if (d < 0 || d > 100) { alert(`Discount for "${label}" must be between 0 and 100%.`); return; }
       if (gg < 0 || gg > 100) { alert(`GST for "${label}" must be between 0 and 100%.`); return; }
     }
-    // Safety net: no duplicate product lines within one inward entry (same
-    // master record or same product name). Repeats across entries stay allowed.
-    {
-      const seen = new Set<string>();
-      for (const { it } of flatItems) {
-        const id = inwardLineIdentity(it);
-        if (id === 'nm:' || String(it.productKey) === 'expense') continue;
-        if (seen.has(id)) { alert(`"${it.productName}" is added twice in this inward entry. Keep one line and adjust its quantity.`); return; }
-        seen.add(id);
-      }
-    }
     const flatFiles = groups.flatMap((g: any) => [
       ...(g.files || []),
       ...(g.items || []).flatMap((it: any) => it.files || []),
@@ -7591,22 +7580,12 @@ export function SalesPipelinePage() {
     const v = String(value ?? '');
     // GOODS PURCHASE: the part name is typed by hand, never copied from the product.
     const keepPartBlank = String(group.category || inwardForm.category || '').trim().toUpperCase() === 'GOODS PURCHASE';
-    const dupeOf = (identity: string) => {
-      const all: { gi: number; jj: number; label: string }[] = [];
-      (inwardForm.parts || []).forEach((g: any, gi: number) => (g.items || []).forEach((it: any, jj: number) => {
-        if (gi === index && jj === ii) return;
-        if (inwardLineIdentity(it) === identity && normStr(it.productName)) all.push({ gi, jj, label: it.productName });
-      }));
-      return all[0];
-    };
     const masterHit = partsCatalogue.find((m: any) => normStr(m.name) === normStr(v) || (m.code && normStr(m.code) === normStr(v)));
     if (masterHit && !eligibleCatalogue.some((m: any) => m.key === masterHit.key)) {
       alert(`"${masterHit.name}" is classified as a manufactured (Make-only) item and is not available for purchase.`);
       return;
     }
     if (masterHit) {
-      const dupe = dupeOf(`id:${masterHit.key}`);
-      if (dupe) { alert(`"${masterHit.name}" is already on line ${dupe.jj + 1}. Change the quantity there instead of adding it twice.`); return; }
       const supplier = group.partyName ?? inwardForm.partyName ?? '';
       const r = resolvePurchasePrice(masterHit, supplier);
       const s = splitProductAndRef(masterHit.name);
@@ -7621,9 +7600,7 @@ export function SalesPipelinePage() {
         getProductBaseName(o.name).toLowerCase() === getProductBaseName(rawProduct).toLowerCase()
       );
       if (leg) {
-        // Expense entries (free-text lines) may repeat an item; only catalogue purchases stay single-line.
-        const dupe = opts?.allowFreeText ? undefined : dupeOf(`nm:${normStr(leg.name)}`);
-        if (dupe) { alert(`"${leg.name}" is already on line ${dupe.jj + 1}. Change the quantity there instead of adding it twice.`); return; }
+        // The same product may be on more than one line (e.g. different sizes, prices or batches).
         const s = splitProductAndRef(leg.name, allKnownCompanies.map((c: any) => c.company || c.name), leg.customer);
         const orig = split.original || s.original;
         const targetCompany = split.company || leg.customer || group.partyName || '';
