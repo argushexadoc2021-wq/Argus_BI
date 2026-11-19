@@ -49,6 +49,10 @@ import { DcInvoiceModal } from './DcInvoiceModal';
 import { SignaturePad } from '@/components/ui/SignaturePad';
 import { SalesOrderSection } from './SalesOrderSection';
 import { downloadBrandedDocument, viewBrandedDocument, downloadDeliveryChallan, viewDeliveryChallan, downloadSalesInvoice, fetchCompanyPrintDetails, viewSalesInvoice, deliveryChallanPreviewUrl, salesInvoicePreviewUrl, combinedInvoiceAndDcPreviewUrl, downloadCombinedInvoiceAndDc, viewCombinedInvoiceAndDc } from '@/lib/brandedDocument';
+import { buildQuotePdf, downloadQuotePdf, type PdfThemeId, type QuoteDoc } from '@/lib/quotationDocument';
+import { quoteFromDb, loadQuotes } from '@/lib/quotationStore';
+import { fillClientDetails } from '@/lib/quoteClients';
+import { resolveSeller, syncProfileStore } from '@/lib/companyProfile';
 import { generateUniqueProjectNo } from '@/lib/projectNumber';
 import { summarizeSalesOrder, fetchOrderQty, recordProductionBatch, REJECTION_TYPES, type OrderQtySummary } from '@/lib/orderQuantities';
 import { QtyProgress, QtySummaryGrid, QtyBreakdown } from '@/components/ui/QuantitySummary';
@@ -2222,7 +2226,7 @@ function InwardGroupSection({
 }
 
 export function SalesPipelinePage() {
-  const { profile, company, canView, canDo, permissions } = useAuth();
+  const { profile, company, canView, canDo, permissions, email: authEmail } = useAuth();
   const userName = profile?.full_name || '';
   const [activeView, setActiveView] = useState<'pipeline' | 'enquiry_list' | 'quotation_list' | 'sales_order_list' | 'inward_list' | 'rejected_list' | 'fg_list' | 'dc_list' | 'invoice_list' | 'tracking_list' | 'pipeline_report'>('pipeline');
   const columns: Stage[] = ['Enquiry', 'Quotation', 'Sales Order', 'Inward', 'Finished Goods', 'DC', 'Invoice'];
@@ -3921,12 +3925,115 @@ export function SalesPipelinePage() {
   };
 
   // A challan / invoice popup shows the document itself beside its details; it is rebuilt whenever the record is saved.
-  const docKind: 'dc' | 'invoice' | null = viewModalTarget?.stage === 'DC' ? 'dc' : viewModalTarget?.stage === 'Invoice' ? 'invoice' : null;
+  const docKind: 'dc' | 'invoice' | 'quotation' | null =
+    viewModalTarget?.stage === 'DC' ? 'dc' :
+    viewModalTarget?.stage === 'Invoice' ? 'invoice' :
+    viewModalTarget?.stage === 'Quotation' ? 'quotation' : null;
+  const [quotationDocTab, setQuotationDocTab] = useState<'without_workings' | 'with_workings'>('without_workings');
+
+  const getQuotationDocForModal = useCallback(async (): Promise<QuoteDoc | null> => {
+    if (!viewModalData?.quotation) return null;
+    const rawQ = viewModalData.quotation;
+    const localQuotes = loadQuotes(company?.id);
+    const matched = localQuotes.find(q =>
+      (rawQ.id && q.id === rawQ.id) ||
+      (rawQ.quote_no && q.quoteNo === rawQ.quote_no) ||
+      (q.id === `db-${rawQ.id}`)
+    );
+    let doc: QuoteDoc;
+    if (matched) {
+      doc = { ...matched };
+    } else {
+      const rowForDb: any = {
+        ...rawQ,
+        description: typeof rawQ.description === 'string'
+          ? rawQ.description
+          : JSON.stringify(rawQ.items || rawQ.description || []),
+      };
+      doc = quoteFromDb(rowForDb, 1);
+    }
+    if (!doc.quoteNo) {
+      doc.quoteNo = rawQ.quote_no || viewModalTarget?.refNo || (rawQ.lead_no ? `QT-${rawQ.lead_no}` : '') || `QT-${String(rawQ.id || '').slice(0, 6)}`;
+    }
+    const custName = String(rawQ.customer || rawQ.customer_name || viewModalData?.enquiry?.customer || viewModalTarget?.customer || '').trim();
+    if (custName && (!doc.clients || !doc.clients.length || !doc.clients[0].name)) {
+      doc.clients = [{
+        key: custName.toLowerCase(),
+        name: custName,
+        email: rawQ.email || viewModalData?.enquiry?.email || '',
+        phone: rawQ.phone || viewModalData?.enquiry?.phone || '',
+        address: rawQ.customer_address || rawQ.billing_address || viewModalData?.enquiry?.customer_address || '',
+        gstin: rawQ.customer_gstin || viewModalData?.enquiry?.customer_gstin || '',
+      }];
+    }
+    return doc;
+  }, [viewModalData?.quotation, viewModalData?.enquiry, viewModalTarget, company?.id]);
+
+  const downloadQuotationPdfFromModal = async () => {
+    try {
+      const doc = await getQuotationDocForModal();
+      if (!doc) return;
+      const [enrichedClients, store] = await Promise.all([
+        fillClientDetails(doc.clients, company?.id),
+        syncProfileStore(company?.id, { orgName: company?.company_name ?? '', email: authEmail ?? '' }),
+      ]);
+      const seller = resolveSeller(store, doc.sellerRef);
+      let theme: PdfThemeId = 'orange';
+      let templateId = 'template-1';
+      try {
+        theme = (localStorage.getItem('metal-pdf-color') as PdfThemeId) || 'orange';
+        templateId = localStorage.getItem('metal-pdf-template') || 'template-1';
+      } catch {}
+      await downloadQuotePdf(
+        { ...doc, clients: enrichedClients },
+        quotationDocTab === 'with_workings',
+        theme,
+        seller,
+        templateId
+      );
+    } catch (err: any) {
+      alert(`Could not download quotation PDF: ${err?.message || err}`);
+    }
+  };
+
+  const openQuotationPdfInNewTab = async () => {
+    try {
+      if (docPreviewUrl) {
+        window.open(docPreviewUrl, '_blank');
+        return;
+      }
+      const doc = await getQuotationDocForModal();
+      if (!doc) return;
+      const [enrichedClients, store] = await Promise.all([
+        fillClientDetails(doc.clients, company?.id),
+        syncProfileStore(company?.id, { orgName: company?.company_name ?? '', email: authEmail ?? '' }),
+      ]);
+      const seller = resolveSeller(store, doc.sellerRef);
+      let theme: PdfThemeId = 'orange';
+      let templateId = 'template-1';
+      try {
+        theme = (localStorage.getItem('metal-pdf-color') as PdfThemeId) || 'orange';
+        templateId = localStorage.getItem('metal-pdf-template') || 'template-1';
+      } catch {}
+      const pdfDoc = await buildQuotePdf(
+        { ...doc, clients: enrichedClients },
+        quotationDocTab === 'with_workings',
+        theme,
+        seller,
+        templateId
+      );
+      const blob = pdfDoc.output('blob');
+      const blobUrl = URL.createObjectURL(blob);
+      window.open(blobUrl, '_blank');
+    } catch (err: any) {
+      alert(`Could not open quotation PDF: ${err?.message || err}`);
+    }
+  };
   const [docPreviewUrl, setDocPreviewUrl] = useState('');
   const [docPreviewErr, setDocPreviewErr] = useState('');
   const [invoiceDocTab, setInvoiceDocTab] = useState<'combined' | 'invoice' | 'dc'>('combined');
   useEffect(() => {
-    if (!docKind || (!viewModalData?.invoice && !viewModalData?.dc)) { setDocPreviewUrl(''); setDocPreviewErr(''); return; }
+    if (!docKind || (!viewModalData?.invoice && !viewModalData?.dc && !viewModalData?.quotation)) { setDocPreviewUrl(''); setDocPreviewErr(''); return; }
     let dead = false;
     let made = '';
     (async () => {
@@ -3957,6 +4064,31 @@ export function SalesPipelinePage() {
             if (!invInput || dead) return;
             url = await salesInvoicePreviewUrl(invInput);
           }
+        } else if (docKind === 'quotation') {
+          const doc = await getQuotationDocForModal();
+          if (!doc || dead) return;
+          const [enrichedClients, profileStore] = await Promise.all([
+            fillClientDetails(doc.clients, company?.id),
+            syncProfileStore(company?.id, { orgName: company?.company_name ?? '', email: authEmail ?? '' }),
+          ]);
+          if (dead) return;
+          const seller = resolveSeller(profileStore, doc.sellerRef);
+          let theme: PdfThemeId = 'orange';
+          let templateId = 'template-1';
+          try {
+            theme = (localStorage.getItem('metal-pdf-color') as PdfThemeId) || 'orange';
+            templateId = localStorage.getItem('metal-pdf-template') || 'template-1';
+          } catch {}
+          const pdfDoc = await buildQuotePdf(
+            { ...doc, clients: enrichedClients },
+            quotationDocTab === 'with_workings',
+            theme,
+            seller,
+            templateId
+          );
+          if (dead) return;
+          const blob = pdfDoc.output('blob');
+          url = URL.createObjectURL(blob);
         }
         if (dead) { if (url) URL.revokeObjectURL(url); return; }
         made = url; setDocPreviewUrl(url); setDocPreviewErr('');
@@ -3964,7 +4096,7 @@ export function SalesPipelinePage() {
     })();
     return () => { dead = true; if (made) URL.revokeObjectURL(made); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [docKind, viewModalData, invoiceDocTab]);
+  }, [docKind, viewModalData, invoiceDocTab, quotationDocTab, company?.id, authEmail, getQuotationDocForModal]);
 
   const [rawLeadsList, setRawLeadsList] = useState<any[]>([]);
 
@@ -5693,6 +5825,7 @@ export function SalesPipelinePage() {
   const openViewModal = async (card: KanbanCard) => {
     if (card.type === 'finished_goods') { void openFgPopup(card, 'view'); return; }
     setInvoiceDocTab('combined');
+    setQuotationDocTab('without_workings');
     setViewModalTarget(card);
     setLoading(true);
     const aggregated: any = { enquiry: null, quotation: null, order: null, inward: null, finished_goods: null, dc: null, invoice: null };
@@ -9952,7 +10085,7 @@ export function SalesPipelinePage() {
       {/* Shared View / Edit modal: opened from every stage list's View / Edit actions.
           The entry forms are inline now, so this popup is only for inspecting or
           revising a record that already exists. */}
-<Modal open={!!viewModalTarget} onClose={closeViewModal} accent={viewModalTarget ? tint(viewModalTarget.stage) : undefined} title={`${stageDetailsTitle(viewModalTarget?.stage)} — Company ID: ${viewModalData?.order?.lead_no || viewModalData?.enquiry?.lead_no || viewModalData?.enquiry?.enquiry_no || viewModalTarget?.refNo}`} size="xl" width={docKind ? 1500 : 1040} maxWidth={docKind ? 1700 : 1280} tall={!!docKind} footer={<>{viewModalTarget?.stage === 'Invoice' && viewModalData?.dc && <><Button variant="secondary" onClick={() => void viewPipelineDocument('combined')}>View Invoice + DC</Button><Button variant="secondary" icon={<Download size={14}/>} onClick={() => void downloadPipelineDocument('combined')}>Download Invoice + DC</Button></>}{viewModalData?.dc && <><Button variant="secondary" onClick={() => void viewPipelineDocument('dc')}>View DC PDF</Button><Button variant="secondary" icon={<Download size={14}/>} onClick={() => void downloadPipelineDocument('dc')}>Download DC</Button></>}{viewModalData?.invoice && <><Button variant="secondary" onClick={() => void viewPipelineDocument('invoice')}>View Invoice PDF</Button><Button variant="secondary" icon={<Download size={14}/>} onClick={() => void downloadPipelineDocument('invoice')}>Download Invoice</Button></>}<Button variant={viewEditMode ? 'primary' : 'secondary'} onClick={() => { void (async () => {
+<Modal open={!!viewModalTarget} onClose={closeViewModal} accent={viewModalTarget ? tint(viewModalTarget.stage) : undefined} title={`${stageDetailsTitle(viewModalTarget?.stage)} — Company ID: ${viewModalData?.order?.lead_no || viewModalData?.enquiry?.lead_no || viewModalData?.enquiry?.enquiry_no || viewModalTarget?.refNo}`} size="xl" width={docKind ? 1500 : 1040} maxWidth={docKind ? 1700 : 1280} tall={!!docKind} footer={<>{viewModalTarget?.stage === 'Invoice' && viewModalData?.dc && <><Button variant="secondary" onClick={() => void viewPipelineDocument('combined')}>View Invoice + DC</Button><Button variant="secondary" icon={<Download size={14}/>} onClick={() => void downloadPipelineDocument('combined')}>Download Invoice + DC</Button></>}{viewModalData?.dc && <><Button variant="secondary" onClick={() => void viewPipelineDocument('dc')}>View DC PDF</Button><Button variant="secondary" icon={<Download size={14}/>} onClick={() => void downloadPipelineDocument('dc')}>Download DC</Button></>}{viewModalData?.invoice && <><Button variant="secondary" onClick={() => void viewPipelineDocument('invoice')}>View Invoice PDF</Button><Button variant="secondary" icon={<Download size={14}/>} onClick={() => void downloadPipelineDocument('invoice')}>Download Invoice</Button></>}{viewModalTarget?.stage === 'Quotation' && viewModalData?.quotation && (<><Button variant="secondary" icon={<Eye size={14}/>} onClick={() => void openQuotationPdfInNewTab()}>View PDF</Button><Button variant="secondary" icon={<Download size={14}/>} onClick={() => void downloadQuotationPdfFromModal()}>Download PDF</Button></>)}<Button variant={viewEditMode ? 'primary' : 'secondary'} onClick={() => { void (async () => {
                       if (viewEditMode && viewModalTarget?.stage === 'Sales Order' && soSaveRef.current) {
                         const ok = await soSaveRef.current();
                         if (!ok) return;
@@ -10092,6 +10225,38 @@ export function SalesPipelinePage() {
         )}
         {docKind && (
           <div className="h-[calc(95vh-10rem)] min-h-[420px] flex flex-col overflow-hidden rounded-lg border border-slate-200 bg-slate-100" data-testid="doc-preview">
+            {docKind === 'quotation' && (
+              <div className="flex items-center justify-between border-b border-slate-200 bg-white px-3 py-1.5 shrink-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mr-1">Preview:</span>
+                  <button
+                    type="button"
+                    onClick={() => setQuotationDocTab('without_workings')}
+                    className={`px-2.5 py-1 text-xs font-semibold rounded transition-colors ${
+                      quotationDocTab === 'without_workings'
+                        ? 'bg-amber-600 text-white shadow-sm'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    }`}
+                  >
+                    Commercial Quote
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQuotationDocTab('with_workings')}
+                    className={`px-2.5 py-1 text-xs font-semibold rounded transition-colors ${
+                      quotationDocTab === 'with_workings'
+                        ? 'bg-amber-600 text-white shadow-sm'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    }`}
+                  >
+                    With Workings
+                  </button>
+                </div>
+                <div className="text-[11px] font-medium text-slate-500">
+                  {quotationDocTab === 'with_workings' ? 'Showing quotation with detailed workings' : 'Showing commercial quotation'}
+                </div>
+              </div>
+            )}
             {docKind === 'invoice' && viewModalData?.dc && (
               <div className="flex items-center justify-between border-b border-slate-200 bg-white px-3 py-1.5 shrink-0">
                 <div className="flex items-center gap-1.5">
@@ -10137,7 +10302,7 @@ export function SalesPipelinePage() {
             )}
             <div className="flex-1 overflow-hidden relative">
               {docPreviewUrl ? (
-                <iframe title={docKind === 'dc' ? 'Delivery challan preview' : invoiceDocTab === 'combined' ? 'Invoice and DC preview' : invoiceDocTab === 'dc' ? 'DC preview' : 'Invoice preview'} src={`${docPreviewUrl}#navpanes=0&view=Fit`} className="h-full w-full" />
+                <iframe title={docKind === 'dc' ? 'Delivery challan preview' : docKind === 'quotation' ? (quotationDocTab === 'with_workings' ? 'Quotation with workings preview' : 'Quotation preview') : invoiceDocTab === 'combined' ? 'Invoice and DC preview' : invoiceDocTab === 'dc' ? 'DC preview' : 'Invoice preview'} src={`${docPreviewUrl}#navpanes=0&view=Fit`} className="h-full w-full" />
               ) : (
                 <div className="flex h-full items-center justify-center p-6 text-center text-sm text-slate-500">{docPreviewErr || 'Preparing the document…'}</div>
               )}

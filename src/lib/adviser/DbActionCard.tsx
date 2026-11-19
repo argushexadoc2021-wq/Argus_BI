@@ -279,7 +279,7 @@ export function DbActionCard({
         <div className="flex min-w-0 items-center gap-1.5">
           <Database size={14} className="shrink-0 text-emerald-600" />
           <span className="truncate text-[11.5px] font-extrabold text-slate-800">
-            {ta ? 'DB-ல் சேமிக்கும் முன் சரிபார்க்கவும்' : 'Confirm before saving to DB'}
+            {ta ? 'விவரங்களைச் சரிபார்த்து உறுதிசெய்யவும்' : 'Check the details and confirm'}
           </span>
         </div>
         <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[9.5px] font-bold ${badge.tone}`}>
@@ -396,7 +396,7 @@ export function DbActionCard({
           <div className="mt-2.5 flex items-start gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-[11.5px] font-semibold text-emerald-800">
             <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-emerald-600" />
             <div className="min-w-0 flex-1">
-              <p>{state.message || (ta ? 'வெற்றிகரமாக DB-ல் சேமிக்கப்பட்டது!' : 'Saved to database successfully!')}</p>
+              <p>{state.message || (ta ? 'வெற்றிகரமாகச் சேமிக்கப்பட்டது!' : 'Saved successfully!')}</p>
               {state.where && (
                 <button
                   type="button"
@@ -448,7 +448,7 @@ export function DbActionCard({
                 <Check size={13} />
                 {isDestructive
                   ? (ta ? 'உறுதி, நீக்கு' : 'Confirm Delete')
-                  : (ta ? 'சரி, DB-ல் சேமி' : 'Confirm & Save')}
+                  : (ta ? 'சரி, உறுதிசெய்' : 'Confirm')}
               </button>
               <button
                 type="button"
@@ -473,7 +473,7 @@ export function DbActionCard({
         {state.status === 'saving' && (
           <div className="mt-2.5 flex items-center gap-1.5 text-[11.5px] font-semibold text-emerald-700">
             <Loader2 size={13} className="animate-spin" />
-            {ta ? 'DB-ல் சேமிக்கிறது…' : 'Saving to database…'}
+            {ta ? 'சேமிக்கிறது…' : 'Saving…'}
           </div>
         )}
       </div>

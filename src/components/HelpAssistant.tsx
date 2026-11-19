@@ -20,8 +20,8 @@ import { useDraggable } from '@/lib/useDraggable';
 import { useDockDrag } from './AssistantDock';
 import { useResizable, ResizeGrip } from '@/lib/useResizable';
 import { getOpenAIApiKey } from '@/lib/copilot/openai';
-const CONFIRM_DB_RE = /^(yes|yeah|yep|yup|ok|okay|confirm|confirmed|correct|crt|right|save|save it|add|add it|insert|do it|go ahead|proceed|sure|fine|yes confirm|yes save|yes correct|ok save|ok confirm|ஆம்|ஆமாம்|சரி|சரியா இருக்கு|சரி சேமி|சேமி|சேமிக்கவும்|போடு|போடுங்க|சேர்|சேர்த்துவிடு|கன்ஃபார்ம்|ஓகே|ஓகே சரி|ok sari|sari|aam|aama|correct dhaan|save pannu|add pannu|podu|podunga|confirm pannu)\s*[.!?]*$/i;
-const CANCEL_DB_RE = /^(no|nope|cancel|don't|dont|stop|abort|nevermind|never mind|wrong|இல்லை|வேண்டாம்|வேணாம்|ரத்து|கேன்சல்|தவறு|vendam|venam|illa|illai|cancel pannu)\s*[.!?]*$/i;
+const CONFIRM_DB_RE = /^(yes|yeah|yep|yup|ok|okay|confirm|confirmed|correct|crt|right|save|save it|add|add it|insert|do it|go ahead|proceed|sure|fine|yes confirm|yes save|yes correct|ok save|ok confirm|ஆம்|ஆமாம்|சரி|சரியா இருக்கு|சரி சேமி|சேமி|சேமிக்கவும்|போடு|போடுங்க|சேர்|சேர்த்துவிடு|கன்ஃபார்ம்|ஓகே|ஓகே சரி|ok sari|sari|aam|aama|correct dhaan|save pannu|add pannu|podu|podunga|confirm pannu|எஸ்|யெஸ்|எஸ் ஓகே|யெஸ் ஓகே|சரிங்க|கரெக்ட்|கன்பார்ம்|கன்ஃபார்ம் பண்ணு|சேவ் பண்ணு|ஓகே சேவ்)(?:\s+(?:sir|sar|madam|please|சார்|ஆர்|மேடம்|over|ஓவர்|ஓர்))*\s*[.!?]*$/i;
+const CANCEL_DB_RE = /^(no|nope|cancel|don't|dont|stop|abort|nevermind|never mind|wrong|இல்லை|வேண்டாம்|வேணாம்|ரத்து|கேன்சல்|தவறு|vendam|venam|illa|illai|cancel pannu|நோ)(?:\s+(?:sir|sar|madam|சார்|ஆர்|மேடம்|over|ஓவர்|ஓர்))*\s*[.!?]*$/i;
 import { rankNotes } from '../../supabase/functions/help-assistant/knowledge';
 
 // "உதவி / Help": a VOICE assistant, no chat window. Press Help and it says "yes, tell me", listens, answers out loud, then
@@ -631,8 +631,10 @@ DIRECT DATABASE INSERT / EDIT / DELETE / STAGE MOVE (WITH USER CONFIRMATION — 
 Whenever the user asks you TO ACTUALLY DO / ADD / CREATE / INSERT / ENTER / PUT / RECORD / EDIT / UPDATE / DELETE / MOVE a record in Argus BI (in Tamil, Tanglish, or English — for example: "ஒரு என்குயரி ஒன்னு போடணும் கம்பெனி நேம் சிஸ்டம் ப்ராடக்ட் நேம் ஃபிகர் குவாண்டிட்டி ரெண்டு", "add enquiry for System, product Figure, qty 2", "add company XYZ", "create quotation ...", "create sales order ...", "add process Powder Coating outsource rate 250", "add supplier Metro Steel", "move 1002 to quotation", "edit enquiry 1002 qty to 10", "delete enquiry 1002"):
 - NEVER give manual step-by-step instructions and NEVER emit [[TEACH ...]]! You CAN execute this directly in the database after the user confirms!
 - Extract every field accurately: convert spoken Tamil/English numbers (ஒன்னு=1, ரெண்டு=2, மூணு=3, நாலு=4, அஞ்சு=5, ஆறு=6, ஏழு=7, எட்டு=8, ஒன்பது=9, பத்து=10, இருபது=20, ஐம்பது=50, நூறு=100) into numeric values; transliterate Tamil-script English names cleanly into readable English (e.g. சிஸ்டம் -> System, ஃபிகர் -> Figure, ஷாஃப்ட் -> Shaft), and match an existing company name from COMPANY DATA if it closely matches.
-- First write a brief, clear confirmation question in the user's selected language showing the extracted fields and explicitly asking "Is this correct? Click Confirm & Save or say 'Yes / சரி' to insert into the database."
-- Then at the VERY END add ONE [[DB_ACTION ...]] block on its own line (valid JSON):
+- Ask for confirmation ONLY ONCE, and only through the card: write ONE short line in the user's selected language such as "Please check the details below and confirm." (Tamil: "கீழே உள்ள விவரங்களைச் சரிபார்த்து உறுதிசெய்யுங்கள்."). Do NOT list the fields in the text and do NOT ask "is this correct?" in the text: the card shows every detail with a Confirm button.
+- In that SAME reply you MUST add ONE [[DB_ACTION ...]] block at the VERY END on its own line (valid JSON). Never reply with only a question and no block. If a needed field is missing (for example the product name), still add the block with what you have and say in the one line which field to fill in with Edit.
+- Never mention "DB" or "database" to the user: say "save" / "சேமி".
+- The block, by action:
   * Add Enquiry: [[DB_ACTION {"action":"add_enquiry","title":"Add Enquiry","summary":"Insert new enquiry","params":{"company":"System","products":[{"name":"Figure","qty":2}],"remarks":""}}]]
   * Edit Enquiry: [[DB_ACTION {"action":"edit_enquiry","title":"Edit Enquiry","summary":"Update enquiry","params":{"identifier":"1002","updates":{"quantity":10,"part_name":"","customer":""}}}]]
   * Delete Enquiry: [[DB_ACTION {"action":"delete_enquiry","title":"Delete Enquiry","summary":"Delete enquiry","params":{"identifier":"1002"}}}]]
@@ -741,6 +743,18 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
     return Number.isFinite(n) && n >= 320 ? n : Math.round(Math.min(560, Math.max(380, window.innerWidth * 0.34)));
   });
   const splitDrag = useRef(false);
+  // The Adviser is a floating window: it opens where it was left (first time: on the left, full height) and can be dragged
+  // anywhere by its title bar, and resized from its right edge or bottom-right corner. The page behind is not pushed aside.
+  const POS_KEY = 'adviser-pop-pos';
+  const H_KEY = 'adviser-pop-h';
+  const [popPos, setPopPos] = useState<{ x: number; y: number }>(() => {
+    try { const v = JSON.parse(store.get(POS_KEY, '') || 'null'); if (v && Number.isFinite(v.x) && Number.isFinite(v.y)) return v; } catch { /* default */ }
+    return { x: 0, y: 0 };
+  });
+  const [popH, setPopH] = useState<number>(() => { const n = Number(store.get(H_KEY, '')); return Number.isFinite(n) && n >= 320 ? n : 0; });   // 0 = full height
+  const popDrag = useRef<{ kind: 'move' | 'corner'; dx: number; dy: number } | null>(null);
+  const [, setWinTick] = useState(0);
+  useEffect(() => { const f = () => setWinTick((n) => n + 1); window.addEventListener('resize', f); return () => window.removeEventListener('resize', f); }, []);
   const [natural, setNatural] = useState(neuralVoiceOn);
   const [tamilPick, setTamilPick] = useState<TamilEngine>(tamilEngine);
   useEffect(() => { store.set(NEURAL_KEY, natural ? '1' : '0'); if (natural) neuralDownUntil = 0; }, [natural]);
@@ -861,7 +875,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
     if (res.ok) {
       setDbActionStates((prev) => ({ ...prev, [key]: { status: 'saved', message: res.message, where: res.where } }));
       const okMsg = langRef.current === 'ta'
-        ? `✓ DB-ல் சேமிக்கப்பட்டது! ${res.message}`
+        ? `✓ சேமிக்கப்பட்டது! ${res.message}`
         : `✓ Saved to database! ${res.message}`;
       if (appendReply) {
         setMsgs((ms) => [...ms, { id: ++chatSeq, role: 'assistant', text: okMsg }]);
@@ -889,7 +903,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
     if (pendingDbRef.current?.key === key) pendingDbRef.current = null;
     setDbActionStates((prev) => ({ ...prev, [key]: { status: 'cancelled' } }));
     if (appendReply) {
-      const msg = langRef.current === 'ta' ? 'ரத்து செய்யப்பட்டது. DB-ல் எதுவும் சேமிக்கப்படவில்லை.' : 'Cancelled. Nothing was saved to the database.';
+      const msg = langRef.current === 'ta' ? 'ரத்து செய்யப்பட்டது. எதுவும் சேமிக்கப்படவில்லை.' : 'Cancelled. Nothing was saved.';
       setMsgs((ms) => [...ms, { id: ++chatSeq, role: 'assistant', text: msg }]);
       if (speakRef.current) {
         setPhase('speaking');
@@ -1385,16 +1399,13 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
     if (!allowed.coworker && modes.coworker) setModes((m) => ({ ...m, coworker: false }));
     if (!allowed.adviser && activeRef.current) endSession(false);
   }, [allowed.teaching, allowed.coworker, allowed.adviser, modes.teaching, modes.coworker, endSession]);
-  useEffect(() => {
-    const el = document.documentElement;
-    if (!active) { el.removeAttribute('data-adviser-split'); window.dispatchEvent(new Event('resize')); return; }
-    const w = Math.min(splitW, splitMax());
-    el.setAttribute('data-adviser-split', '');
-    el.style.setProperty('--adviser-w', `${w}px`);
-    const id = requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
-    return () => cancelAnimationFrame(id);
-  }, [active, splitW]);
-  useEffect(() => () => { document.documentElement.removeAttribute('data-adviser-split'); }, []);
+  // (the Adviser used to dock beside the page; it is a floating window now, so the page is never pushed aside)
+  useEffect(() => { document.documentElement.removeAttribute('data-adviser-split'); }, []);
+  const popW = Math.min(splitW, splitMax(), window.innerWidth);
+  const popHeight = Math.min(popH || window.innerHeight, window.innerHeight);
+  const popX = Math.min(Math.max(0, popPos.x), Math.max(0, window.innerWidth - Math.min(popW, 160)));
+  const popY = Math.min(Math.max(0, popPos.y), Math.max(0, window.innerHeight - 56));
+  const savePop = () => { store.set(POS_KEY, JSON.stringify({ x: popX, y: popY })); store.set(H_KEY, String(popH)); store.set(SPLIT_KEY, String(splitW)); };
   const anyOn = active || modes.teaching || modes.coworker;
   // Sync menu open state and assistant indicators to the arrow dock tab
   useEffect(() => {
@@ -1483,22 +1494,44 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
         <div role="status" className="pointer-events-auto max-w-[20rem] rounded-xl border border-slate-200 bg-white/95 px-3 py-2 text-xs text-slate-500 shadow-lg backdrop-blur">{note}</div>
       )}
 
-      {/* Adviser chat: split screen (this chat docked on the left, the page on the right) */}
+      {/* Adviser chat: a floating window (drag it anywhere; the page stays full width behind it) */}
       {active && createPortal(
         <div role="dialog" aria-label="Adviser" data-voice-ignore onMouseDown={(e) => e.stopPropagation()}
-          className="adviser-split fixed inset-y-0 left-0 z-[70] flex flex-col overflow-hidden border-r-2 border-emerald-500 bg-white shadow-2xl">
-          {/* divider: drag to give the page or the chat more room (double-click = default) */}
+          style={{ left: popX, top: popY, width: popW, height: popHeight }}
+          className="adviser-split no-glass fixed z-[70] flex flex-col overflow-hidden rounded-xl border-2 border-emerald-500 bg-white shadow-2xl">
+          {/* right edge: drag to make it wider or narrower (double-click = default width) */}
           <div role="separator" aria-orientation="vertical" aria-label="Resize the Adviser" title="Drag to resize · double-click to reset"
-            className="absolute inset-y-0 right-0 z-10 w-2 translate-x-1 cursor-col-resize touch-none hover:bg-emerald-400/40 max-lg:hidden"
+            className="absolute inset-y-0 right-0 z-10 w-2 cursor-col-resize touch-none hover:bg-emerald-400/40"
             onPointerDown={(e) => { splitDrag.current = true; try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* not capturable */ } }}
-            onPointerMove={(e) => { if (!splitDrag.current) return; setSplitW(Math.min(splitMax(), Math.max(320, Math.round(e.clientX)))); }}
-            onPointerUp={() => { if (!splitDrag.current) return; splitDrag.current = false; store.set(SPLIT_KEY, String(splitW)); }}
+            onPointerMove={(e) => { if (!splitDrag.current) return; setSplitW(Math.min(splitMax(), Math.max(320, Math.round(e.clientX - popX)))); }}
+            onPointerUp={() => { if (!splitDrag.current) return; splitDrag.current = false; savePop(); }}
             onDoubleClick={() => { const d = Math.round(Math.min(560, Math.max(380, window.innerWidth * 0.34))); setSplitW(d); store.set(SPLIT_KEY, String(d)); }} />
-          <div className="flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 px-3 py-2.5 text-white">
+          {/* bottom-right corner: drag to change width and height together (double-click = full height) */}
+          <div aria-label="Resize the Adviser" title="Drag to resize · double-click for full height"
+            className="absolute bottom-0 right-0 z-20 h-4 w-4 cursor-nwse-resize touch-none rounded-tl bg-emerald-500/30 hover:bg-emerald-500/60"
+            onPointerDown={(e) => { popDrag.current = { kind: 'corner', dx: 0, dy: 0 }; try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* not capturable */ } }}
+            onPointerMove={(e) => {
+              if (popDrag.current?.kind !== 'corner') return;
+              setSplitW(Math.min(splitMax(), Math.max(320, Math.round(e.clientX - popX))));
+              setPopH(Math.min(window.innerHeight - popY, Math.max(320, Math.round(e.clientY - popY))));
+            }}
+            onPointerUp={() => { if (!popDrag.current) return; popDrag.current = null; savePop(); }}
+            onDoubleClick={() => { setPopH(0); setPopPos((p) => ({ ...p, y: 0 })); store.set(H_KEY, '0'); }} />
+          {/* title bar: drag to move the window anywhere (double-click = back to the left side) */}
+          <div title="Drag to move · double-click to put it back on the left"
+            className="flex cursor-move touch-none select-none items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 px-3 py-2.5 text-white"
+            onPointerDown={(e) => {
+              if ((e.target as HTMLElement).closest('button, select, input, a')) return;
+              popDrag.current = { kind: 'move', dx: e.clientX - popX, dy: e.clientY - popY };
+              try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* not capturable */ }
+            }}
+            onPointerMove={(e) => { if (popDrag.current?.kind !== 'move') return; setPopPos({ x: Math.round(e.clientX - popDrag.current.dx), y: Math.round(e.clientY - popDrag.current.dy) }); }}
+            onPointerUp={() => { if (!popDrag.current) return; popDrag.current = null; savePop(); }}
+            onDoubleClick={(e) => { if ((e.target as HTMLElement).closest('button, select, input, a')) return; setPopPos({ x: 0, y: 0 }); setPopH(0); store.set(POS_KEY, JSON.stringify({ x: 0, y: 0 })); store.set(H_KEY, '0'); }}>
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/20"><Lightbulb size={17} /></span>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-bold leading-tight">Adviser</p>
-              <p className="truncate text-[10px] text-emerald-50">Ask anything · Live DB Analysis, Actions &amp; Guidance</p>
+              <p className="truncate text-[10px] text-emerald-50">Ask anything · Live Business Analysis, Actions &amp; Guidance</p>
             </div>
             <button type="button" aria-label="E-mail" title={mail.state?.connected ? `E-mail connected: ${mail.state.mail?.smtp_user ?? ''}` : 'Connect your e-mail so the Adviser can send e-mails for you'}
               onClick={() => setMailOpen((v) => !v)} className={`relative rounded p-1.5 hover:bg-white/15 ${mailOpen ? 'bg-white/20' : ''}`}>
@@ -1625,7 +1658,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
                         {m.pending && /\[\[\s*DB_ACTION/.test(m.text) && (
                           <span className="mt-1.5 flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700">
                             <Loader2 size={12} className="animate-spin" />
-                            {lang === 'ta' ? 'DB பதிவைத் தயாரிக்கிறது…' : 'Preparing database entry…'}
+                            {lang === 'ta' ? 'விவரங்களைத் தயாரிக்கிறது…' : 'Preparing the details…'}
                           </span>
                         )}
                         {!m.pending && b.dbActions.map((act, i) => {
