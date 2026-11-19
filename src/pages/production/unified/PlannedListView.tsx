@@ -9,6 +9,10 @@ import { Modal, FormField, inputClass } from '@/components/ui/Modal';
 import { AddRunsModal, defaultPlanSlot } from './AddRunsModal';
 import { Button } from '@/components/ui/Card';
 import { HeaderSelect } from '../../../components/ui/HeaderFilter';
+import { ListTodo } from 'lucide-react';
+import { AddTaskModal } from '@/components/production/AddTaskModal';
+import { deleteScheduledTask, fetchScheduledTasks, type ScheduledTask } from '@/lib/scheduledTasks';
+import { TaskNameCell, filterTasks, taskMinutes } from './taskRows';
 
 interface PlanRow {
   id: string;
@@ -73,6 +77,13 @@ export function PlannedListView() {
     endTime: '10:00',
     qty: '',
   });
+
+  // planned tasks (Add Task on the Planned timeline or here) show in this list too
+  const [tasks, setTasks] = useState<ScheduledTask[]>([]);
+  const [showTask, setShowTask] = useState(false);
+  const [taskToEdit, setTaskToEdit] = useState<ScheduledTask | null>(null);
+  const loadTasks = useCallback(() => { void fetchScheduledTasks().then(setTasks); }, []);
+  useEffect(() => { loadTasks(); }, [loadTasks]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -314,6 +325,17 @@ export function PlannedListView() {
       return true;
     });
   }, [plans, woMap, search, fDateFrom, fDateTo, fMachine, fOperator, fStatus, fProduct]);
+
+  const filteredTasks = useMemo(() => filterTasks(tasks, 'planned', { search, from: fDateFrom, to: fDateTo, machine: fMachine, operator: fOperator, product: fProduct })
+    .filter((t) => fStatus === 'All' || getStatus(t.task_date) === fStatus),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [tasks, search, fDateFrom, fDateTo, fMachine, fOperator, fProduct, fStatus]);
+
+  const removeTask = async (t: ScheduledTask) => {
+    if (!window.confirm(`Delete the task "${t.task_name}"?`)) return;
+    try { await deleteScheduledTask(t.id); loadTasks(); }
+    catch (err: any) { alert(`Could not delete the task: ${err?.message ?? err}`); }
+  };
 
   // KPIs
   const totalPlannedHours = useMemo(() => {
@@ -672,6 +694,16 @@ export function PlannedListView() {
             <Plus size={13} />
             Add Plan
           </button>
+
+          {/* Add Task */}
+          <button
+            type="button"
+            onClick={() => { setTaskToEdit(null); setShowTask(true); }}
+            className="h-8 inline-flex items-center gap-1.5 px-3 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg shadow-2xs transition cursor-pointer whitespace-nowrap"
+          >
+            <ListTodo size={13} />
+            Add Task
+          </button>
         </div>
       </div>
 
@@ -842,7 +874,42 @@ export function PlannedListView() {
                 );
               })}
 
-              {!loading && filteredPlans.length === 0 && (
+              {filteredTasks.map((t, i) => {
+                const status = getStatus(t.task_date);
+                return (
+                  <tr key={`task-${t.id}`} className="bg-indigo-50/30 hover:bg-indigo-50/70 transition">
+                    <td className="py-2.5 px-3 text-center text-slate-400 font-mono text-[11px]">{filteredPlans.length + i + 1}</td>
+                    <td className="py-2.5 px-3"><TaskNameCell t={t} /></td>
+                    <td className="py-2.5 px-3"><div className="font-medium text-slate-800">Task</div></td>
+                    <td className="py-2.5 px-3 whitespace-nowrap">
+                      <span className="font-medium text-slate-800">{parseYmd(t.task_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                    </td>
+                    <td className="py-2.5 px-3 whitespace-nowrap font-mono text-[11px] text-slate-700">{fmtTime24(t.start_time)} – {fmtTime24(t.end_time)}</td>
+                    <td className="py-2.5 px-3 font-semibold text-slate-700 whitespace-nowrap">{formatDuration(taskMinutes(t))}</td>
+                    <td className="py-2.5 px-3">
+                      {t.machine
+                        ? <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-purple-50 text-purple-700 border border-purple-200">{t.machine}</span>
+                        : <span className="text-slate-400">—</span>}
+                    </td>
+                    <td className="py-2.5 px-3 text-slate-700 font-medium whitespace-nowrap">{t.member_name || '—'}</td>
+                    <td className="py-2.5 px-3 text-right text-slate-400">—</td>
+                    <td className="py-2.5 px-3 text-center">
+                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                        status === 'Today' ? 'bg-amber-50 text-amber-700 border-amber-200' : status === 'Upcoming' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>{status}</span>
+                    </td>
+                    <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                      <div className="inline-flex items-center gap-1">
+                        <button type="button" onClick={() => { setTaskToEdit(t); setShowTask(true); }} title="Edit task"
+                          className="p-1.5 rounded text-slate-400 hover:text-brand-600 hover:bg-brand-50 transition cursor-pointer"><Edit2 size={13} /></button>
+                        <button type="button" onClick={() => void removeTask(t)} title="Delete task"
+                          className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 transition cursor-pointer"><Trash2 size={13} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+
+              {!loading && filteredPlans.length === 0 && filteredTasks.length === 0 && (
                 <tr>
                   <td colSpan={10} className="py-12 text-center text-slate-400">
                     <Calendar size={32} className="mx-auto mb-2 text-slate-300" />
@@ -979,6 +1046,16 @@ export function PlannedListView() {
 
       {/* Add Plan Modal */}
       <AddRunsModal open={showAdd} onClose={() => setShowAdd(false)} initial={slot} mode="plan" onSaved={() => { void load(); }} />
+      <AddTaskModal
+        open={showTask}
+        onClose={() => { setShowTask(false); setTaskToEdit(null); }}
+        onSaved={loadTasks}
+        initialDate={today}
+        initialMode="planned"
+        initialTask={taskToEdit}
+        machineOptions={machines}
+        memberOptions={operators}
+      />
     </div>
   );
 }

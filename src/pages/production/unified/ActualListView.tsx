@@ -13,6 +13,10 @@ import { processKey, runExceeds, syncWorkOrderCompleted } from '@/lib/workOrderP
 import { getProductBaseName } from '@/pages/sales/SalesPipelinePage';
 import { dt, dur, jobSpan } from './ComparisonPage';
 import { HeaderSelect } from '../../../components/ui/HeaderFilter';
+import { ListTodo } from 'lucide-react';
+import { AddTaskModal } from '@/components/production/AddTaskModal';
+import { deleteScheduledTask, fetchScheduledTasks, type ScheduledTask } from '@/lib/scheduledTasks';
+import { TaskNameCell, filterTasks, taskMinutes } from './taskRows';
 
 const norm = (s: unknown) => String(s ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
 const baseKey = (s: unknown) => norm(getProductBaseName(String(s ?? '')));
@@ -75,6 +79,13 @@ export function ActualListView() {
   });
 
   const today = todayISO();
+
+  // tasks done (Add Task on the Actual timeline or here) show in this list too
+  const [tasks, setTasks] = useState<ScheduledTask[]>([]);
+  const [showTask, setShowTask] = useState(false);
+  const [taskToEdit, setTaskToEdit] = useState<ScheduledTask | null>(null);
+  const loadTasks = useCallback(() => { void fetchScheduledTasks().then(setTasks); }, []);
+  useEffect(() => { loadTasks(); }, [loadTasks]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -222,6 +233,16 @@ export function ActualListView() {
       return true;
     });
   }, [jobs, woMap, search, fDateFrom, fDateTo, fMachine, fOperator, fStatus, fProduct, now]);
+
+  const filteredTasks = useMemo(() => (fStatus === 'All' || fStatus === 'Completed'
+    ? filterTasks(tasks, 'actual', { search, from: fDateFrom, to: fDateTo, machine: fMachine, operator: fOperator, product: fProduct })
+    : []), [tasks, search, fDateFrom, fDateTo, fMachine, fOperator, fProduct, fStatus]);
+
+  const removeTask = async (t: ScheduledTask) => {
+    if (!window.confirm(`Delete the task "${t.task_name}"?`)) return;
+    try { await deleteScheduledTask(t.id); loadTasks(); }
+    catch (err: any) { alert(`Could not delete the task: ${err?.message ?? err}`); }
+  };
 
   // KPIs
   const totalActualHours = useMemo(() => {
@@ -568,6 +589,16 @@ export function ActualListView() {
             <Plus size={13} />
             Record Run
           </button>
+
+          {/* Add Task */}
+          <button
+            type="button"
+            onClick={() => { setTaskToEdit(null); setShowTask(true); }}
+            className="h-8 inline-flex items-center gap-1.5 px-3 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg shadow-2xs transition cursor-pointer whitespace-nowrap"
+          >
+            <ListTodo size={13} />
+            Add Task
+          </button>
         </div>
       </div>
 
@@ -750,7 +781,39 @@ export function ActualListView() {
                 );
               })}
 
-              {!loading && filteredJobs.length === 0 && (
+              {filteredTasks.map((t, i) => {
+                const mins = taskMinutes(t);
+                return (
+                  <tr key={`task-${t.id}`} className="bg-indigo-50/30 hover:bg-indigo-50/70 transition">
+                    <td className="py-2.5 px-3 text-center text-slate-400 font-mono text-[11px]">{filteredJobs.length + i + 1}</td>
+                    <td className="py-2.5 px-3"><TaskNameCell t={t} /></td>
+                    <td className="py-2.5 px-3"><div className="font-medium text-slate-800">Task</div></td>
+                    <td className="py-2.5 px-3">
+                      {t.machine
+                        ? <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">{t.machine}</span>
+                        : <span className="text-slate-400">—</span>}
+                    </td>
+                    <td className="py-2.5 px-3 text-slate-700 font-medium whitespace-nowrap">{t.member_name || '—'}</td>
+                    <td className="py-2.5 px-3 whitespace-nowrap text-slate-700">{dt(new Date(`${t.task_date}T${t.start_time}:00`))}</td>
+                    <td className="py-2.5 px-3 whitespace-nowrap text-slate-700">{dt(new Date(`${t.task_date}T${t.end_time}:00`))}</td>
+                    <td className="py-2.5 px-3 font-semibold text-slate-800 whitespace-nowrap">{mins > 0 ? dur(mins) : '—'}</td>
+                    <td className="py-2.5 px-3 text-right text-slate-400">—</td>
+                    <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border bg-emerald-50 text-emerald-700 border-emerald-200">Done</span>
+                    </td>
+                    <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                      <div className="inline-flex items-center justify-center gap-1">
+                        <button type="button" onClick={() => { setTaskToEdit(t); setShowTask(true); }} title="Edit task"
+                          className="p-1.5 rounded text-slate-400 hover:text-brand-600 hover:bg-brand-50 transition cursor-pointer"><Edit2 size={13} /></button>
+                        <button type="button" onClick={() => void removeTask(t)} title="Delete task"
+                          className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 transition cursor-pointer"><Trash2 size={13} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+
+              {!loading && filteredJobs.length === 0 && filteredTasks.length === 0 && (
                 <tr>
                   <td colSpan={11} className="py-12 text-center text-slate-400">
                     <Calendar size={32} className="mx-auto mb-2 text-slate-300" />
@@ -771,6 +834,16 @@ export function ActualListView() {
 
       {/* Record Actual Run Modal */}
       <AddRunsModal open={showAdd} onClose={() => setShowAdd(false)} initial={slot} mode="actual" onSaved={() => { void load(); }} />
+      <AddTaskModal
+        open={showTask}
+        onClose={() => { setShowTask(false); setTaskToEdit(null); }}
+        onSaved={loadTasks}
+        initialDate={today}
+        initialMode="actual"
+        initialTask={taskToEdit}
+        machineOptions={machines}
+        memberOptions={operators}
+      />
 
       {/* Edit Actual Run Modal - Identical layout to Add Actual Runs popup */}
       <Modal
