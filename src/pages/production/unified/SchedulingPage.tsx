@@ -333,7 +333,8 @@ function ActualScheduling() {
   const handleAddJobSubmit = async () => {
     const qtyNum = Number(newJobForm.qty);
     if (!Number.isFinite(qtyNum) || qtyNum <= 0) return alert('Target Quantity must be greater than 0');
-    const winErr = windowError(newJobForm);
+    // A new job is added without times: it goes to Unscheduled Jobs and gets its machine slot when dragged onto the board.
+    const winErr = editingJob ? windowError(newJobForm) : null;
     if (winErr) return alert(winErr);
     if (saving) return;
 
@@ -367,8 +368,8 @@ function ActualScheduling() {
 
     const wo = workOrders.find(w => w.wo_no === newJobForm.workOrder);
     const direct = woHasNoOps(wo);
-    if (!newJobForm.workOrder || (!direct && !newJobForm.operationId) || !newJobForm.machine || !newJobForm.date)
-      return alert(direct ? 'Please select a Work Order and Machine, and set the Start Date' : 'Please select a Work Order, Operation and Machine, and set the Start Date');
+    if (!newJobForm.workOrder || (!direct && !newJobForm.operationId))
+      return alert(direct ? 'Please select a Work Order' : 'Please select a Work Order and Operation');
 
     const op = direct ? null : operations.find(o => String(o.id) === newJobForm.operationId);
     // The operation may have been scheduled elsewhere since the popup opened.
@@ -390,16 +391,16 @@ function ActualScheduling() {
       part_name: newJobForm.partName || wo?.part_name || '',
       op_no: op ? opNoFor(op) : directOpNo,
       operation: op ? (op.process_name || op.process_code || 'Machining') : (newJobForm.processName || 'Machining'),
-      machine: newJobForm.machine,
+      machine: newJobForm.machine || null,
       operator: newJobForm.operator || null,
       qty_planned: qtyNum,
       qty_completed: 0,
       qty_rejected: 0,
       cycle_time: Number(newJobForm.cycleTime) || 0,
       setup_time: Number(newJobForm.setupTime) || 0,
-      status: 'Planned',
-      // cnc_job_cards has no schedule-start column, so the scheduled start is stored in created_at
-      created_at: d.toISOString()
+      // Unscheduled until it is dragged onto a machine slot (the drop sets the machine, start time and Planned).
+      status: 'Pending',
+      created_at: new Date().toISOString()
     }]);
     setSaving(false);
 
@@ -1061,13 +1062,13 @@ function ActualScheduling() {
       />
 
       {/* Add Job Modal */}
-      <Modal open={showAddJob} onClose={closeScheduleModal} title={viewOnly ? 'View Scheduled Job' : editingJob ? 'Edit Scheduled Job' : 'Schedule New Job'} size="lg" footer={
+      <Modal open={showAddJob} onClose={closeScheduleModal} title={viewOnly ? 'View Scheduled Job' : editingJob ? 'Edit Scheduled Job' : 'Add Unscheduled Job'} size="lg" footer={
         viewOnly ? (
           <Button variant="secondary" onClick={closeScheduleModal}>Close</Button>
         ) : (
           <>
             <Button variant="secondary" onClick={closeScheduleModal}>Cancel</Button>
-            <Button variant="primary" onClick={handleAddJobSubmit} disabled={saving}>{saving ? 'Saving...' : editingJob ? 'Save Changes' : 'Schedule Operation'}</Button>
+            <Button variant="primary" onClick={handleAddJobSubmit} disabled={saving}>{saving ? 'Saving...' : editingJob ? 'Save Changes' : 'Add to Unscheduled Jobs'}</Button>
           </>
         )
       }>
@@ -1145,10 +1146,13 @@ function ActualScheduling() {
             <FormField label="Target Quantity" required><input type="number" min="0" className={inputClass} value={newJobForm.qty} onChange={e => setNewJobForm(prev => withEnd({ ...prev, qty: e.target.value }))} /></FormField>
           </div>
 
-          <div className="border-t border-slate-100 my-4 pt-4 font-semibold text-slate-700">Schedule Details</div>
+          <div className="border-t border-slate-100 my-4 pt-4 font-semibold text-slate-700">{editingJob ? 'Schedule Details' : 'Machine & Operator (optional)'}</div>
+          {!editingJob && (
+            <p className="-mt-2 text-xs text-slate-500">The job goes to <b>Unscheduled Jobs</b>. Drag it onto a machine and time on the board to schedule it.</p>
+          )}
 
           <div className="grid grid-cols-2 gap-4">
-            <FormField label="Machine" required>
+            <FormField label="Machine" required={!!editingJob}>
               <select className={inputClass} value={newJobForm.machine} onChange={e => setNewJobForm({...newJobForm, machine: e.target.value})}>
                 <option value="">-- Select Machine --</option>
                 {machineOptions.map(m => (
@@ -1191,6 +1195,7 @@ function ActualScheduling() {
             </FormField>
           </div>
 
+          {editingJob && (<>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <FormField label="Start Date & Time" required>
               <div className="flex items-stretch w-full text-sm font-medium rounded border border-slate-300 bg-white text-slate-800 shadow-sm transition-all overflow-hidden focus-within:ring-2 focus-within:ring-brand-500/20 focus-within:border-brand-500">
@@ -1211,6 +1216,7 @@ function ActualScheduling() {
             {windowError(newJobForm) && (
               <p className="text-xs font-medium text-red-600">{windowError(newJobForm)}</p>
             )}
+          </>)}
         </div>
         </fieldset>
       </Modal>
