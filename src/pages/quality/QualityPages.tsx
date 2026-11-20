@@ -3,6 +3,7 @@ import { PageHeader, FilterButton, ExportButton } from '@/components/ui/PageHead
 import { DataTable, type Column } from '@/components/ui/DataTable';
 import { Badge, StatCard, statusToVariant } from '@/components/ui/Card';
 import type { Inspection, NCR } from '@/data/mockData';
+import { useGlobalDateFilter } from '@/contexts/DateRangeContext';
 
 // There are no inspection / NCR tables in the database yet, so these pages show honest empty states
 // instead of demo rows.
@@ -10,7 +11,9 @@ const inspections: Inspection[] = [];
 const ncrs: NCR[] = [];
 
 function InspectionList({ type, title, description }: { type: 'Incoming' | 'In-Process' | 'Final', title: string, description: string }) {
-  const data = inspections.filter(i => i.type === type);
+  // Global date filter (inspection date) drives the stats and the table together.
+  const { inRange } = useGlobalDateFilter();
+  const data = inspections.filter(i => i.type === type && inRange(i.date));
 
   const columns: Column<Inspection>[] = [
     { key: 'inspectionNo', label: 'Report No', sortable: true, render: (r) => <span className="font-mono text-xs text-brand-700 font-semibold">{r.inspectionNo}</span> },
@@ -73,20 +76,23 @@ export function NCRPage() {
     { key: 'status', label: 'Status', sortable: true, render: (r) => <Badge variant={r.status === 'Closed' ? 'success' : r.status === 'Open' ? 'error' : 'warning'} dot>{r.status}</Badge> },
   ];
 
-  const openCount = ncrs.filter(n => n.status === 'Open').length;
-  const investigatingCount = ncrs.filter(n => n.status !== 'Open' && n.status !== 'Closed').length;
-  const closedCount = ncrs.filter(n => n.status === 'Closed').length;
+  // Global date filter (NCR date) drives the stats and the table together.
+  const { inRange } = useGlobalDateFilter();
+  const rangedNcrs = ncrs.filter(n => inRange(n.date));
+  const openCount = rangedNcrs.filter(n => n.status === 'Open').length;
+  const investigatingCount = rangedNcrs.filter(n => n.status !== 'Open' && n.status !== 'Closed').length;
+  const closedCount = rangedNcrs.filter(n => n.status === 'Closed').length;
 
   return (
     <div className="p-4 lg:p-6 bg-grid min-h-full">
       <PageHeader title="Non-Conformance Reports (NCR)" description="Manage rejections and non-conforming products" actions={<div className="flex items-center gap-2"><FilterButton /><ExportButton /></div>} />
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
-        <StatCard label="Total NCRs" value={ncrs.length.toString()} icon={<AlertTriangle size={20} />} accent="brand" />
+        <StatCard label="Total NCRs" value={rangedNcrs.length.toString()} icon={<AlertTriangle size={20} />} accent="brand" />
         <StatCard label="Open" value={openCount.toString()} icon={<AlertTriangle size={20} />} accent="error" />
         <StatCard label="Under Investigation" value={investigatingCount.toString()} icon={<Settings size={20} />} accent="warning" />
         <StatCard label="Closed" value={closedCount.toString()} icon={<CheckCircle2 size={20} />} accent="success" />
       </div>
-      <DataTable data={ncrs} columns={columns} searchKeys={['ncrNo', 'partName', 'defectType']} emptyMessage="No NCRs yet" />
+      <DataTable data={rangedNcrs} columns={columns} searchKeys={['ncrNo', 'partName', 'defectType']} emptyMessage="No NCRs yet" />
     </div>
   );
 }

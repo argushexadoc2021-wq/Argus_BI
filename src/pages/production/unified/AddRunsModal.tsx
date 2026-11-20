@@ -3,6 +3,7 @@ import { Plus, Trash2 } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Card';
 import { Time24 } from '@/components/ui/Time24';
+import { OperatorSelect } from '@/components/ui/OperatorSelect';
 import { supabase } from '@/lib/supabase';
 import { insertTolerant } from '@/lib/partRouting';
 import { generateJobNo } from '@/lib/jobCards';
@@ -235,7 +236,7 @@ export function AddRunsModal({ open, onClose, initial, mode = 'actual', onSaved 
                 <option value="">Process…</option>
                 {ref.processes.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
               </select>
-              <input className={cell} list="add-runs-operators" value={r.operator} onChange={(e) => upd(r.key, { operator: e.target.value })} placeholder="Operator" />
+              <OperatorSelect className={cell} options={ref.operators} value={r.operator} onChange={(v) => upd(r.key, { operator: v })} />
               <input type="date" aria-label="Date" className={cell} value={r.date} onChange={(e) => upd(r.key, { date: e.target.value })} />
               <div className="inline-flex h-9 w-full min-w-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-sm"><Time24 label="Start" value={r.start} onChange={(v) => upd(r.key, { start: v })} /></div>
               <div className="inline-flex h-9 w-full min-w-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-sm"><Time24 label="End" value={r.end} onChange={(v) => upd(r.key, { end: v })} /></div>
@@ -250,7 +251,6 @@ export function AddRunsModal({ open, onClose, initial, mode = 'actual', onSaved 
             </div>
           );
         })}
-        <datalist id="add-runs-operators">{ref.operators.map((o) => <option key={o} value={o} />)}</datalist>
       </div>
     </Modal>
   );

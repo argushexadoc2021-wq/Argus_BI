@@ -54,6 +54,8 @@ export interface GridBlock {
   title: string;
   lines: string[];
   /** Dashed, lighter look (the plan shown beside what ran). */
+  /** Short tag shown as a dark chip at the start of the second line (the machine), like the Planned timeline. */
+  tag?: string;
   ghost?: boolean;
   ring?: boolean;
   onClick?: () => void;
@@ -132,9 +134,9 @@ export function TimelineGrid({ days, blocks, testId = 'timeline-grid', onDragRan
   return (
     <div ref={scrollRef} className="bg-white rounded-xl border border-slate-200 overflow-auto max-h-[68vh]" data-testid={testId}>
       <div className="grid min-w-[760px]" style={{ gridTemplateColumns: `64px repeat(${days.length}, minmax(0, 1fr))` }}>
-        <div className="sticky top-0 z-20 bg-white border-b border-slate-200" />
+        <div className="sticky top-0 z-30 bg-white border-b border-slate-200" style={{ backgroundColor: '#ffffff' }} />
         {days.map(d => (
-          <div key={d} className={`sticky top-0 z-20 border-b border-l border-slate-200 px-2 py-2 text-center text-xs font-semibold ${d === today ? 'bg-blue-50 text-blue-700' : 'bg-white text-slate-600'}`}>{dayLabel(d)}</div>
+          <div key={d} className={`sticky top-0 z-30 border-b border-l border-slate-200 px-2 py-2 text-center text-xs font-semibold ${d === today ? 'bg-blue-50 text-blue-700' : 'bg-white text-slate-600'}`} style={{ backgroundColor: d === today ? '#eff6ff' : '#ffffff' }}>{dayLabel(d)}</div>
         ))}
         <div className="relative" style={{ height: 24 * HOUR_PX }}>
           {Array.from({ length: 24 }, (_, h) => (
@@ -159,9 +161,14 @@ export function TimelineGrid({ days, blocks, testId = 'timeline-grid', onDragRan
               const height = Math.max(18, ((b.endMin - b.startMin) / 60) * HOUR_PX - 2);
               return (
                 <button key={b.id} type="button" data-testid="tl-block" data-lane={lane} title={b.title} onClick={b.onClick}
-                  className={`absolute overflow-hidden rounded-md border-l-4 px-1.5 py-0.5 text-left text-[10px] leading-tight shadow-sm hover:brightness-95 ${b.className} ${b.ghost ? 'opacity-60 border-dashed' : ''} ${b.ring ? 'ring-2 ring-red-500' : ''}`}
+                  className={`absolute z-10 overflow-hidden rounded-md border-l-[4px] px-2 py-1 text-left text-[11px] font-semibold leading-snug shadow-md transition-all ${b.className} ${b.ghost ? 'opacity-60 border-dashed' : ''} ${b.ring ? 'ring-2 ring-red-500' : ''}`}
                   style={{ top, height, left: `calc(${(lane / lanes) * 100}% + 2px)`, width: `calc(${100 / lanes}% - 4px)` }}>
-                  {b.lines.map((l, i) => <div key={i} className={i === 0 ? 'font-bold truncate' : 'truncate'}>{l}</div>)}
+                  {b.lines.map((l, i) => (
+                    <div key={i} className={i === 0 ? 'text-xs font-bold truncate' : 'truncate opacity-95'}>
+                      {i === 1 && b.tag && <span className="font-black uppercase bg-black/30 px-1 py-0.5 rounded text-[11px] mr-1 inline-block">{b.tag}</span>}
+                      {l}
+                    </div>
+                  ))}
                 </button>
               );
             })}

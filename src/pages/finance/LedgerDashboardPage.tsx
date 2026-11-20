@@ -398,8 +398,8 @@ export function LedgerDashboardPage({ embedded = false }: { embedded?: boolean }
           <Button icon={<FileDown size={14} />} onClick={() => void downloadPdf()}>Download PDF</Button></>}>
         {preview && <iframe ref={previewFrame} title="Ledger preview" data-testid="ledger-preview-frame" src={preview} className="w-full h-[68vh] rounded-lg border border-slate-200 bg-slate-100" />}
       </Modal>
-      <StatementModal open={modal === 'statement'} onClose={() => setModal(null)} lines={visibleAll} parties={parties} party={stmtParty} setParty={setStmtParty} initFrom={applied.from} initTo={applied.to} company={company?.company_name ?? ''} />
-      <BookModal open={modal === 'book'} onClose={() => setModal(null)} lines={filterLines(visibleAll, { from: applied.from, to: applied.to })} onOpen={p => { setStmtParty(p); setModal('statement'); }} />
+      <StatementModal open={modal === 'statement'} onClose={() => setModal(null)} lines={visibleAll} parties={parties} party={stmtParty} setParty={setStmtParty} initFrom={effFrom} initTo={effTo} company={company?.company_name ?? ''} />
+      <BookModal open={modal === 'book'} onClose={() => setModal(null)} lines={filterLines(visibleAll, { from: effFrom, to: effTo })} onOpen={p => { setStmtParty(p); setModal('statement'); }} />
     </div>
   );
 }

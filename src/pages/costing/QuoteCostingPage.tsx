@@ -7,6 +7,8 @@ import { Modal, FormField, FormSection, inputClass } from '@/components/ui/Modal
 import { downloadCostingDocument, viewCostingDocument } from '@/lib/brandedDocument';
 import { printHtml } from '@/lib/reportExport';
 import { useAuth } from '@/contexts/AuthContext';
+import { useGlobalDateFilter } from '@/contexts/DateRangeContext';
+import { recordDateOf } from '@/lib/globalDate';
 import {
   Calculator, FileText, Printer, Eye, Download, Pencil, CheckCheck, Save,
   AlertTriangle, RefreshCw, ChevronDown,
@@ -68,12 +70,15 @@ export function QuoteCostingPage() {
     })();
   }, []);
 
+  // Global date filter (quotation date) applies before the search box.
+  const { inRange } = useGlobalDateFilter();
   const filteredQuotes = useMemo(() => {
+    const ranged = quotations.filter((x) => inRange(recordDateOf(x, ['date', 'quote_date', 'created_at'])));
     const q = quoteSearch.trim().toLowerCase();
-    if (!q) return quotations;
-    return quotations.filter((x) =>
+    if (!q) return ranged;
+    return ranged.filter((x) =>
       `${x.quote_no ?? ''} ${x.customer ?? ''} ${x.part_name ?? ''}`.toLowerCase().includes(q));
-  }, [quotations, quoteSearch]);
+  }, [quotations, quoteSearch, inRange]);
 
   const products = useMemo(() => (quote ? parseQuoteProducts(quote) : []), [quote]);
   const product = products[Math.min(productIdx, Math.max(0, products.length - 1))] ?? null;

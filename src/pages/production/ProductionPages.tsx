@@ -2,6 +2,7 @@ export { ProductionMainPage as ProductionPlanningPage } from './unified/Producti
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useGlobalDateFilter } from '@/contexts/DateRangeContext';
+import { recordDateOf } from '@/lib/globalDate';
 import { Eye, Edit, Trash2, Cog, ClipboardList, Gauge, Package, Activity, Calendar } from 'lucide-react';
 import { PageHeader, FilterButton, ExportButton, DateSelector, SectionCard } from '@/components/ui/PageHeader';
 import { DataTable, type Column } from '@/components/ui/DataTable';
@@ -1196,26 +1197,32 @@ export function CNCOperationsPage() {
     fetchActiveJobs();
   }, []);
 
-  const totalPartsCompleted = jobData.reduce((sum, j) => sum + j.qtyCompleted, 0);
-  const totalPartsRejected = jobData.reduce((sum, j) => sum + j.qtyRejected, 0);
+  // Global date filter (job creation date) drives the stats and the cards together.
+  const { inRange: inCncDateRange } = useGlobalDateFilter();
+  const rangedJobs = useMemo(
+    () => jobData.filter((j: any) => inCncDateRange(recordDateOf(j, ['createdAt', 'created_at']))),
+    [jobData, inCncDateRange],
+  );
+  const totalPartsCompleted = rangedJobs.reduce((sum, j) => sum + j.qtyCompleted, 0);
+  const totalPartsRejected = rangedJobs.reduce((sum, j) => sum + j.qtyRejected, 0);
   const totalParts = totalPartsCompleted + totalPartsRejected;
   const rejectionRate = totalParts > 0 ? ((totalPartsRejected / totalParts) * 100).toFixed(1) : '0.0';
   
-  const avgCycleTime = jobData.length > 0 
-    ? (jobData.reduce((sum, j) => sum + j.cycleTime, 0) / jobData.length).toFixed(1)
+  const avgCycleTime = rangedJobs.length > 0 
+    ? (rangedJobs.reduce((sum, j) => sum + j.cycleTime, 0) / rangedJobs.length).toFixed(1)
     : '0.0';
 
   return (
     <div className="p-4 lg:p-6 bg-grid min-h-full">
       <PageHeader title="CNC Operations" description="Live CNC program execution monitoring" actions={<div className="flex items-center gap-2">{dbError && <Badge variant="error">DB Disconnected</Badge>}{loading && <Badge variant="neutral">Syncing...</Badge>}<FilterButton /><ExportButton /></div>} />
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
-        <StatCard label="Active Programs" value={jobData.length.toString()} icon={<Cog size={20} />} accent="brand" />
+        <StatCard label="Active Programs" value={rangedJobs.length.toString()} icon={<Cog size={20} />} accent="brand" />
         <StatCard label="Avg Cycle Time" value={`${avgCycleTime} min`} icon={<Cog size={20} />} accent="accent" />
         <StatCard label="Parts Today" value={totalPartsCompleted.toString()} icon={<Package size={20} />} accent="success" />
         <StatCard label="Rejection Rate" value={`${rejectionRate}%`} icon={<Cog size={20} />} accent={Number(rejectionRate) > 5 ? 'error' : 'success'} />
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {jobData.map((j) => (
+        {rangedJobs.map((j) => (
           <Card key={j.id} className="p-5 hover:border-brand-300 transition-colors cursor-pointer border border-slate-200">
             <div className="flex items-center justify-between mb-4">
               <div>
@@ -1245,7 +1252,7 @@ export function CNCOperationsPage() {
             </div>
           </Card>
         ))}
-        {jobData.length === 0 && !loading && (
+        {rangedJobs.length === 0 && !loading && (
           <div className="col-span-2 py-12 text-center border-2 border-dashed border-slate-200 rounded-xl">
             <Cog className="mx-auto h-8 w-8 text-slate-300 mb-3 animate-spin-slow" />
             <h3 className="text-sm font-medium text-slate-600">No active CNC operations</h3>
@@ -1335,6 +1342,8 @@ export function ShopFloorPage() {
   const [machines, setMachines] = useState<Machine[]>([]);
   const [jobCards, setJobCards] = useState<JobCardRow[]>([]);
   const [loading, setLoading] = useState(true);
+  // Global date filter (job creation date) drives the job-based stats; machines are a master list.
+  const { inRange: inShopDateRange } = useGlobalDateFilter();
 
   useEffect(() => {
     async function fetchData() {
@@ -1372,8 +1381,9 @@ export function ShopFloorPage() {
   }
 
   const activeMachinesCount = machines.filter(m => m.status === 'Running').length;
-  const runningJobsCount = jobCards.filter(j => j.status === 'Running' || j.status === 'In Progress').length;
-  const totalProd = jobCards.reduce((acc, j) => acc + j.qtyCompleted, 0);
+  const rangedJobCards = jobCards.filter(j => inShopDateRange(recordDateOf(j as any, ['createdAt', 'created_at'])));
+  const runningJobsCount = rangedJobCards.filter(j => j.status === 'Running' || j.status === 'In Progress').length;
+  const totalProd = rangedJobCards.reduce((acc, j) => acc + j.qtyCompleted, 0);
   
   // Calculate OEE roughly
   const oee = machines.length > 0 ? (machines.reduce((acc, m) => acc + (m.utilization || 0), 0) / machines.length).toFixed(1) : '0.0';
@@ -1476,7 +1486,7 @@ function TrackingStats({ planned, completed, rejected, wip }: { planned: number;
 }
 
 export function ProductionTrackingPage() {
-  const [woData, setWoData] = useState<WorkOrder[]>([]);
+  const [woData, setWoData] = useState<(WorkOrder & { createdAt?: string })[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -1488,7 +1498,7 @@ export function ProductionTrackingPage() {
           setWoData(data.map((d: any) => ({
             id: d.id, woNo: d.wo_no, partName: d.part_name, partNo: d.part_no, customer: d.customer, salesOrder: d.sales_order,
             quantity: Number(d.quantity), completed: Number(d.completed), rejected: Number(d.rejected), startDate: d.start_date, dueDate: d.due_date,
-            status: d.status, priority: d.priority,
+            status: d.status, priority: d.priority, createdAt: d.created_at,
           })));
         }
       } catch (err) {
@@ -1500,10 +1510,16 @@ export function ProductionTrackingPage() {
     fetchWOs();
   }, []);
 
-  const totalPlanned = woData.reduce((acc, w) => acc + w.quantity, 0);
-  const totalCompleted = woData.reduce((acc, w) => acc + w.completed, 0);
-  const totalRejected = woData.reduce((acc, w) => acc + w.rejected, 0);
-  const totalWip = woData.filter(w => w.status === 'In Progress').reduce((acc, w) => acc + w.quantity, 0);
+  // Global date filter (plan start date) drives the header stats and the progress list together.
+  const { inRange: inTrackDateRange } = useGlobalDateFilter();
+  const rangedWOs = useMemo(
+    () => woData.filter((w) => inTrackDateRange(recordDateOf(w as any, ['startDate', 'createdAt']))),
+    [woData, inTrackDateRange],
+  );
+  const totalPlanned = rangedWOs.reduce((acc, w) => acc + w.quantity, 0);
+  const totalCompleted = rangedWOs.reduce((acc, w) => acc + w.completed, 0);
+  const totalRejected = rangedWOs.reduce((acc, w) => acc + w.rejected, 0);
+  const totalWip = rangedWOs.filter(w => w.status === 'In Progress').reduce((acc, w) => acc + w.quantity, 0);
 
   // Header cluster lives in the top bar on desktop (title + stats + actions);
   // the local row below stays only for smaller screens.
@@ -1535,7 +1551,7 @@ export function ProductionTrackingPage() {
       <Card className="overflow-hidden">
         <div className="px-4 py-2.5 border-b border-slate-100"><h3 className="text-sm font-semibold text-slate-800">Work Order Progress</h3></div>
         <div className="divide-y divide-slate-50">
-          {woData.map((w) => {
+          {rangedWOs.map((w) => {
             const pct = w.quantity > 0 ? (w.completed / w.quantity) * 100 : 0;
             return (
               <div key={w.id} className="px-4 py-2.5 hover:bg-slate-50/50 transition-colors">

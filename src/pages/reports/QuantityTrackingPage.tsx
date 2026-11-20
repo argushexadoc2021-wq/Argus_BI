@@ -123,10 +123,10 @@ export function QuantityTrackingPage({ embedded = false }: { embedded?: boolean 
 
   const rejections = useMemo(() => {
     if (batchesAvailable && batches.length > 0) {
-      return batches.filter((b) => Number(b.rejected_qty) > 0).slice(0, 100);
+      return batches.filter((b: any) => Number(b.rejected_qty) > 0 && inDateRange(b.created_at)).slice(0, 100);
     }
     return [];
-  }, [batches, batchesAvailable]);
+  }, [batches, batchesAvailable, inDateRange]);
 
   const exportReport = () => exportCsv(`Order_Quantity_Tracking_${todayISO()}`, [
     ['Company ID', 'Date', 'Company', 'Product', 'Status', 'Ordered Qty', 'Good Qty', 'Rejected Qty', 'Remaining to Produce', 'FG Available', 'Delivered Qty', 'Invoiced Qty', 'Invoiceable Qty', 'Progress %'],

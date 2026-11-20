@@ -9,12 +9,12 @@ import { exportCsv, escapeHtml, printHtml } from '@/lib/reportExport';
 import { formatDate, todayISO } from '@/lib/format';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGlobalDateFilter } from '@/contexts/DateRangeContext';
-import { intersectRange } from '@/lib/globalDate';
+import { intersectRange, recordDateOf } from '@/lib/globalDate';
 import { downloadBrandedDocument } from '@/lib/brandedDocument';
 import { DocumentProfileButton } from '@/components/DocumentProfileButton';
 
 type Delivery = Record<string, any> & { id: string; delivery_no: string; delivery_date: string | null; customer_name: string | null; part_name: string | null; quantity: number | null; dispatch_qty: number | null; status: string | null; sales_order_id: string | null; sales_order_no: string | null };
-type SalesOrder = { id: string; order_no: string; lead_no?: string | null; customer: string; customer_id: string | null; part_name: string; part_no: string | null; quantity: number; delivered: number | null; delivery_date: string | null };
+type SalesOrder = { id: string; order_no: string; lead_no?: string | null; customer: string; customer_id: string | null; part_name: string; part_no: string | null; quantity: number; delivered: number | null; delivery_date: string | null; order_date?: string | null; created_at?: string | null };
 // Display rule: screens show the UNIQUE number only (lead_no); backend
 // order/delivery numbers stay stored and are used for documents.
 const PAGE_SIZE_OPTIONS: { value: number; label: string }[] = [
@@ -48,7 +48,7 @@ const statusFor = (d: Delivery, records: Delivery[] = [], order?: SalesOrder) =>
 
 export function DeliveriesPage() {
   const { company } = useAuth();
-  const { from: globalFrom, to: globalTo } = useGlobalDateFilter();
+  const { from: globalFrom, to: globalTo, inRange } = useGlobalDateFilter();
   const navigate = useNavigate();
   const [records, setRecords] = useState<Delivery[]>([]);
   const [orders, setOrders] = useState<SalesOrder[]>([]);
@@ -80,9 +80,9 @@ export function DeliveriesPage() {
         supabase.from('cnc_work_orders').select('*').limit(5000),
       ]);
       // lead_no is newer than some databases: retry without it rather than failing the page.
-      let so = await supabase.from('cnc_sales_orders').select('id,order_no,lead_no,customer,customer_id,part_name,part_no,quantity,delivered,delivery_date').order('created_at', { ascending: false }).limit(2000);
+      let so = await supabase.from('cnc_sales_orders').select('id,order_no,lead_no,customer,customer_id,part_name,part_no,quantity,delivered,delivery_date,order_date,created_at').order('created_at', { ascending: false }).limit(2000);
       if (so.error) {
-        so = await supabase.from('cnc_sales_orders').select('id,order_no,customer,customer_id,part_name,part_no,quantity,delivered,delivery_date').order('created_at', { ascending: false }).limit(2000) as any;
+        so = await supabase.from('cnc_sales_orders').select('id,order_no,customer,customer_id,part_name,part_no,quantity,delivered,delivery_date,order_date,created_at').order('created_at', { ascending: false }).limit(2000) as any;
       }
       if (d.error) throw d.error;
       if (so.error) throw so.error;
@@ -122,13 +122,17 @@ export function DeliveriesPage() {
   const customers = useMemo(() => [...new Set(records.map(r => r.customer_name).filter(Boolean))] as string[], [records]);
   const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const visible = filtered.slice((page - 1) * pageSize, page * pageSize);
+  // Global date filter: challans by delivery date, orders by order date. Delivered
+  // quantities per order stay cumulative (all challans) so statuses remain correct.
+  const rangedRecords = useMemo(() => records.filter(r => inRange(recordDateOf(r, ['delivery_date', 'created_at']))), [records, inRange]);
+  const rangedOrders = useMemo(() => orders.filter(o => inRange(recordDateOf(o, ['order_date', 'created_at']))), [orders, inRange]);
   const summary = useMemo(() => ({
-    total: records.length,
-    dispatched: records.reduce((n, r) => n + quantity(r), 0),
-    pending: orders.reduce((n, o) => n + Math.max(0, Number(o.quantity || 0) - orderDelivered(records, o.id)), 0),
-    partial: orders.filter(o => orderDelivered(records, o.id) > 0 && orderDelivered(records, o.id) < Number(o.quantity || 0)).length,
-    delivered: orders.filter(o => Number(o.quantity || 0) > 0 && orderDelivered(records, o.id) >= Number(o.quantity || 0)).length,
-  }), [records, orders]);
+    total: rangedRecords.length,
+    dispatched: rangedRecords.reduce((n, r) => n + quantity(r), 0),
+    pending: rangedOrders.reduce((n, o) => n + Math.max(0, Number(o.quantity || 0) - orderDelivered(records, o.id)), 0),
+    partial: rangedOrders.filter(o => orderDelivered(records, o.id) > 0 && orderDelivered(records, o.id) < Number(o.quantity || 0)).length,
+    delivered: rangedOrders.filter(o => Number(o.quantity || 0) > 0 && orderDelivered(records, o.id) >= Number(o.quantity || 0)).length,
+  }), [records, rangedRecords, rangedOrders]);
 
   const startNew = () => {
     setEdit(null);
@@ -256,10 +260,10 @@ export function DeliveriesPage() {
   </div>
 </div></Card>
     <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-      <Card className="p-4"><h3 className="font-semibold text-sm mb-3">Delivery Summary (This Month)</h3>{tabs.slice(1,4).map((x, i) => { const n = records.filter(r => String(r.delivery_date || '').slice(0,7) === todayISO().slice(0,7) && statusFor(r, records, orders.find(x => x.id === r.sales_order_id)) === ['Pending','Partially Delivered','Delivered'][i]).length; return <div key={x} className="flex justify-between py-1.5 text-sm"><span>{x}</span><b>{n}</b></div>; })}</Card>
-      <Card className="p-4"><h3 className="font-semibold text-sm mb-3">Top Companies (Delivery Qty)</h3>{Object.entries(records.reduce<Record<string, number>>((a, r) => { const key = r.customer_name || '—'; a[key] = (a[key] || 0) + quantity(r); return a; }, {})).sort((a,b) => b[1]-a[1]).slice(0,5).map(([name, qty]) => <div key={name} className="flex justify-between py-1.5 text-sm"><span>{name}</span><b>{qty.toLocaleString('en-IN')}</b></div>)}</Card>
-      <Card className="p-4"><h3 className="font-semibold text-sm mb-3">Pending Deliveries</h3>{orders.filter(o => Math.max(0, Number(o.quantity || 0) - orderDelivered(records, o.id)) > 0).slice(0,8).map(o => <button key={o.id} className="w-full flex justify-between border-t py-2 text-left text-xs hover:text-brand-700" onClick={() => navigate('/sales/orders')}><span>{o.customer} · {o.part_name}<span className="block text-slate-500">{o.order_no} · Due {formatDate(o.delivery_date) || '—'}</span></span><b>{Math.max(0, Number(o.quantity || 0) - orderDelivered(records, o.id))} pending</b></button>)}{!orders.some(o => Number(o.quantity || 0) > orderDelivered(records, o.id)) && <div className="text-xs text-slate-500 py-4">No pending deliveries.</div>}</Card>
-      <Card className="p-4"><h3 className="font-semibold text-sm mb-3">Recent Delivery Challans</h3>{records.slice(0,8).map(r => { const so = orders.find(x => x.id === r.sales_order_id); return <button key={r.id} className="w-full flex justify-between border-t py-2 text-left text-xs hover:text-brand-700" onClick={() => setSelected(r)}><span>{uniqueForDelivery(r, so)} · {r.customer_name}<span className="block text-slate-500">{r.part_name} · {formatDate(r.delivery_date)}</span></span><b>{quantity(r)}</b></button>; })}{!records.length && <div className="text-xs text-slate-500 py-4">No recent delivery challans.</div>}</Card>
+      <Card className="p-4"><h3 className="font-semibold text-sm mb-3">Delivery Summary (This Month)</h3>{tabs.slice(1,4).map((x, i) => { const n = rangedRecords.filter(r => String(r.delivery_date || '').slice(0,7) === todayISO().slice(0,7) && statusFor(r, records, orders.find(x => x.id === r.sales_order_id)) === ['Pending','Partially Delivered','Delivered'][i]).length; return <div key={x} className="flex justify-between py-1.5 text-sm"><span>{x}</span><b>{n}</b></div>; })}</Card>
+      <Card className="p-4"><h3 className="font-semibold text-sm mb-3">Top Companies (Delivery Qty)</h3>{Object.entries(rangedRecords.reduce<Record<string, number>>((a, r) => { const key = r.customer_name || '—'; a[key] = (a[key] || 0) + quantity(r); return a; }, {})).sort((a,b) => b[1]-a[1]).slice(0,5).map(([name, qty]) => <div key={name} className="flex justify-between py-1.5 text-sm"><span>{name}</span><b>{qty.toLocaleString('en-IN')}</b></div>)}</Card>
+      <Card className="p-4"><h3 className="font-semibold text-sm mb-3">Pending Deliveries</h3>{rangedOrders.filter(o => Math.max(0, Number(o.quantity || 0) - orderDelivered(records, o.id)) > 0).slice(0,8).map(o => <button key={o.id} className="w-full flex justify-between border-t py-2 text-left text-xs hover:text-brand-700" onClick={() => navigate('/sales/orders')}><span>{o.customer} · {o.part_name}<span className="block text-slate-500">{o.order_no} · Due {formatDate(o.delivery_date) || '—'}</span></span><b>{Math.max(0, Number(o.quantity || 0) - orderDelivered(records, o.id))} pending</b></button>)}{!rangedOrders.some(o => Number(o.quantity || 0) > orderDelivered(records, o.id)) && <div className="text-xs text-slate-500 py-4">No pending deliveries.</div>}</Card>
+      <Card className="p-4"><h3 className="font-semibold text-sm mb-3">Recent Delivery Challans</h3>{rangedRecords.slice(0,8).map(r => { const so = orders.find(x => x.id === r.sales_order_id); return <button key={r.id} className="w-full flex justify-between border-t py-2 text-left text-xs hover:text-brand-700" onClick={() => setSelected(r)}><span>{uniqueForDelivery(r, so)} · {r.customer_name}<span className="block text-slate-500">{r.part_name} · {formatDate(r.delivery_date)}</span></span><b>{quantity(r)}</b></button>; })}{!rangedRecords.length && <div className="text-xs text-slate-500 py-4">No recent delivery challans.</div>}</Card>
     </div>
     <Modal open={!!selected} onClose={() => setSelected(null)} title={'Delivery Challan ' + (selected ? uniqueForDelivery(selected, orders.find(x => x.id === selected.sales_order_id)) : '')} subtitle="Record from the shared Sales Pipeline delivery table" size="lg" footer={<>{selected && !(invoiceLinks[selected.id] || invoiceLinks[`dc:${selected.delivery_no}`]) && <Button onClick={() => navigate(`/finance/invoices?delivery=${encodeURIComponent(selected.id)}`)}>Create Invoice</Button>}{selected && <Button variant="secondary" icon={<Download size={14}/>} onClick={() => void downloadChallan(selected)}>Download DC</Button>}<Button variant="secondary" onClick={() => selected && printSelected(selected)}>Print DC</Button><Button variant="secondary" onClick={() => { if (!selected) return; setEdit(selected); setForm({ sales_order_id: selected.sales_order_id || '', delivery_no: selected.delivery_no || '', delivery_date: String(selected.delivery_date || '').slice(0,10) || todayISO(), quantity: String(quantity(selected)), delivery_address: selected.delivery_address || '', vehicle_no: selected.vehicle_no || '', transport: selected.transport || '', driver_contact: selected.driver_contact || '', remarks: selected.remarks || '' }); setSelected(null); setFormOpen(true); }}>Edit details</Button><Button onClick={() => setSelected(null)}>Close</Button></>}>
       {selected && (() => { const so = orders.find(x => x.id === selected.sales_order_id); return <div className="grid grid-cols-2 gap-3 text-sm">{[['Company',selected.customer_name],['Sales Order',uniqueForOrder(so)],['Part',selected.part_name],['Quantity',quantity(selected)],['Date',formatDate(selected.delivery_date)],['Address',selected.delivery_address],['Vehicle',selected.vehicle_no],['Transport',selected.transport],['Invoice',invoiceLinks[selected.id] || invoiceLinks[`dc:${selected.delivery_no}`] || 'Not Created'],['Remarks',selected.remarks]].map(([k,v])=><div key={String(k)} className="border-b py-2"><div className="text-xs text-slate-500">{k}</div><div>{v || '—'}</div></div>)}</div>; })()}

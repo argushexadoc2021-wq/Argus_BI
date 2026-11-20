@@ -2,12 +2,15 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Search, Download, Calendar, Clock, Play, CheckCircle2, Layers, Cpu, Plus, Edit2, Trash2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { exportCsv } from '@/lib/reportExport';
+import { useGlobalDateFilter } from '@/contexts/DateRangeContext';
+import { intersectRange } from '@/lib/globalDate';
 import { todayISO } from '@/lib/format';
 import { AddRunsModal, defaultActualSlot } from './AddRunsModal';
 import { fmtTime24, parseYmd, ymd } from '@/lib/operationPlans';
 import { Modal, FormField, inputClass } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Card';
 import { Time24 } from '@/components/ui/Time24';
+import { OperatorSelect } from '@/components/ui/OperatorSelect';
 import { buildRunPartChoices, ensureRunWorkOrder, workOrdersForPart } from '@/lib/partOrders';
 import { processKey, runExceeds, syncWorkOrderCompleted } from '@/lib/workOrderProgress';
 import { getProductBaseName } from '@/pages/sales/SalesPipelinePage';
@@ -188,6 +191,11 @@ export function ActualListView() {
 
   const now = new Date();
 
+  // The top-bar global date range narrows the local From/To (All Time leaves them as they are);
+  // the list and every KPI below follow the narrowed range.
+  const { from: gFrom, to: gTo } = useGlobalDateFilter();
+  const { from: effFrom, to: effTo } = intersectRange(fDateFrom, fDateTo, gFrom, gTo);
+
   // Filtered actual runs
   const filteredJobs = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -198,8 +206,8 @@ export function ActualListView() {
         ? String(j.actual_start).slice(0, 10)
         : String(j.created_at).slice(0, 10);
 
-      if (fDateFrom && runDate < fDateFrom) return false;
-      if (fDateTo && runDate > fDateTo) return false;
+      if (effFrom && runDate < effFrom) return false;
+      if (effTo && runDate > effTo) return false;
       if (fMachine !== 'All' && j.machine !== fMachine) return false;
       if (fOperator !== 'All' && String(j.operator ?? '').toLowerCase() !== fOperator.toLowerCase()) return false;
 
@@ -232,11 +240,11 @@ export function ActualListView() {
       }
       return true;
     });
-  }, [jobs, woMap, search, fDateFrom, fDateTo, fMachine, fOperator, fStatus, fProduct, now]);
+  }, [jobs, woMap, search, effFrom, effTo, fMachine, fOperator, fStatus, fProduct, now]);
 
   const filteredTasks = useMemo(() => (fStatus === 'All' || fStatus === 'Completed'
-    ? filterTasks(tasks, 'actual', { search, from: fDateFrom, to: fDateTo, machine: fMachine, operator: fOperator, product: fProduct })
-    : []), [tasks, search, fDateFrom, fDateTo, fMachine, fOperator, fProduct, fStatus]);
+    ? filterTasks(tasks, 'actual', { search, from: effFrom, to: effTo, machine: fMachine, operator: fOperator, product: fProduct })
+    : []), [tasks, search, effFrom, effTo, fMachine, fOperator, fProduct, fStatus]);
 
   const removeTask = async (t: ScheduledTask) => {
     if (!window.confirm(`Delete the task "${t.task_name}"?`)) return;
@@ -922,12 +930,11 @@ export function ActualListView() {
                 ))}
               </select>
 
-              <input
+              <OperatorSelect
                 className={runCell}
-                list="edit-runs-operators"
+                options={operators}
                 value={editForm.operator}
-                onChange={(e) => setEditForm((f) => ({ ...f, operator: e.target.value }))}
-                placeholder="Operator"
+                onChange={(v) => setEditForm((f) => ({ ...f, operator: v }))}
               />
 
               <input
@@ -958,12 +965,6 @@ export function ActualListView() {
                 </button>
               </div>
             </div>
-
-            <datalist id="edit-runs-operators">
-              {operators.map((o) => (
-                <option key={o} value={o} />
-              ))}
-            </datalist>
           </div>
         )}
       </Modal>

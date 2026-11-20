@@ -9,6 +9,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { Modal, FormField, inputClass } from '@/components/ui/Modal';
 import { useNavigate } from 'react-router-dom';
+import { useGlobalDateFilter } from '@/contexts/DateRangeContext';
+import { recordDateOf } from '@/lib/globalDate';
 
 export function SiteVisitSalesPage() {
   const { profile } = useAuth();
@@ -124,9 +126,16 @@ export function SiteVisitSalesPage() {
     }
   };
 
+  // Global date filter (visit date) scopes the list and every KPI on the page.
+  const { inRange: inDateRange } = useGlobalDateFilter();
+  const rangedVisits = useMemo(
+    () => visits.filter((v) => inDateRange(recordDateOf(v as unknown as Record<string, unknown>, ['visit_date', 'created_at']))),
+    [visits, inDateRange],
+  );
+
   // Filtered visits
   const filteredVisits = useMemo(() => {
-    return visits.filter((v) => {
+    return rangedVisits.filter((v) => {
       const q = searchQuery.toLowerCase();
       const matchesSearch =
         v.customer_name.toLowerCase().includes(q) ||
@@ -138,14 +147,14 @@ export function SiteVisitSalesPage() {
       const matchesSalesperson = salespersonFilter === 'all' || v.salesperson_name === salespersonFilter;
       return matchesSearch && matchesStatus && matchesSalesperson;
     });
-  }, [visits, searchQuery, statusFilter, salespersonFilter]);
+  }, [rangedVisits, searchQuery, statusFilter, salespersonFilter]);
 
   // KPIs
-  const totalVisits = visits.length;
-  const scheduledVisits = visits.filter((v) => v.outcome_status === 'Scheduled').length;
-  const followUpVisits = visits.filter((v) => v.outcome_status === 'Follow-up Required').length;
-  const wonVisits = visits.filter((v) => v.outcome_status === 'Deal Won' || v.outcome_status === 'Completed').length;
-  const pipelineValue = visits.reduce((acc, v) => acc + (Number(v.estimated_deal_value) || 0), 0);
+  const totalVisits = rangedVisits.length;
+  const scheduledVisits = rangedVisits.filter((v) => v.outcome_status === 'Scheduled').length;
+  const followUpVisits = rangedVisits.filter((v) => v.outcome_status === 'Follow-up Required').length;
+  const wonVisits = rangedVisits.filter((v) => v.outcome_status === 'Deal Won' || v.outcome_status === 'Completed').length;
+  const pipelineValue = rangedVisits.reduce((acc, v) => acc + (Number(v.estimated_deal_value) || 0), 0);
 
   const statusBadge = (status: SiteVisit['outcome_status']) => {
     switch (status) {

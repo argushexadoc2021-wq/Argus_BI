@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Badge, Button } from '@/components/ui/Card';
-import { ListTodo } from 'lucide-react';
+import { ListTodo, Plus } from 'lucide-react';
 import { AddTaskModal } from '@/components/production/AddTaskModal';
 import { fetchScheduledTasks, type ScheduledTask } from '@/lib/scheduledTasks';
 import { Modal, FormField, inputClass } from '@/components/ui/Modal';
@@ -60,9 +60,10 @@ export function ActualTimeline() {
         title: `${j.part_name || j.work_order} · ${wo?.customer ?? ''} · ${j.operation ?? ''} · ${j.machine ?? ''}${man(j) ? ` · ${man(j)}` : ''}${Number(j.qty_completed) ? ` · ${j.qty_completed} pcs` : ''}`,
         lines: [
           `${j.part_name || j.work_order}${Number(j.qty_completed) ? ` · ${j.qty_completed} pcs` : ''}`,
-          `${j.machine ?? '—'}${man(j) ? ` · ${man(j)}` : ''}`,
+          `${man(j) || 'No operator'}`,
           `${fmtTime24(minToHhmm(s.startMin))}–${span.running && s.date === ymd(now) ? 'now' : fmtTime24(minToHhmm(Math.min(s.endMin, 24 * 60 - 1)))}${span.running ? ' · Running' : ''}`,
         ],
+        tag: j.machine || '—',
         onClick: () => setPicked(j),
       }));
     }
@@ -95,10 +96,11 @@ export function ActualTimeline() {
 
   const hoursInView = blocks.filter(b => nav.days.includes(b.date)).reduce((n, b) => n + (b.endMin - b.startMin) / 60, 0);
   const anyActual = data.jobs.some(j => j.actual_start);
+  const runningNow = data.jobs.filter(j => jobSpan(j, new Date())?.running).length;
 
   return (
     <div className="space-y-4" data-testid="actual-timeline">
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="head-bar flex flex-wrap items-center gap-2 rounded-xl px-2.5 py-2">
         <CalendarNav nav={nav} onToday={() => { nav.setAnchor(ymd(new Date())); setSignal(s => s + 1); }} loading={data.loading} />
         <select aria-label="Machine filter" value={machine} onChange={e => setMachine(e.target.value)} className="h-8 !w-36 max-w-[144px] rounded-lg border border-slate-200 bg-white px-2 text-xs truncate shadow-2xs">
           <option value="All">All machines</option>
@@ -110,8 +112,10 @@ export function ActualTimeline() {
         </select>
         <input aria-label="Search" placeholder="Search work order, product…" value={search} onChange={e => setSearch(e.target.value)} className="h-8 !w-40 max-w-[160px] rounded-lg border border-slate-200 bg-white px-2.5 text-xs shadow-2xs" />
         <Badge variant="neutral" className="text-xs py-0.5 px-2">{Math.round(hoursInView * 10) / 10} h run</Badge>
-        <Button variant="primary" size="sm" onClick={openAddButton} className="ml-auto h-8 px-2.5 text-xs whitespace-nowrap" aria-label="Add runs">+ Add runs</Button>
-        <Button variant="secondary" size="sm" className="bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100 shadow-sm flex items-center gap-1 h-8 px-2.5 text-xs whitespace-nowrap" onClick={() => { setTaskToEdit(null); setShowAddTask(true); }}><ListTodo size={14} /> Add Task</Button>
+        {runningNow > 0 && <Badge variant="success" dot className="text-xs py-0.5 px-2">{runningNow} running</Badge>}
+        <span className="flex-1 min-w-0" />
+        <Button variant="primary" size="sm" onClick={openAddButton} className="h-8 px-2.5 text-xs bg-brand-500 hover:bg-brand-600 text-white border-0 shadow-sm whitespace-nowrap" aria-label="Add runs"><Plus size={14} /> Add runs</Button>
+        <Button variant="secondary" size="sm" className="h-8 px-2.5 text-xs bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100 shadow-sm flex items-center gap-1 whitespace-nowrap" onClick={() => { setTaskToEdit(null); setShowAddTask(true); }}><ListTodo size={14} /> Add Task</Button>
       </div>
       <TimelineGrid key={signal} days={nav.days} blocks={blocks} testId="actual-grid" onDragRange={openRun} />
       {!data.loading && !anyActual && (

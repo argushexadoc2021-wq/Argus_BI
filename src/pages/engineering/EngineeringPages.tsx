@@ -7,6 +7,8 @@ import { Card, Badge, Button, StatCard, statusToVariant } from '@/components/ui/
 import { Modal, ConfirmDialog, FormField, inputClass } from '@/components/ui/Modal';
 import type { PartMaster, RevisionRecord, BOMItem, RoutingOp } from '@/data/mockData';
 import { useAuth } from '@/contexts/AuthContext';
+import { useGlobalDateFilter } from '@/contexts/DateRangeContext';
+import { recordDateOf } from '@/lib/globalDate';
 
 type ParentPart = { part_no: string; part_name: string; material: string | null; revision: string | null };
 
@@ -1055,7 +1057,7 @@ export function RevisionsPage() {
   const [editId, setEditId] = useState<string | null>(null);
   const [viewTarget, setViewTarget] = useState<RevisionRecord & { id: string } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<RevisionRecord & { id: string } | null>(null);
-  const [revisionsData, setRevisionsData] = useState<(RevisionRecord & { id: string })[]>([]);
+  const [revisionsData, setRevisionsData] = useState<(RevisionRecord & { id: string; createdAt?: string })[]>([]);
   const [loading, setLoading] = useState(true);
   const [dbError, setDbError] = useState(false);
   const { profile } = useAuth();
@@ -1084,6 +1086,7 @@ export function RevisionsPage() {
             date: d.date,
             approvedBy: d.approved_by,
             status: d.status,
+            createdAt: d.created_at,
           }));
           setRevisionsData(formattedData);
         }
@@ -1183,10 +1186,13 @@ export function RevisionsPage() {
     },
   ];
 
-  const totalRevs = revisionsData.length;
-  const releasedRevs = revisionsData.filter(r => r.status === 'Released').length;
-  const pendingRevs = revisionsData.filter(r => r.status === 'Pending').length;
-  const supersededRevs = revisionsData.filter(r => r.status === 'Superseded').length;
+  // Global date filter (revision date) drives the stats and the table together.
+  const { inRange: inRevDateRange } = useGlobalDateFilter();
+  const rangedRevs = revisionsData.filter(r => inRevDateRange(recordDateOf(r as any, ['date', 'createdAt'])));
+  const totalRevs = rangedRevs.length;
+  const releasedRevs = rangedRevs.filter(r => r.status === 'Released').length;
+  const pendingRevs = rangedRevs.filter(r => r.status === 'Pending').length;
+  const supersededRevs = rangedRevs.filter(r => r.status === 'Superseded').length;
 
   return (
     <div className="p-4 lg:p-6 bg-grid min-h-full">
@@ -1197,7 +1203,7 @@ export function RevisionsPage() {
         <StatCard label="Pending" value={pendingRevs.toString()} icon={<FileText size={20} />} accent="warning" />
         <StatCard label="Superseded" value={supersededRevs.toString()} icon={<GitBranch size={20} />} accent="neutral" />
       </div>
-      <DataTable data={revisionsData} columns={columns} searchKeys={['drawingNo', 'partName', 'description']} onAdd={() => { setEditId(null); setFormData(resetForm()); setShowAdd(true); }} addLabel="New Revision" filterOptions={[{ label: 'Released', value: 'Released' }, { label: 'Pending', value: 'Pending' }, { label: 'Superseded', value: 'Superseded' }]} />
+      <DataTable data={rangedRevs} columns={columns} searchKeys={['drawingNo', 'partName', 'description']} onAdd={() => { setEditId(null); setFormData(resetForm()); setShowAdd(true); }} addLabel="New Revision" filterOptions={[{ label: 'Released', value: 'Released' }, { label: 'Pending', value: 'Pending' }, { label: 'Superseded', value: 'Superseded' }]} />
       
       <Modal open={showAdd} onClose={() => { setShowAdd(false); setEditId(null); setFormData(resetForm()); }} title={editId ? "Edit Revision" : "New Revision"} subtitle="Create a new drawing revision" footer={<><Button variant="secondary" onClick={() => setShowAdd(false)}>Cancel</Button><Button onClick={handleSave} disabled={loading}>{editId ? 'Update' : 'Save Revision'}</Button></>}>
         <div className="grid grid-cols-2 gap-4">

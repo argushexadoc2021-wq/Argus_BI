@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Search, Download, Trash2, Edit2, Calendar, Clock, Layers, Users, Cpu, CheckCircle2, AlertCircle, Plus } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { exportCsv } from '@/lib/reportExport';
+import { useGlobalDateFilter } from '@/contexts/DateRangeContext';
+import { intersectRange } from '@/lib/globalDate';
 import { todayISO } from '@/lib/format';
 import { formatWorkOrderOption } from '@/lib/workOrderFormat';
 import { fmtTime24, parseYmd, toMinutes, ymd } from '@/lib/operationPlans';
@@ -290,6 +292,11 @@ export function PlannedListView() {
     return `${h}h ${m}m`;
   };
 
+  // The top-bar global date range narrows the local From/To (All Time leaves them as they are);
+  // the list and every KPI below follow the narrowed range.
+  const { from: gFrom, to: gTo } = useGlobalDateFilter();
+  const { from: effFrom, to: effTo } = intersectRange(fDateFrom, fDateTo, gFrom, gTo);
+
   const filteredPlans = useMemo(() => {
     const q = search.trim().toLowerCase();
     return plans.filter((p) => {
@@ -297,8 +304,8 @@ export function PlannedListView() {
       const pDate = String(p.plan_date).slice(0, 10);
       const status = getStatus(pDate);
 
-      if (fDateFrom && pDate < fDateFrom) return false;
-      if (fDateTo && pDate > fDateTo) return false;
+      if (effFrom && pDate < effFrom) return false;
+      if (effTo && pDate > effTo) return false;
       if (fMachine !== 'All' && p.machine !== fMachine) return false;
       if (fOperator !== 'All' && String(p.operator ?? '').toLowerCase() !== fOperator.toLowerCase()) return false;
       if (fStatus !== 'All' && status !== fStatus) return false;
@@ -324,12 +331,12 @@ export function PlannedListView() {
       }
       return true;
     });
-  }, [plans, woMap, search, fDateFrom, fDateTo, fMachine, fOperator, fStatus, fProduct]);
+  }, [plans, woMap, search, effFrom, effTo, fMachine, fOperator, fStatus, fProduct]);
 
-  const filteredTasks = useMemo(() => filterTasks(tasks, 'planned', { search, from: fDateFrom, to: fDateTo, machine: fMachine, operator: fOperator, product: fProduct })
+  const filteredTasks = useMemo(() => filterTasks(tasks, 'planned', { search, from: effFrom, to: effTo, machine: fMachine, operator: fOperator, product: fProduct })
     .filter((t) => fStatus === 'All' || getStatus(t.task_date) === fStatus),
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  [tasks, search, fDateFrom, fDateTo, fMachine, fOperator, fProduct, fStatus]);
+  [tasks, search, effFrom, effTo, fMachine, fOperator, fProduct, fStatus]);
 
   const removeTask = async (t: ScheduledTask) => {
     if (!window.confirm(`Delete the task "${t.task_name}"?`)) return;

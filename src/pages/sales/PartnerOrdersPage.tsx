@@ -4,6 +4,8 @@ import {
   AlertTriangle, ArrowUpRight, Eye, Package, Building2, Store, Clock
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useGlobalDateFilter } from '@/contexts/DateRangeContext';
+import { recordDateOf } from '@/lib/globalDate';
 
 interface PartnerOrder {
   id: string;
@@ -92,8 +94,15 @@ export function PartnerOrdersPage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [selectedOrder, setSelectedOrder] = useState<PartnerOrder | null>(null);
 
+  // Global date filter (order date) scopes the list and every KPI on the page.
+  const { inRange: inDateRange } = useGlobalDateFilter();
+  const rangedOrders = useMemo(
+    () => orders.filter((o) => inDateRange(recordDateOf(o as unknown as Record<string, unknown>, ['order_date', 'created_at']))),
+    [orders, inDateRange],
+  );
+
   const filteredOrders = useMemo(() => {
-    return orders.filter((o) => {
+    return rangedOrders.filter((o) => {
       const q = search.toLowerCase();
       const matchSearch =
         o.order_no.toLowerCase().includes(q) ||
@@ -104,7 +113,7 @@ export function PartnerOrdersPage() {
       const matchStatus = statusFilter === 'all' || o.status === statusFilter;
       return matchSearch && matchType && matchStatus;
     });
-  }, [orders, search, typeFilter, statusFilter]);
+  }, [rangedOrders, search, typeFilter, statusFilter]);
 
   const handleApprove = (id: string) => {
     setOrders((prev) =>
@@ -115,8 +124,8 @@ export function PartnerOrdersPage() {
     }
   };
 
-  const totalGross = orders.reduce((acc, o) => acc + o.gross_value, 0);
-  const totalCommission = orders.reduce((acc, o) => acc + o.partner_commission, 0);
+  const totalGross = rangedOrders.reduce((acc, o) => acc + o.gross_value, 0);
+  const totalCommission = rangedOrders.reduce((acc, o) => acc + o.partner_commission, 0);
   const netSales = totalGross - totalCommission;
 
   return (
@@ -158,7 +167,7 @@ export function PartnerOrdersPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
           <div className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Channel Orders</div>
-          <div className="text-2xl font-bold text-slate-900 mt-1">{orders.length}</div>
+          <div className="text-2xl font-bold text-slate-900 mt-1">{rangedOrders.length}</div>
           <div className="text-xs text-slate-400 mt-0.5">Partner + Storefront combined</div>
         </div>
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">

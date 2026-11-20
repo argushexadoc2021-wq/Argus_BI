@@ -14,6 +14,8 @@ import { workOrderTitle } from '@/lib/workOrderFormat';
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { useGlobalDateFilter } from '@/contexts/DateRangeContext';
+import { recordDateOf } from '@/lib/globalDate';
 import { formatINR } from '@/lib/format';
 import { Badge, Button, Card } from '@/components/ui/Card';
 import { DataTable, type Column } from '@/components/ui/DataTable';
@@ -168,16 +170,20 @@ export function JobCardsTab({ workOrders }: { workOrders: any[] }) {
     return [...set.values()].sort((a, b) => a.localeCompare(b));
   }, [jobs]);
 
+  // Global date filter (scheduled start lives in created_at) drives the list and the count chips.
+  const { inRange: inJobDateRange } = useGlobalDateFilter();
+  const rangedJobs = useMemo(() => jobs.filter((j) => inJobDateRange(recordDateOf(j, ['created_at']))), [jobs, inJobDateRange]);
+
   const counts = useMemo(() => {
-    const c: Record<string, number> = { total: jobs.length, Ready: 0, Scheduled: 0, 'In Progress': 0, 'On Hold': 0, Completed: 0 };
-    for (const j of jobs) {
+    const c: Record<string, number> = { total: rangedJobs.length, Ready: 0, Scheduled: 0, 'In Progress': 0, 'On Hold': 0, Completed: 0 };
+    for (const j of rangedJobs) {
       const s = String(j.status ?? '');
       if (c[s] !== undefined && s !== 'total') c[s] += 1;
     }
     return c;
-  }, [jobs]);
+  }, [rangedJobs]);
 
-  const filtered = useMemo(() => jobs.filter((j) => {
+  const filtered = useMemo(() => rangedJobs.filter((j) => {
     if (fStatus !== 'All' && String(j.status ?? '') !== fStatus) return false;
     if (fMachine !== 'All' && String(j.machine ?? '') !== fMachine) return false;
     if (fOperator !== 'All' && String(j.operator ?? '') !== fOperator) return false;
@@ -186,7 +192,7 @@ export function JobCardsTab({ workOrders }: { workOrders: any[] }) {
     if (fFrom && d < fFrom) return false;
     if (fTo && d > fTo) return false;
     return true;
-  }), [jobs, fStatus, fMachine, fOperator, fProcess, fFrom, fTo]);
+  }), [rangedJobs, fStatus, fMachine, fOperator, fProcess, fFrom, fTo]);
 
   // ---------- create ----------
   const eligibleWOs = useMemo(() => (workOrders ?? []).filter((w) => {

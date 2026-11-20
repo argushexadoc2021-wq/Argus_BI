@@ -1114,11 +1114,11 @@ export function PurchaseOrdersPage() {
       </div>
       
       <div className="lg:hidden grid grid-cols-2 md:grid-cols-5 gap-2.5 mb-3">
-        <StatCard compact label="Total POs" value={allPOs.length.toString()} icon={<ShoppingCart size={16} />} accent="brand" />
-        <StatCard compact label="Draft" value={allPOs.filter(p => p.status === 'Draft').length.toString()} icon={<FileText size={16} />} accent="neutral" />
-        <StatCard compact label="Issued / Sent" value={allPOs.filter(p => p.status === 'Issued').length.toString()} icon={<Send size={16} />} accent="brand" />
-        <StatCard compact label="Partially / Fully Rcvd" value={allPOs.filter(p => ['Partially Received', 'Received'].includes(p.status)).length.toString()} icon={<Package size={16} />} accent="success" />
-        <StatCard compact label="Delayed" value={allPOs.filter(p => isDelayed(p)).length.toString()} icon={<Activity size={16} />} accent="error" />
+        <StatCard compact label="Total POs" value={poStats.total.toString()} icon={<ShoppingCart size={16} />} accent="brand" />
+        <StatCard compact label="Draft" value={poStats.draft.toString()} icon={<FileText size={16} />} accent="neutral" />
+        <StatCard compact label="Issued / Sent" value={poStats.issued.toString()} icon={<Send size={16} />} accent="brand" />
+        <StatCard compact label="Partially / Fully Rcvd" value={poStats.rcvd.toString()} icon={<Package size={16} />} accent="success" />
+        <StatCard compact label="Delayed" value={poStats.delayed.toString()} icon={<Activity size={16} />} accent="error" />
       </div>
       
       <Card>

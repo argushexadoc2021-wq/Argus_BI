@@ -2515,7 +2515,7 @@ export function SalesPipelinePage() {
       return {
         key: s.key,
         label: s.title,
-        count: s.stage === 'Rejected' ? rejectedTotal : s.stage === 'Qty Tracking' ? salesOrdersList.length : boardCards.filter(c => c.stage === s.stage).length,
+        count: s.stage === 'Rejected' ? rejectedTotal : s.stage === 'Qty Tracking' ? salesOrdersList.filter((o: any) => inGlobalDateRange(recordDateOf(o, ['order_date', 'created_at']))).length : boardCards.filter(c => c.stage === s.stage).length,
         tile: theme.kpiTile,
         icon: theme.kpiIcon,
         iconPath: s.iconPath,
@@ -2527,7 +2527,7 @@ export function SalesPipelinePage() {
     }));
     return () => setKpis([]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [boardCards, rejectedTotal, salesOrdersList, setKpis, activeView, permissions]);
+  }, [boardCards, rejectedTotal, salesOrdersList, setKpis, activeView, permissions, inGlobalDateRange]);
 
   // The enquiry form is always visible at the top of the Enquiries list, so it has no
   // open/closed flag any more. savingEnquiry blocks duplicate submits while a save is in

@@ -275,7 +275,7 @@ export function QuotationsPage() {
   const [viewTarget, setViewTarget] = useState<QuotationRow | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<QuotationRow | null>(null);
   const [quotationsData, setQuotationsData] = useState<QuotationRow[]>([]);
-  // Global date filter (quotation date) drives the table.
+  // Global date filter (quotation date) drives the table and the stat cards.
   const { inRange: inQuotationDateRange } = useGlobalDateFilter();
   const rangedQuotations = useMemo(
     () => quotationsData.filter((q: any) => inQuotationDateRange(q.date)),
@@ -445,10 +445,10 @@ export function QuotationsPage() {
     },
   ];
 
-  const pendingCount = quotationsData.filter(q => q.status === 'Sent' || q.status === 'Draft').length;
+  const pendingCount = rangedQuotations.filter(q => q.status === 'Sent' || q.status === 'Draft').length;
   const isConverted = (s: string) => s === 'Converted' || s === 'Accepted';
-  const acceptedCount = quotationsData.filter(q => isConverted(q.status)).length;
-  const totalCompleted = quotationsData.filter(q => isConverted(q.status) || q.status === 'Rejected').length;
+  const acceptedCount = rangedQuotations.filter(q => isConverted(q.status)).length;
+  const totalCompleted = rangedQuotations.filter(q => isConverted(q.status) || q.status === 'Rejected').length;
   const winRate = totalCompleted > 0 ? Math.round((acceptedCount / totalCompleted) * 100) : 0;
 
   // The quotation fields live in exactly one place: rendered by the always-visible
@@ -488,7 +488,7 @@ export function QuotationsPage() {
     <div className="p-4 lg:p-6 bg-grid min-h-full">
       <PageHeader title="Quotations" description="Manage price quotations for company enquiries" actions={<div className="flex items-center gap-2">{dbError && <Badge variant="error">DB Disconnected</Badge>}{loading && <Badge variant="neutral">Syncing...</Badge>}<DateSelector /></div>} />
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
-        <StatCard label="Total Quotations" value={quotationsData.length.toString()} icon={<FileText size={20} />} accent="brand" />
+        <StatCard label="Total Quotations" value={rangedQuotations.length.toString()} icon={<FileText size={20} />} accent="brand" />
         <StatCard label="Pending" value={pendingCount.toString()} icon={<FileText size={20} />} accent="warning" />
         <StatCard label="Converted" value={acceptedCount.toString()} icon={<FileText size={20} />} trend="12%" trendUp accent="success" />
         <StatCard label="Win Rate" value={`${winRate}%`} icon={<FileText size={20} />} trend="3%" trendUp accent="accent" />
@@ -573,7 +573,7 @@ export function SalesOrdersPage() {
   const [deleteTarget, setDeleteTarget] = useState<SalesOrderRow | null>(null);
   const [deliveryTarget, setDeliveryTarget] = useState<SalesOrderRow | null>(null);
   const [ordersData, setOrdersData] = useState<SalesOrderRow[]>([]);
-  // Global date filter (order date) drives the table.
+  // Global date filter (order date) drives the table and the stat cards.
   const { inRange: inOrderDateRange } = useGlobalDateFilter();
   const rangedOrders = useMemo(
     () => ordersData.filter((o: any) => inOrderDateRange(o.orderDate)),
@@ -801,15 +801,15 @@ export function SalesOrdersPage() {
     },
   ];
 
-  const inProduction = ordersData.filter(o => o.status === 'In Production').length;
-  const deliveredCount = ordersData.filter(o => o.status === 'Delivered').length;
-  const totalValue = ordersData.reduce((acc, o) => acc + o.value, 0);
+  const inProduction = rangedOrders.filter(o => o.status === 'In Production').length;
+  const deliveredCount = rangedOrders.filter(o => o.status === 'Delivered').length;
+  const totalValue = rangedOrders.reduce((acc, o) => acc + o.value, 0);
 
   return (
     <div className="p-4 lg:p-6 bg-grid min-h-full">
       <PageHeader title="Sales Orders" description="Track confirmed company orders" actions={<div className="flex items-center gap-2">{dbError && <Badge variant="error">DB Disconnected</Badge>}{loading && <Badge variant="neutral">Syncing...</Badge>}<DateSelector /></div>} />
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
-        <StatCard label="Total Orders" value={ordersData.length.toString()} icon={<FileText size={20} />} accent="brand" />
+        <StatCard label="Total Orders" value={rangedOrders.length.toString()} icon={<FileText size={20} />} accent="brand" />
         <StatCard label="In Production" value={inProduction.toString()} icon={<FileText size={20} />} accent="accent" />
         <StatCard label="Delivered" value={deliveredCount.toString()} icon={<FileText size={20} />} trend="100%" trendUp accent="success" />
         <StatCard label="Order Value" value={`₹${(totalValue / 100000).toFixed(1)}L`} icon={<FileText size={20} />} accent="navy" />

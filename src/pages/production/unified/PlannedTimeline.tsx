@@ -542,9 +542,9 @@ export function PlannedTimeline() {
 
       <div ref={scrollRef} className="bg-white rounded-xl border border-slate-200 overflow-auto max-h-[68vh]">
         <div className="grid min-w-[760px]" style={{ gridTemplateColumns: `64px repeat(${days.length}, minmax(0, 1fr))` }}>
-          <div className="sticky top-0 z-20 bg-white border-b border-slate-200" />
+          <div className="sticky top-0 z-30 bg-white border-b border-slate-200" style={{ backgroundColor: '#ffffff' }} />
           {days.map(d => (
-            <div key={d} className={`sticky top-0 z-20 border-b border-l border-slate-200 px-2 py-2 text-center text-xs font-semibold ${d === today ? 'bg-blue-50 text-blue-700' : 'bg-white text-slate-600'}`}>{dayLabel(d)}</div>
+            <div key={d} className={`sticky top-0 z-30 border-b border-l border-slate-200 px-2 py-2 text-center text-xs font-semibold ${d === today ? 'bg-blue-50 text-blue-700' : 'bg-white text-slate-600'}`} style={{ backgroundColor: d === today ? '#eff6ff' : '#ffffff' }}>{dayLabel(d)}</div>
           ))}
           <div className="relative" style={{ height: 24 * HOUR_PX }}>
             {Array.from({ length: 24 }, (_, h) => (

@@ -2,6 +2,8 @@ import { workOrderTitle } from '@/lib/workOrderFormat';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Upload } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { useGlobalDateFilter } from '@/contexts/DateRangeContext';
+import { intersectRange } from '@/lib/globalDate';
 import { Badge, Button } from '@/components/ui/Card';
 import { Modal } from '@/components/ui/Modal';
 import { fmtTime24, isMissingTable, toMinutes, ymd } from '@/lib/operationPlans';
@@ -151,9 +153,13 @@ export function ComparisonTimeline() {
     return out.sort((a, b) => (a.plannedStart ?? a.actualStart ?? new Date(0)).getTime() - (b.plannedStart ?? b.actualStart ?? new Date(0)).getTime());
   }, [data.plans, data.jobs, data.woById, data.woByNo]);
 
+  // The top-bar global date range narrows the chosen dates (All Time leaves them unchanged).
+  const { from: gFrom, to: gTo } = useGlobalDateFilter();
+  const effRange = useMemo(() => intersectRange(range.from, range.to, gFrom, gTo), [range, gFrom, gTo]);
+
   const rows = useMemo(() => all.filter(r => {
     // In range when its plan or its run touches the chosen dates.
-    const from = new Date(`${range.from}T00:00:00`).getTime(); const to = new Date(`${range.to}T23:59:59`).getTime();
+    const from = new Date(`${effRange.from}T00:00:00`).getTime(); const to = new Date(`${effRange.to}T23:59:59`).getTime();
     const touches = (a: Date | null, b: Date | null) => !!a && !!b && a.getTime() <= to && b.getTime() >= from;
     if (!touches(r.plannedStart, r.plannedEnd) && !touches(r.actualStart, r.actualEnd ?? new Date())) return false;
     if (machine !== 'All' && r.machine !== machine) return false;
@@ -165,7 +171,7 @@ export function ComparisonTimeline() {
     if (status === 'Unplanned' && r.group !== 'Unplanned') return false;
     if (q && !`${r.woNo} ${r.part} ${r.customer} ${r.operation} ${r.machine} ${r.operator}`.toLowerCase().includes(q)) return false;
     return true;
-  }), [all, range, machine, operator, status, q]);
+  }), [all, effRange, machine, operator, status, q]);
 
   const kpi = useMemo(() => {
     const finished = rows.filter(r => ['On time', 'Early', 'Late'].includes(r.group));
@@ -183,17 +189,6 @@ export function ComparisonTimeline() {
       late: rows.filter(r => r.group === 'Late').length,
       unplanned: rows.filter(r => r.group === 'Unplanned').length,
     };
-  }, [rows]);
-
-  const byMachine = useMemo(() => {
-    const m = new Map<string, { machine: string; ops: number; planned: number; actual: number; late: number }>();
-    for (const r of rows) {
-      const k = r.machine || '—';
-      const e = m.get(k) ?? { machine: k, ops: 0, planned: 0, actual: 0, late: 0 };
-      e.ops += 1; e.planned += r.plannedMin; e.actual += r.actualMin; if (['Late', 'Overdue'].includes(r.group)) e.late += 1;
-      m.set(k, e);
-    }
-    return [...m.values()].sort((a, b) => b.planned - a.planned);
   }, [rows]);
 
   const visibleKeys = useMemo(() => new Set(rows.map(r => r.key)), [rows]);
@@ -332,29 +327,6 @@ export function ComparisonTimeline() {
               {!data.loading && rows.length === 0 && (
                 <tr><td colSpan={10} className="p-8 text-center text-slate-500">{data.missing ? 'The planning table is not provisioned yet (run migration 20261009000000_operation_plans.sql).' : 'Nothing to compare in these dates. Plan an operation, start its job card in Production, or widen the dates.'}</td></tr>
               )}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {byMachine.length > 0 && (
-        <div className="bg-white rounded-xl border border-slate-200 overflow-auto" data-testid="comparison-machines">
-          <p className="px-3 pt-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">By machine</p>
-          <table className="w-full text-xs">
-            <thead className="text-slate-500"><tr>
-              <th className="p-2 text-left">Machine</th><th className="p-2 text-right">Operations</th><th className="p-2 text-right">Planned</th><th className="p-2 text-right">Actual</th><th className="p-2 text-right">Actual vs plan</th><th className="p-2 text-right">Late / overdue</th>
-            </tr></thead>
-            <tbody>
-              {byMachine.map(m => (
-                <tr key={m.machine} className="border-t">
-                  <td className="p-2 font-semibold text-slate-800">{m.machine}</td>
-                  <td className="p-2 text-right">{m.ops}</td>
-                  <td className="p-2 text-right">{m.planned ? dur(m.planned) : '—'}</td>
-                  <td className="p-2 text-right">{m.actual ? dur(m.actual) : '—'}</td>
-                  <td className="p-2 text-right">{m.planned > 0 ? `${Math.round((m.actual / m.planned) * 100)}%` : '—'}</td>
-                  <td className={`p-2 text-right ${m.late ? 'text-red-600 font-semibold' : ''}`}>{m.late}</td>
-                </tr>
-              ))}
             </tbody>
           </table>
         </div>
