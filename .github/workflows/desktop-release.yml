@@ -1,4 +1,4 @@
-# Business Intelligence — automatic Windows desktop release.
+# Argus Business Intelligence — automatic Windows desktop release.
 #
 # Every push to main builds the signed installer and publishes it as a new GitHub Release, and refreshes
 # public/downloads/latest.json, so installed desktop apps offer the update by themselves (Settings > Updates).
@@ -109,9 +109,9 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: v${{ env.VERSION }}
-          releaseName: Business Intelligence v${{ env.VERSION }}
+          releaseName: Argus Business Intelligence v${{ env.VERSION }}
           releaseBody: |
-            Business Intelligence v${{ env.VERSION }}: the latest improvements and fixes.
+            Argus Business Intelligence v${{ env.VERSION }}: the latest improvements and fixes.
             Installed copies offer this update by themselves (Settings > Updates > Check for Updates).
           releaseDraft: false
           prerelease: false

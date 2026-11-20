@@ -29,8 +29,8 @@ async function main() {
       body: JSON.stringify({
         tag_name: TAG,
         target_commitish: 'main',
-        name: `Business Intelligence v${VERSION}`,
-        body: `## Business Intelligence v${VERSION}
+        name: `Argus Business Intelligence v${VERSION}`,
+        body: `## Argus Business Intelligence v${VERSION}
 
 - Bank Entry: edit Type and Company directly in the bank table
 - Cleaner statement upload box and simpler Bank Entry toolbar
@@ -115,17 +115,17 @@ async function main() {
   // Upload installer as both filenames so older and newer links work
   const installerUrl = await uploadAsset('business-intelligence-setup.exe', installerBuf, 'application/vnd.microsoft.portable-executable');
   await uploadAsset('cncforge-erp-setup.exe', installerBuf, 'application/vnd.microsoft.portable-executable');
-  await uploadAsset(`Business Intelligence_${VERSION}_x64-setup.exe`, installerBuf, 'application/vnd.microsoft.portable-executable');
+  await uploadAsset(`Argus Business Intelligence_${VERSION}_x64-setup.exe`, installerBuf, 'application/vnd.microsoft.portable-executable');
 
   // Upload .sig
   await uploadAsset('business-intelligence-setup.exe.sig', Buffer.from(sigText, 'utf8'), 'text/plain');
   await uploadAsset('cncforge-erp-setup.exe.sig', Buffer.from(sigText, 'utf8'), 'text/plain');
-  await uploadAsset(`Business Intelligence_${VERSION}_x64-setup.exe.sig`, Buffer.from(sigText, 'utf8'), 'text/plain');
+  await uploadAsset(`Argus Business Intelligence_${VERSION}_x64-setup.exe.sig`, Buffer.from(sigText, 'utf8'), 'text/plain');
 
   // Generate latest.json
   const latestJson = {
     version: VERSION,
-    notes: `Business Intelligence v${VERSION} update: Bank Entry inline editing of Type and Company, cleaner statement upload and toolbar.`,
+    notes: `Argus Business Intelligence v${VERSION} update: Bank Entry inline editing of Type and Company, cleaner statement upload and toolbar.`,
     pub_date: new Date().toISOString(),
     platforms: {
       'windows-x86_64': {
