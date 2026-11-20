@@ -725,7 +725,7 @@ const partnerTagsOf = ctx => (ctx && ctx.partnerCompanyId ? { partnerCompanyId: 
 app.use((req, res, next) => {
   if (!req.ctx || !req.ctx.partnerTeam || !req.path.startsWith('/api/')) return next();
   const p = req.path;
-  if (['/api/health', '/api/config', '/api/me'].includes(p) || /^\/api\/(bi-chat|adviser|adviser-mail|quote-confirm|quote)\//.test(p)) return next();   // these check the sign-in themselves
+  if (['/api/health', '/api/config', '/api/me'].includes(p) || /^\/api\/(bi-chat|adviser|adviser-mail|quote-confirm|quote|digital-mail|digital-pay|mail-integration)\//.test(p) || p === '/api/digital-order-mail') return next();   // these check the sign-in themselves
   if (req.method === 'GET' && /^\/api\/(products|categories|catalog|settings\/invoice-profile)(\/|$)/.test(p)) return next();
   const m = p.match(/^\/api\/(orders|quotations|invoices)(?:\/([^/]+)(\/.*)?)?$/);
   if (m) {
@@ -1236,7 +1236,15 @@ async function rzpCall(cfg, method, path, body) {
   return { ok: resp.ok, status: resp.status, j };
 }
 /* a payment link for an amount: the company's Razorpay if linked, otherwise its fixed link from Digital Store setup */
-async function getPayLink({ biCompanyId, amount, ref, name, email, phone, desc, req }) {
+/* every Razorpay link made for a quotation / invoice is noted, so a payment on it can be put on that document (syncRzpPayments) */
+function notePayLink(docRef, linkId, url, amount) {
+  if (!docRef || !docRef.id || !linkId) return;
+  db.payLinks = db.payLinks || [];
+  db.payLinks.unshift({ id: linkId, url, type: docRef.type === 'order' ? 'order' : 'quotation', docId: docRef.id, companyId: docRef.companyId || null, amount: r2(amount), createdAt: new Date().toISOString() });
+  if (db.payLinks.length > 5000) db.payLinks.length = 5000;
+  save();
+}
+async function getPayLink({ biCompanyId, amount, ref, name, email, phone, desc, req, docRef }) {
   const amt = r2(amount);
   const manual = await payLinkFor(biCompanyId, amt, ref);
   const cfg = await loadPayCfg(biCompanyId);
@@ -1250,10 +1258,82 @@ async function getPayLink({ biCompanyId, amount, ref, name, email, phone, desc, 
   if (/^https:\/\//.test(base)) { body.callback_url = base; body.callback_method = 'get'; }
   try {
     const out = await rzpCall(cfg, 'POST', '/payment_links', body);
-    if (out.ok && out.j.short_url) return { link: out.j.short_url, note: manual.note, source: 'razorpay', error: '' };
+    if (out.ok && out.j.short_url) { notePayLink(docRef, out.j.id, out.j.short_url, amt); return { link: out.j.short_url, linkId: out.j.id, note: manual.note, source: 'razorpay', error: '' }; }
     return { link: manual.link, note: manual.note, source: manual.link ? 'manual' : '', error: rzpProblem(out.j, out.status) };
   } catch (e) { return { link: manual.link, note: manual.note, source: manual.link ? 'manual' : '', error: 'Razorpay could not be reached.' }; }
 }
+/* Payments made on the Razorpay links: read from Razorpay and recorded on the quotation / invoice they were made for
+   (mode "Razorpay", reference = the Razorpay payment id, so each payment is recorded once). At most once a minute per company. */
+const rzpSyncAt = {};
+async function syncRzpPayments(biCompanyId, force) {
+  if (!SB.enabled || !biCompanyId) return null;
+  if (!force && Date.now() - (rzpSyncAt[biCompanyId] || 0) < 60000) return null;
+  rzpSyncAt[biCompanyId] = Date.now();
+  const cfg = await loadPayCfg(biCompanyId);
+  if (!cfg) return { configured: false, links: [] };
+  let out;
+  try { out = await rzpCall(cfg, 'GET', '/payment_links'); } catch { return { configured: true, links: [], error: 'Razorpay could not be reached.' }; }
+  if (!out.ok) return { configured: true, links: [], error: rzpProblem(out.j, out.status) };
+  const links = Array.isArray(out.j.payment_links) ? out.j.payment_links : [];
+  let changed = false;
+  for (const l of links) {
+    const reg = (db.payLinks || []).find(x => x.id === l.id);
+    if (!reg || !Array.isArray(l.payments)) continue;
+    let doc = reg.type === 'order' ? (db.orders || []).find(o => o.id === reg.docId) : (db.quotations || []).find(q => q.id === reg.docId);
+    if (doc && reg.type === 'quotation' && doc.orderId) doc = (db.orders || []).find(o => o.id === doc.orderId) || doc;   // the invoice lives on the order
+    if (!doc) continue;
+    for (const pm of l.payments) {
+      if (pm.status !== 'captured' || !pm.payment_id) continue;
+      doc.payments = doc.payments || [];
+      if (doc.payments.some(x => x.utr === pm.payment_id)) continue;
+      doc.payments.push({
+        id: uid('PAY-', doc.payments), amount: r2((Number(pm.amount) || 0) / 100),
+        date: new Date((Number(pm.created_at) || Date.now() / 1000) * 1000).toISOString().slice(0, 10),
+        mode: 'Razorpay' + (pm.method ? ' (' + String(pm.method).toUpperCase() + ')' : ''), utr: pm.payment_id,
+        note: 'Paid online with the payment link ' + (l.short_url || ''), proof: '', recordedBy: 'Razorpay', recordedAt: new Date().toISOString()
+      });
+      changed = true;
+    }
+  }
+  if (changed) save();
+  return { configured: true, links };
+}
+/* the Retail lists call this so online payments show up without anyone recording them */
+async function syncRzpForRetail(retailCompanyId) {
+  if (!retailCompanyId || !SB.enabled) return;
+  try { const co = await biCompanyOf(retailCompanyId); if (co) await syncRzpPayments(co.id); } catch {}
+}
+/* Business Intelligence > Digital Store > Payment: every payment link and what was paid on it */
+app.post('/api/digital-pay/payments', async (req, res) => {
+  try {
+    const a = await mailAdminFor(req, res); if (!a) return;
+    const r = await syncRzpPayments(a.companyId, true);
+    if (!r || !r.configured) return res.json({ ok: true, configured: false, rows: [], summary: null });
+    if (r.error) return res.status(502).json({ ok: false, error: r.error });
+    const docNo = (reg) => {
+      if (!reg) return '';
+      if (reg.type === 'order') { const o = (db.orders || []).find(x => x.id === reg.docId); return o ? (o.invoiceNo || o.id) : reg.docId; }
+      const q = (db.quotations || []).find(x => x.id === reg.docId);
+      return q ? (q.invoiceNo ? q.invoiceNo + ' (quotation ' + q.id + ')' : 'Quotation ' + q.id) : reg.docId;
+    };
+    const rows = r.links.map(l => {
+      const reg = (db.payLinks || []).find(x => x.id === l.id);
+      const paid = (Array.isArray(l.payments) ? l.payments : []).filter(p => p.status === 'captured');
+      return {
+        id: l.id, url: l.short_url, status: l.status, amount: r2((Number(l.amount) || 0) / 100), amountPaid: r2((Number(l.amount_paid) || 0) / 100),
+        document: docNo(reg) || l.description || l.reference_id || '', customer: (l.customer && (l.customer.name || l.customer.email || l.customer.contact)) || '',
+        createdAt: l.created_at ? new Date(l.created_at * 1000).toISOString() : null,
+        payments: paid.map(p => ({ id: p.payment_id, amount: r2((Number(p.amount) || 0) / 100), method: p.method || '', at: p.created_at ? new Date(p.created_at * 1000).toISOString() : null })),
+      };
+    }).sort((x, y) => String(y.createdAt || '').localeCompare(String(x.createdAt || '')));
+    const paidRows = rows.filter(x => x.amountPaid > 0);
+    res.json({ ok: true, configured: true, rows, summary: {
+      links: rows.length, paid: paidRows.length, received: r2(paidRows.reduce((s2, x) => s2 + x.amountPaid, 0)),
+      waiting: rows.filter(x => x.status === 'created' || x.status === 'partially_paid').length,
+      waitingAmount: r2(rows.filter(x => x.status === 'created' || x.status === 'partially_paid').reduce((s2, x) => s2 + (x.amount - x.amountPaid), 0)),
+    } });
+  } catch (e) { res.status(500).json({ ok: false, error: String(e.message || e) }); }
+});
 app.post('/api/digital-pay/status', async (req, res) => {
   try {
     const a = await mailAdminFor(req, res); if (!a) return;
@@ -1373,7 +1453,7 @@ const publicBase = (req) => (process.env.PUBLIC_BASE_URL || ERP_API_BASE_URL || 
 /* the company (Business Intelligence side) a Retail company belongs to: its mail account and payment link live there */
 async function biCompanyOf(retailId) {
   try {
-    const { data } = await SB.admin.from('companies').select('id, company_name, email, phone').eq('code', String(retailId)).maybeSingle();
+    const { data } = await SB.admin.from('companies').select('id, company_name, email, phone, code, address, city, state, pin').eq('code', String(retailId)).maybeSingle();
     return data || null;
   } catch { return null; }
 }
@@ -1404,8 +1484,8 @@ function docMailHtml({ kind, companyName, customer, docNo, items, t, link, note,
   const action = isInv
     ? (link ? `<p style="margin:22px 0"><a href="${escHtml(link)}" style="background:#ea580c;color:#fff;text-decoration:none;font-weight:700;padding:13px 26px;border-radius:10px;display:inline-block">Pay ${escHtml(inr(t.total))} now</a></p>`
             : `<p style="margin:18px 0;color:#444">We will share the payment details with you shortly.</p>`)
-    : `<p style="margin:22px 0"><a href="${escHtml(confirmUrl)}" style="background:#16a34a;color:#fff;text-decoration:none;font-weight:700;padding:13px 26px;border-radius:10px;display:inline-block">Confirm this quotation</a></p>
-       <p style="margin:0;font-size:12px;color:#777">When you confirm, your tax invoice and the payment link are e-mailed to you automatically.</p>`;
+    : `<p style="margin:22px 0"><a href="${escHtml(confirmUrl)}" style="background:#16a34a;color:#fff;text-decoration:none;font-weight:700;padding:13px 26px;border-radius:10px;display:inline-block">Confirm this quotation</a>${link ? ` &nbsp; <a href="${escHtml(link)}" style="background:#ea580c;color:#fff;text-decoration:none;font-weight:700;padding:13px 26px;border-radius:10px;display:inline-block">Pay ${escHtml(inr(t.total))} now</a>` : ''}</p>
+       <p style="margin:0;font-size:12px;color:#777">When you confirm, your tax invoice is e-mailed to you automatically.${link ? ' If you pay now, the payment is adjusted against that invoice.' : ' The payment link comes with it.'}</p>`;
   return `<div style="font-family:Segoe UI,Arial,sans-serif;max-width:600px;margin:auto;color:#1f2937">
     <h2 style="margin:0 0 4px;color:${accent}">${escHtml(companyName)}</h2>
     <p style="margin:0 0 6px;color:#555">Dear ${escHtml(customer)},</p>
@@ -1419,8 +1499,112 @@ function docMailHtml({ kind, companyName, customer, docNo, items, t, link, note,
       <tr><td colspan="3" align="right" style="padding:10px"><b>${isInv ? 'Amount payable' : 'Quotation total'}</b></td><td align="right" style="padding:10px;font-size:17px;color:${accent}"><b>${escHtml(inr(t.total))}</b></td></tr>
     </table>
     ${note ? `<p style="margin:14px 0;color:#444">${escHtml(note)}</p>` : ''}${action}
+    <p style="margin:14px 0 0;font-size:12px;color:#777">The ${isInv ? 'tax invoice' : 'quotation'} is attached as a PDF.</p>
     <p style="margin-top:24px;font-size:12px;color:#888">${escHtml(companyName)}${contact && contact.phone ? ' &middot; ' + escHtml(contact.phone) : ''}${contact && contact.email ? ' &middot; ' + escHtml(contact.email) : ''}</p>
   </div>`;
+}
+/* The quotation / tax invoice as a PDF (attached to the e-mail). Company details: the Retail invoice profile when one was saved,
+   otherwise the company record in Business Intelligence. Standard PDF fonts have no rupee sign, so amounts read "Rs." */
+function docPdf({ kind, doc, co, items, t, link, paid }) {
+  const { jsPDF } = require('jspdf');
+  const autoTable = require('jspdf-autotable').default;
+  const isInv = kind === 'invoice';
+  const saved = (db.settings && db.settings[doc.companyId] && db.settings[doc.companyId].invoiceProfile) || null;
+  const pf = saved || {};
+  const rs = (n) => 'Rs. ' + Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const clean = (v) => String(v == null ? '' : v).replace(/\u20B9/g, 'Rs.').replace(/[^\x20-\x7E\n\u00A0-\u00FF\u2122]/g, '');
+  const pdf = new jsPDF({ unit: 'mm', format: 'a4' });
+  const W = 210, M = 14;
+  const accent = isInv ? [3, 105, 161] : [234, 88, 12];
+  const coName = clean(pf.companyName || (co && co.company_name) || 'Our company');
+  let textX = M;
+  if (typeof pf.logo === 'string' && /^data:image\/(png|jpe?g);base64,/i.test(pf.logo)) {
+    try { pdf.addImage(pf.logo, /png/i.test(pf.logo.slice(0, 20)) ? 'PNG' : 'JPEG', M, 10, 22, 22); textX = M + 26; } catch {}
+  }
+  let y = 16;
+  pdf.setFont('helvetica', 'bold'); pdf.setFontSize(15); pdf.setTextColor(...accent);
+  pdf.text(pdf.splitTextToSize(coName, 110)[0], textX, y);
+  pdf.setFont('helvetica', 'normal'); pdf.setFontSize(8.5); pdf.setTextColor(70);
+  const addr = [pf.regAddress || (co && co.address), [pf.city || (co && co.city), pf.state || (co && co.state), pf.pin || (co && co.pin)].filter(Boolean).join(', ')].filter(Boolean).map(clean);
+  const gst = pf.gstin || (co && co.code);
+  const ids = [gst ? 'GSTIN: ' + clean(gst) : '', pf.pan ? 'PAN: ' + clean(pf.pan) : ''].filter(Boolean).join('   ');
+  const contact = [pf.phone || (co && co.phone), pf.email || (co && co.email)].filter(Boolean).map(clean).join('  |  ');
+  for (const line of [...addr, ids, contact].filter(Boolean)) { y += 4.2; pdf.text(pdf.splitTextToSize(line, 110)[0], textX, y); }
+  // title block on the right
+  pdf.setFont('helvetica', 'bold'); pdf.setFontSize(16); pdf.setTextColor(...accent);
+  pdf.text(isInv ? 'TAX INVOICE' : 'QUOTATION', W - M, 16, { align: 'right' });
+  pdf.setFontSize(9); pdf.setTextColor(40); pdf.setFont('helvetica', 'normal');
+  const docNo = isInv ? doc.invoiceNo : doc.id;
+  const dt = (v) => { const d = v ? new Date(String(v).replace(' ', 'T')) : new Date(); return isNaN(d) ? String(v) : d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }); };
+  const meta = [['No.', docNo], ['Date', dt(isInv ? (doc.invoiceDate || doc.date) : doc.date)]];
+  if (isInv && doc.invoiceDueDate) meta.push(['Due', dt(doc.invoiceDueDate)]);
+  if (doc.poRef) meta.push(['PO Ref', doc.poRef]);
+  meta.forEach(([k, v], i) => { pdf.text(`${k}: ${clean(v)}`, W - M, 22 + i * 4.5, { align: 'right' }); });
+  y = Math.max(y, 22 + meta.length * 4.5) + 5;
+  pdf.setDrawColor(...accent); pdf.setLineWidth(0.6); pdf.line(M, y, W - M, y); y += 6;
+  // the customer
+  pdf.setFont('helvetica', 'bold'); pdf.setFontSize(9); pdf.setTextColor(...accent); pdf.text(isInv ? 'BILL TO' : 'PREPARED FOR', M, y);
+  pdf.setFont('helvetica', 'normal'); pdf.setTextColor(30);
+  const who = [doc.companyName, doc.contact || doc.customer, doc.address, [doc.city, doc.state, doc.pin].filter(Boolean).join(', '),
+    [doc.mobile ? 'Ph: ' + doc.mobile : '', doc.email ? 'E-mail: ' + doc.email : ''].filter(Boolean).join('   ')].filter(Boolean).map(clean);
+  for (const line of who) for (const part of pdf.splitTextToSize(line, 120)) { y += 4.4; pdf.text(part, M, y); }
+  y += 5;
+  autoTable(pdf, {
+    startY: y, margin: { left: M, right: M }, theme: 'grid',
+    head: [['#', 'Item', 'HSN', 'Qty', 'Rate', 'Amount']],
+    body: items.map((it, i) => [String(i + 1), clean(it.name) + (it.sku ? '\n' + clean(it.sku) : ''), clean(it.hsn || ''), `${Number(it.qty) || 1} ${clean(it.uom || '')}`.trim(), rs(it.price), rs((Number(it.price) || 0) * (Number(it.qty) || 1))]),
+    styles: { fontSize: 8.5, cellPadding: 2, textColor: 30, lineColor: 220 },
+    headStyles: { fillColor: accent, textColor: 255, fontStyle: 'bold' },
+    columnStyles: { 0: { cellWidth: 8 }, 2: { cellWidth: 20 }, 3: { cellWidth: 20, halign: 'right' }, 4: { cellWidth: 28, halign: 'right' }, 5: { cellWidth: 30, halign: 'right' } },
+  });
+  y = pdf.lastAutoTable.finalY + 6;
+  const need = (h) => { if (y + h > 280) { pdf.addPage(); y = 18; } };
+  const tot = [['Subtotal', rs(t.subtotal)]];
+  if (t.discount.amount > 0) tot.push([t.discount.type === 'percent' ? `Discount (${t.discount.value}%)` : 'Discount', '- ' + rs(t.discount.amount)]);
+  tot.push(['Taxable value', rs(t.taxable)], ['GST (18%)', rs(t.gst)], [isInv ? 'Amount payable' : 'Quotation total', rs(t.total)]);
+  if (paid > 0) tot.push(['Already paid', '- ' + rs(paid)], ['Balance due', rs(Math.max(0, t.total - paid))]);
+  need(tot.length * 5.2 + 4);
+  tot.forEach(([k, v], i) => {
+    const strong = /payable|total|Balance/.test(k);
+    pdf.setFont('helvetica', strong ? 'bold' : 'normal'); pdf.setFontSize(strong ? 10 : 9); pdf.setTextColor(...(strong ? accent : [60, 60, 60]));
+    pdf.text(k, W - M - 45, y + i * 5.2, { align: 'right' }); pdf.text(v, W - M, y + i * 5.2, { align: 'right' });
+  });
+  y += tot.length * 5.2 + 4;
+  if (link && !(paid >= t.total)) {
+    need(16);
+    pdf.setFillColor(255, 247, 237); pdf.setDrawColor(...accent); pdf.roundedRect(M, y, W - 2 * M, 12, 2, 2, 'FD');
+    pdf.setFont('helvetica', 'bold'); pdf.setFontSize(9.5); pdf.setTextColor(...accent);
+    pdf.text('Pay online:', M + 3, y + 7.6);
+    pdf.setTextColor(29, 78, 216); pdf.textWithLink(link, M + 24, y + 7.6, { url: link });
+    y += 17;
+  }
+  if (saved && (pf.bankName || pf.accNo)) {
+    need(24);
+    pdf.setFont('helvetica', 'bold'); pdf.setFontSize(9); pdf.setTextColor(...accent); pdf.text('BANK DETAILS', M, y);
+    pdf.setFont('helvetica', 'normal'); pdf.setTextColor(50);
+    [pf.accName && 'A/c name: ' + pf.accName, pf.bankName && 'Bank: ' + pf.bankName + (pf.branch ? ', ' + pf.branch : ''), pf.accNo && 'A/c no.: ' + pf.accNo + (pf.ifsc ? '   IFSC: ' + pf.ifsc : ''), pf.upiId && 'UPI: ' + pf.upiId]
+      .filter(Boolean).forEach((l2) => { y += 4.3; pdf.text(clean(l2), M, y); });
+    y += 6;
+  }
+  const terms = clean(isInv ? pf.invoiceTerms : pf.quotationTerms);
+  if (saved && terms) {
+    pdf.setFontSize(8);
+    const lines = pdf.splitTextToSize(terms, W - 2 * M);
+    need(8 + lines.length * 4);
+    pdf.setFont('helvetica', 'bold'); pdf.setFontSize(9); pdf.setTextColor(...accent); pdf.text('TERMS', M, y);
+    pdf.setFont('helvetica', 'normal'); pdf.setFontSize(8); pdf.setTextColor(70); pdf.text(lines, M, y + 4.5);
+    y += 6 + lines.length * 3.8;
+  }
+  need(20);
+  pdf.setFont('helvetica', 'normal'); pdf.setFontSize(8.5); pdf.setTextColor(60);
+  pdf.text('For ' + coName, W - M, y + 4, { align: 'right' });
+  pdf.text(clean(pf.signatoryName || 'Authorised Signatory'), W - M, y + 15, { align: 'right' });
+  const pages = pdf.getNumberOfPages();
+  for (let i = 1; i <= pages; i++) {
+    pdf.setPage(i); pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7); pdf.setTextColor(150);
+    pdf.text('This is a computer-generated ' + (isInv ? 'invoice' : 'quotation') + '.   Powered by ARGUS CNC\u2122', W / 2, 291, { align: 'center' });
+  }
+  return { content: Buffer.from(pdf.output('arraybuffer')), filename: `${isInv ? 'Invoice' : 'Quotation'}-${String(docNo).replace(/[^\w.-]+/g, '-')}.pdf`, contentType: 'application/pdf' };
 }
 /* sends the quotation / invoice e-mail from the company's own linked account; never throws */
 async function sendDocMail({ kind, doc, req }) {
@@ -1433,19 +1617,29 @@ async function sendDocMail({ kind, doc, req }) {
   const dsc = kind === 'invoice' ? invDiscOf(doc) : { type: doc.discountType, value: doc.discountValue };
   const t = totalsOf(items, dsc.type, dsc.value);
   const docNo = kind === 'invoice' ? doc.invoiceNo : doc.id;
+  // what is already paid (e.g. on the quotation's payment link) is taken off the invoice's payment link
+  const realQ = (db.quotations || []).find(x => x.id === doc.id) || null;
+  const orderId = doc.orderId || (realQ && realQ.orderId);
+  const order = (orderId && (db.orders || []).find(x => x.id === orderId)) || ((db.orders || []).find(x => x.id === doc.id)) || null;
+  const paid = kind === 'invoice' ? paySummary(order || realQ || doc, t.total).paidAmount : 0;
+  const due = r2(Math.max(0, t.total - paid));
+  const docRef = kind === 'invoice' && order ? { type: 'order', id: order.id, companyId: order.companyId } : realQ ? { type: 'quotation', id: realQ.id, companyId: realQ.companyId } : null;
   let link = '', note = '';
-  if (kind === 'invoice') ({ link, note } = await getPayLink({ biCompanyId: co.id, amount: t.total, ref: docNo, name: doc.contact || doc.customer, email: to, phone: doc.mobile, desc: `Invoice ${docNo}`, req }));
+  if (due >= 1) ({ link, note } = await getPayLink({ biCompanyId: co.id, amount: due, ref: docNo, name: doc.contact || doc.customer, email: to, phone: doc.mobile, desc: `${kind === 'invoice' ? 'Invoice' : 'Quotation'} ${docNo}`, req, docRef }));
+  let attachments;
+  try { attachments = [docPdf({ kind, doc, co, items, t, link, paid })]; } catch (e) { console.warn('PDF for the e-mail failed:', e.message); }
   const confirmUrl = kind === 'quotation' ? `${publicBase(req)}/api/quote-confirm/${encodeURIComponent(doc.id)}?t=${quoteSign(doc.id)}` : '';
   const customer = doc.contact || doc.customer || doc.companyName || 'Customer';
-  const html = docMailHtml({ kind, companyName: co.company_name || 'Our company', customer, docNo, items, t, link, note, confirmUrl, contact: co });
+  const html = docMailHtml({ kind, companyName: co.company_name || 'Our company', customer, docNo, items, t, link, note, confirmUrl, contact: co })
+    + (kind === 'invoice' && paid > 0 ? `<p style="font-family:Segoe UI,Arial,sans-serif;max-width:600px;margin:8px auto;color:#047857;font-weight:700">Already received: ${escHtml(inr(paid))}. ${due >= 1 ? 'Balance due: ' + escHtml(inr(due)) : 'Paid in full. Thank you!'}</p>` : '');
   const subject = kind === 'invoice'
     ? `Tax invoice ${docNo} - ${inr(t.total)}${t.discount.amount > 0 ? ' (after your discount)' : ''}`
     : `Quotation ${docNo} - ${inr(t.total)}${t.discount.amount > 0 ? ' (discount applied)' : ''}`;
   try {
-    await mailTransport(cfg).sendMail({ from: `"${cfg.fromName || co.company_name}" <${cfg.user}>`, to, bcc: cfg.bcc || undefined, subject, html,
-      text: `${kind === 'invoice' ? 'Invoice' : 'Quotation'} ${docNo}\nTotal: ${inr(t.total)}${t.discount.amount > 0 ? '\nDiscount: -' + inr(t.discount.amount) : ''}\n${kind === 'invoice' ? (link ? 'Pay here: ' + link : '') : 'Confirm here: ' + confirmUrl}` });
+    await mailTransport(cfg).sendMail({ from: `"${cfg.fromName || co.company_name}" <${cfg.user}>`, to, bcc: cfg.bcc || undefined, subject, html, attachments,
+      text: `${kind === 'invoice' ? 'Invoice' : 'Quotation'} ${docNo}\nTotal: ${inr(t.total)}${t.discount.amount > 0 ? '\nDiscount: -' + inr(t.discount.amount) : ''}${kind === 'quotation' ? '\nConfirm here: ' + confirmUrl : ''}${link ? '\nPay here: ' + link : ''}` });
   } catch (e) { return { ok: false, error: mailProblem(e) }; }
-  return { ok: true, to, paymentLink: !!link };
+  return { ok: true, to, paymentLink: !!link, pdf: !!attachments };
 }
 app.post('/api/quotations/:id/send-mail', scopeCompany, async (req, res) => {
   const q = db.quotations.find(x => x.id === req.params.id);
@@ -1518,12 +1712,17 @@ app.post(['/api/quotations/:id/share', '/api/invoices/:id/share'], scopeCompany,
   const items = Array.isArray(q.items) ? q.items : [];
   const dsc2 = kind === 'invoice' ? invDiscOf(q) : { type: q.discountType, value: q.discountValue };
   const t = totalsOf(items, dsc2.type, dsc2.value);
-  let link = '', err = '';
+  let link = '', err = '', payNow = '';
+  const shareOrder = order || (q.orderId && (db.orders || []).find(x => x.id === q.orderId)) || null;
+  const shareQ = (db.quotations || []).find(x => x.id === q.id) || null;
   if (kind === 'invoice') {
-    const pay = co ? await getPayLink({ biCompanyId: co.id, amount: t.total, ref: q.invoiceNo, name: q.contact || q.customer, email: q.email, phone: q.mobile, desc: `Invoice ${q.invoiceNo}`, req }) : { link: '', error: '' };
+    const due = r2(Math.max(0, t.total - paySummary(shareOrder || shareQ || q, t.total).paidAmount));
+    const docRef = shareOrder ? { type: 'order', id: shareOrder.id, companyId: shareOrder.companyId } : shareQ ? { type: 'quotation', id: shareQ.id, companyId: shareQ.companyId } : null;
+    const pay = co && due >= 1 ? await getPayLink({ biCompanyId: co.id, amount: due, ref: q.invoiceNo, name: q.contact || q.customer, email: q.email, phone: q.mobile, desc: `Invoice ${q.invoiceNo}`, req, docRef }) : { link: '', error: '' };
     link = pay.link; err = pay.error;
   } else {
     link = `${publicBase(req)}/api/quote-confirm/${encodeURIComponent(q.id)}?t=${quoteSign(q.id)}`;
+    if (co && shareQ) { const pay = await getPayLink({ biCompanyId: co.id, amount: t.total, ref: q.id, name: q.contact || q.customer, email: q.email, phone: q.mobile, desc: `Quotation ${q.id}`, req, docRef: { type: 'quotation', id: shareQ.id, companyId: shareQ.companyId } }); payNow = pay.link || ''; }
   }
   const who = q.contact || q.customer || 'Customer';
   const coName = (co && co.company_name) || 'Our company';
@@ -1531,7 +1730,8 @@ app.post(['/api/quotations/:id/share', '/api/invoices/:id/share'], scopeCompany,
     kind === 'invoice' ? `Your tax invoice *${q.invoiceNo}* from ${coName} is ready.` : `Your quotation *${q.id}* from ${coName}.`,
     ...(t.discount.amount > 0 ? [`Special discount: -${inr(t.discount.amount)}${t.discount.type === 'percent' ? ` (${t.discount.value}% off)` : ''}`] : []),
     `${kind === 'invoice' ? 'Amount payable' : 'Total'} (incl. GST): *${inr(t.total)}*`, '',
-    link ? (kind === 'invoice' ? `Pay securely here: ${link}` : `Confirm the quotation here (your invoice and payment link follow): ${link}`) : 'We will share the payment details shortly.'];
+    link ? (kind === 'invoice' ? `Pay securely here: ${link}` : `Confirm the quotation here (your invoice follows): ${link}`) : 'We will share the payment details shortly.',
+    ...(payNow ? ['', `Or pay now: ${payNow}`] : [])];
   const phone = String(b.phone || q.mobile || '').replace(/\D/g, '');
   const wa = `https://wa.me/${phone.length === 10 ? '91' + phone : phone}?text=${encodeURIComponent(lines.join('\n'))}`;
   ok(res, { kind, link, whatsapp: wa, warning: err || undefined });
@@ -2453,7 +2653,8 @@ function removeStoredMedia(url) {
 /* orders — server computes totals, validates + deducts stock atomically.
    Quotation-only (price null) products are rejected: submit an RFQ instead. */
 const FLOW = ['Pending', 'Confirmed', 'Processing', 'Ready for Dispatch', 'Shipped', 'Delivered'];
-app.get('/api/orders', scopeCompany, (req, res) => {
+app.get('/api/orders', scopeCompany, async (req, res) => {
+  if (req.companyId) await syncRzpForRetail(req.companyId);   // online (Razorpay) payments are recorded first
   const cid = req.ctx.role === 'super_admin' ? (req.query.companyId && req.query.companyId !== 'all' ? req.query.companyId : null) : req.companyId;
   let list = db.orders.filter(o => (!cid || o.companyId === cid) && partnerSees(req, o));
   if (req.query.status && req.query.status !== 'all') list = list.filter(o => o.status === req.query.status);
@@ -2478,7 +2679,7 @@ app.get('/api/orders/:id', scopeCompany, async (req, res) => {
           email: o.email || '',
           phone: o.mobile,
           desc: o.invoiceNo ? `Invoice ${o.invoiceNo}` : `Order ${o.id}`,
-          req
+          req, docRef: { type: 'order', id: o.id, companyId: o.companyId }
         });
         if (pay.link) o.payUrl = pay.link;
       }
@@ -2565,7 +2766,7 @@ app.post('/api/orders', scopeCompany, async (req, res) => {
         email: order.email || '',
         phone: mobile,
         desc: invoiceNo ? `Invoice ${invoiceNo}` : `Order ${order.id}`,
-        req
+        req, docRef: { type: 'order', id: order.id, companyId: order.companyId }
       });
       payUrl = p.link || '';
     }
@@ -2677,7 +2878,8 @@ app.delete('/api/orders/:id/payments/:pid', scopeCompany, (req, res) => removePa
 app.post('/api/quotations/:id/payments', scopeCompany, (req, res) => recordPayment(req, res, db.quotations.find(x => x.id === req.params.id), 'Quotation'));
 app.delete('/api/quotations/:id/payments/:pid', scopeCompany, (req, res) => removePayment(req, res, db.quotations.find(x => x.id === req.params.id), 'Quotation'));
 
-app.get('/api/invoices', scopeCompany, (req, res) => {
+app.get('/api/invoices', scopeCompany, async (req, res) => {
+  if (req.companyId) await syncRzpForRetail(req.companyId);   // online (Razorpay) payments are recorded first
   const cid = req.ctx.role === 'super_admin' ? (req.query.companyId && req.query.companyId !== 'all' ? req.query.companyId : null) : req.companyId;
 
   // Gather orders with invoiceNo
@@ -2814,7 +3016,8 @@ app.patch('/api/orders/:id/status', scopeCompany, async (req, res) => {
 
 /* quotations (RFQ) — maps to the ERP Quotations module; supports single & multi-item quotations */
 const QFLOW = ['Pending', 'Quoted', 'Accepted', 'Rejected', 'Cancelled'];
-app.get('/api/quotations', scopeCompany, (req, res) => {
+app.get('/api/quotations', scopeCompany, async (req, res) => {
+  if (req.companyId) await syncRzpForRetail(req.companyId);   // online (Razorpay) payments are recorded first
   const cid = req.ctx.role === 'super_admin' ? (req.query.companyId && req.query.companyId !== 'all' ? req.query.companyId : null) : req.companyId;
   let list = db.quotations.filter(q => (!cid || q.companyId === cid) && partnerSees(req, q));
   if (req.ctx.role === 'sales_user' && req.query.mine === '1') list = list.filter(q => q.requestedBy === req.ctx.name);
@@ -3016,6 +3219,7 @@ function raiseQuotationInvoice(q, actor, discountOverride) {
       date: new Date().toISOString().slice(0, 16).replace('T', ' '),
       salesUser: actor.name,
       partnerRole: actor.role,
+      payments: Array.isArray(q.payments) ? q.payments.map(x => ({ ...x })) : [],
       ...(q.partnerCompanyId ? { partnerCompanyId: q.partnerCompanyId, partnerCompanyName: q.partnerCompanyName || '', partnerType: q.partnerType || null, placedByEmail: q.placedByEmail || '' } : partnerTagsOf(actor)),
       customer: q.contact || q.requestedBy || q.companyName || 'Industrial Client',
       contact: q.contact || q.requestedBy || '',

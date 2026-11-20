@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, ExternalLink, Loader2, Trash2 } from 'lucide-react';
+import { CheckCircle2, ExternalLink, Loader2, RefreshCw, Trash2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/Card';
@@ -56,7 +56,7 @@ export function DigitalStorePayment() {
   const form = !info || changing;
 
   return (
-    <div className="space-y-4 max-w-3xl">
+    <div className="space-y-4 max-w-5xl">
       <p className="text-sm text-slate-600">Payment method: <b>Razorpay</b>. After a customer orders in the Digital Store they are taken straight to a payment page for the exact amount. The same account makes the <b>Pay now</b> links you share from quotations and invoices (WhatsApp or e-mail). The money goes to <b>this company's own Razorpay account</b>.</p>
       {msg && <div className={`text-sm rounded-lg px-3 py-2 border ${msg.ok ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-700'}`}>{msg.text}</div>}
 
@@ -73,6 +73,8 @@ export function DigitalStorePayment() {
           </div>
         </div>
       )}
+
+      {info && !changing && <PaymentsReceived companyId={companyId} />}
 
       {form && (
         <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-4">
@@ -95,6 +97,102 @@ export function DigitalStorePayment() {
             {info && <button type="button" onClick={() => setChanging(false)} className="text-xs font-bold px-3 py-2 rounded-lg border border-slate-300 text-slate-600">Cancel</button>}
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+interface PayRow { id: string; url: string; status: string; amount: number; amountPaid: number; document: string; customer: string; createdAt: string | null; payments: { id: string; amount: number; method: string; at: string | null }[] }
+interface PaySummary { links: number; paid: number; received: number; waiting: number; waitingAmount: number }
+const rupees = (n: number) => '₹' + Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+const STATUS: Record<string, [string, string]> = {
+  paid: ['Paid', 'bg-emerald-50 text-emerald-700 border-emerald-200'],
+  partially_paid: ['Part paid', 'bg-amber-50 text-amber-700 border-amber-200'],
+  created: ['Waiting', 'bg-slate-50 text-slate-600 border-slate-200'],
+  expired: ['Expired', 'bg-slate-50 text-slate-400 border-slate-200'],
+  cancelled: ['Cancelled', 'bg-red-50 text-red-600 border-red-200'],
+};
+
+// Every payment link made with this company's Razorpay account (quotations, invoices, Digital Store orders) and what was paid on it.
+// Payments on a quotation / invoice link are also recorded on that invoice in the Retail Store automatically.
+function PaymentsReceived({ companyId }: { companyId: string }) {
+  const [rows, setRows] = useState<PayRow[] | null>(null);
+  const [sum, setSum] = useState<PaySummary | null>(null);
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [filter, setFilter] = useState<'all' | 'paid' | 'waiting'>('all');
+  const load = useCallback(async () => {
+    setBusy(true); setErr('');
+    try { const j = await payApi('payments', { company_id: companyId }); setRows(j.rows || []); setSum(j.summary || null); }
+    catch (e) { setErr(e instanceof Error ? e.message : String(e)); setRows((r) => r ?? []); }
+    setBusy(false);
+  }, [companyId]);
+  useEffect(() => { void load(); }, [load]);
+  const shown = (rows || []).filter((r) => filter === 'all' || (filter === 'paid' ? r.amountPaid > 0 : r.status === 'created' || r.status === 'partially_paid'));
+  const tiles: [string, string, string][] = sum ? [
+    ['Payments received', String(sum.paid), 'text-emerald-700'],
+    ['Amount received', rupees(sum.received), 'text-emerald-700'],
+    ['Waiting for payment', String(sum.waiting), 'text-amber-700'],
+    ['Amount waiting', rupees(sum.waitingAmount), 'text-amber-700'],
+  ] : [];
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="font-extrabold text-slate-900">Payments</div>
+        <span className="text-xs text-slate-500">From your Razorpay account. A payment on a quotation or invoice link is also marked on that invoice in the Retail Store.</span>
+        <button type="button" onClick={() => void load()} disabled={busy} className="ml-auto inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1.5 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+          <RefreshCw size={13} className={busy ? 'animate-spin' : ''} /> Refresh
+        </button>
+      </div>
+      {err && <div className="text-sm rounded-lg px-3 py-2 border bg-red-50 border-red-200 text-red-700">{err}</div>}
+      {sum && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {tiles.map(([k, v, tone]) => (
+            <div key={k} className="rounded-lg border border-slate-200 px-3 py-2"><div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{k}</div><div className={`text-lg font-black tabular-nums ${tone}`}>{v}</div></div>
+          ))}
+        </div>
+      )}
+      {rows === null ? (
+        <div className="flex items-center gap-2 text-slate-500 text-sm"><Loader2 className="animate-spin" size={16} /> Reading payments from Razorpay…</div>
+      ) : (
+        <>
+          <div className="flex gap-1">
+            {([['all', `All (${rows.length})`], ['paid', 'Paid'], ['waiting', 'Waiting']] as const).map(([k, l]) => (
+              <button key={k} type="button" onClick={() => setFilter(k)} className={`text-xs font-bold px-2.5 py-1 rounded-full border ${filter === k ? 'bg-orange-600 text-white border-orange-600' : 'border-slate-300 text-slate-600'}`}>{l}</button>
+            ))}
+          </div>
+          {shown.length === 0 ? (
+            <p className="text-sm text-slate-500 py-4 text-center">{rows.length ? 'Nothing here.' : 'No payment links yet. One is made when a quotation or invoice is e-mailed or shared, or when a Digital Store order is placed.'}</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="text-left text-[11px] uppercase tracking-wide text-slate-500 border-b border-slate-200">
+                  <th className="py-2 pr-3">Created</th><th className="py-2 pr-3">For</th><th className="py-2 pr-3">Customer</th>
+                  <th className="py-2 pr-3 text-right">Amount</th><th className="py-2 pr-3 text-right">Paid</th><th className="py-2 pr-3">Status</th><th className="py-2">Link</th>
+                </tr></thead>
+                <tbody>
+                  {shown.map((r) => {
+                    const [label, tone] = STATUS[r.status] || [r.status, 'bg-slate-50 text-slate-600 border-slate-200'];
+                    return (
+                      <tr key={r.id} className="border-b border-slate-100 align-top">
+                        <td className="py-2 pr-3 whitespace-nowrap text-slate-600">{r.createdAt ? new Date(r.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</td>
+                        <td className="py-2 pr-3 text-slate-800">{r.document || '—'}</td>
+                        <td className="py-2 pr-3 text-slate-700">{r.customer || '—'}</td>
+                        <td className="py-2 pr-3 text-right tabular-nums">{rupees(r.amount)}</td>
+                        <td className="py-2 pr-3 text-right tabular-nums font-bold text-emerald-700">
+                          {r.amountPaid > 0 ? rupees(r.amountPaid) : '—'}
+                          {r.payments.map((p) => <div key={p.id} className="text-[10px] font-normal text-slate-500">{p.method ? p.method.toUpperCase() + ' · ' : ''}{p.at ? new Date(p.at).toLocaleDateString('en-IN') : ''} · {p.id}</div>)}
+                        </td>
+                        <td className="py-2 pr-3"><span className={`text-[11px] font-bold px-1.5 py-0.5 rounded border ${tone}`}>{label}</span></td>
+                        <td className="py-2"><a href={r.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-bold text-orange-700 hover:underline"><ExternalLink size={12} /> Open</a></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
