@@ -566,6 +566,8 @@ begin
                  'created_at', pg_temp.ts(s_date, pg_temp.rnd(600, 1080))));
       perform pg_temp.d_upd('cnc_quotations', id_q, jsonb_build_object('status', 'Converted'));
       perform pg_temp.d_upd('cnc_enquiries', id_enq, jsonb_build_object('status', 'Converted', 'pipeline_stage', 'Sales Order'));
+      -- some orders of the last days are still waiting for the customer's material / drawing (Sales Order column)
+      if s_date >= today - 7 and pg_temp.rnd(1, 3) <= 2 then continue; end if;
 
       -- raw material bought for the order (arrives between the order and the start of production)
       i_date := pg_temp.workday(s_date + pg_temp.rnd(1, 4));

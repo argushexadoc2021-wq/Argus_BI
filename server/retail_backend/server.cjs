@@ -508,18 +508,60 @@ function retailCompanyFromBI(co) {
   }
   return coId;
 }
+/* Retail sales partners with their own BI company (companies.partner_of / partner_type / partner_parent_id, set in BI Company Management).
+   Their BI login sees only their own company. In the Retail Store they work in the MAIN company's store with the role of their
+   partner type, and see only their own orders / quotations / invoices plus those of the partners under them. */
+const PARTNER_ROLE_OF = { regional: 'sales_regional_partner', channel: 'sales_channel_partner', referral: 'sales_referral_partner' };
+const PARTNER_TYPE_LABEL = { regional: 'Regional Partner', channel: 'Channel Partner', referral: 'Referral Partner' };
+const BI_COMPANY_COLS = 'id, company_name, code, status, industry, email, phone, address, city, state, pin, pan, cin, plan, description';
+const retailCoIdOf = co => co.code || ('C-' + String(co.company_name || 'CO').slice(0, 3).toUpperCase());
+let partnerCache = { at: 0, byId: new Map() };
+async function partnerCompanies() {
+  if (!SB.enabled || Date.now() - partnerCache.at < 30000) return partnerCache.byId;
+  partnerCache.at = Date.now();
+  try {
+    const { data, error } = await SB.admin.from('companies').select('id, company_name, status, partner_of, partner_type, partner_parent_id').not('partner_of', 'is', null);
+    if (!error) partnerCache.byId = new Map((data || []).map(c => [c.id, c]));   // error = migration not applied yet: no partners
+  } catch (e) { console.warn('Partner list from BI failed:', e.message); }
+  return partnerCache.byId;
+}
+/* the partner company itself and every partner below it */
+function partnerTeamOf(map, id) {
+  const team = new Set([id]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const c of map.values()) if (c.partner_parent_id && team.has(c.partner_parent_id) && !team.has(c.id)) { team.add(c.id); grew = true; }
+  }
+  return team;
+}
+/* null = the person's BI company is not a retail partner */
+async function partnerTargetFromBI(bi) {
+  if (!bi || bi.role === 'SUPER_ADMIN' || !bi.company_id) return null;
+  const me = (await partnerCompanies()).get(bi.company_id);
+  if (!me || !me.partner_of || !PARTNER_ROLE_OF[me.partner_type]) return null;
+  const { data: main } = await SB.admin.from('companies').select(BI_COMPANY_COLS).eq('id', me.partner_of).maybeSingle();
+  if (!main) return null;
+  return { role: PARTNER_ROLE_OF[me.partner_type], main, mainCoId: retailCoIdOf(main), partnerCompanyId: me.id, partnerCompanyName: me.company_name, partnerType: me.partner_type };
+}
+const partnerFieldsOf = pt => ({ partnerCompanyId: pt ? pt.partnerCompanyId : null, partnerCompanyName: pt ? pt.partnerCompanyName : null, partnerType: pt ? pt.partnerType : null });
+
 async function syncPersonFromBI(person, email) {
   if (!person || person.role === 'super_admin' || Date.now() - (biSyncedAt[email] || 0) < 30000) return;
   biSyncedAt[email] = Date.now();
   try {
     const { data: bi, error } = await SB.admin.from('company_users').select(BI_USER_COLS).eq('email', email).maybeSingle();
     if (error || !bi) return;   // no BI record (or BI unreachable): keep the Retail account as it is
-    const role = retailRoleFromBI(bi);
-    const companyActive = !bi.companies || bi.companies.status === 'Active';
-    const wantCo = role === 'super_admin' ? null : (bi.companies ? (bi.companies.code || ('C-' + String(bi.companies.company_name || 'CO').slice(0, 3).toUpperCase())) : person.companyId);
+    const pt = await partnerTargetFromBI(bi);
+    const role = pt ? pt.role : retailRoleFromBI(bi);
+    const companyActive = (!bi.companies || bi.companies.status === 'Active') && (!pt || pt.main.status === 'Active');
+    const wantCo = role === 'super_admin' ? null : pt ? pt.mainCoId : (bi.companies ? retailCoIdOf(bi.companies) : person.companyId);
+    const wantCoName = pt ? pt.main.company_name : (bi.companies && bi.companies.company_name);
+    const pf = partnerFieldsOf(pt);
     const differs = (p) => (role && (p.role !== role || p.companyId !== wantCo)) || (bi.full_name && p.name !== bi.full_name) || (p.mobile || '') !== (bi.mobile || '')
       || p.active !== (bi.status === 'Active' && companyActive && !!role) || (bi.terms_accepted_at && !p.termsAccepted)
-      || (bi.companies && (!companyById(wantCo) || (companyById(wantCo).name !== bi.companies.company_name)));
+      || Object.keys(pf).some(k => (p[k] || null) !== pf[k])
+      || (wantCoName && (!companyById(wantCo) || (companyById(wantCo).name !== wantCoName)));
     if (!differs(person)) return;
     // something must change: take the newest data first, so this save cannot overwrite what another server copy just saved
     await syncFromStorage(true);
@@ -528,8 +570,9 @@ async function syncPersonFromBI(person, email) {
     const set = (k, v) => { if (v !== undefined && fresh[k] !== v) { fresh[k] = v; changed = true; } };
     if (role) {
       set('role', role);
-      set('companyId', role === 'super_admin' ? null : retailCompanyFromBI(bi.companies));
+      set('companyId', role === 'super_admin' ? null : retailCompanyFromBI(pt ? pt.main : bi.companies));
     }
+    for (const [k, v] of Object.entries(pf)) if ((fresh[k] || null) !== v) { fresh[k] = v; changed = true; }
     if (bi.full_name) set('name', bi.full_name);
     set('mobile', bi.mobile || '');
     set('active', bi.status === 'Active' && companyActive && !!role);   // a BI user with no Retail role has no Retail access
@@ -570,18 +613,14 @@ app.use(async (req, _res, next) => {
               .select('full_name, role, status, mobile, retail_role, terms_accepted_at, company_id, companies!company_users_company_id_fkey(company_name, code, status, industry, email, phone, address, city, state, pin, pan, cin, plan, description)')
               .eq('email', email).maybeSingle();
             if (bi) {
-              const retailRole = bi.role === 'SUPER_ADMIN' ? 'super_admin' : bi.role === 'COMPANY_ADMIN' ? 'company_admin' : (['super_admin', 'company_admin'].includes(bi.retail_role) ? null : (bi.retail_role || null));
+              // a person of a retail partner company works in the main company's store with the role of the partner type
+              const pt = await partnerTargetFromBI(bi);
+              const retailRole = pt ? pt.role : bi.role === 'SUPER_ADMIN' ? 'super_admin' : bi.role === 'COMPANY_ADMIN' ? 'company_admin' : (['super_admin', 'company_admin'].includes(bi.retail_role) ? null : (bi.retail_role || null));
               if (retailRole) {
                 let coId = null;
-                const co = bi.companies;
-                if (bi.role !== 'SUPER_ADMIN' && co) {
-                  coId = co.code || ('C-' + String(co.company_name || 'CO').slice(0, 3).toUpperCase());
-                  if (!companyById(coId)) {
-                    const today = new Date().toISOString().slice(0, 10);
-                    db.companies.unshift({ id: coId, code: coId, name: co.company_name, logo: '🏭', industry: co.industry || 'CNC Manufacturing', email: co.email || '', phone: co.phone || '', address: co.address || '', city: co.city || 'Default', state: co.state || '', pin: co.pin || '', gstin: co.code || '', pan: co.pan || '', cin: co.cin || '', description: co.description || '', status: 'active', storeStatus: 'active', plan: co.plan || 'Starter', orders: 0, revenue: 0, products: 0, users: 1, createdAt: today, updatedAt: today, menuPermissions: [], disabledMenus: [] });
-                  }
-                }
-                person = { id: uid('U-', db.users), name: bi.full_name || (u.user_metadata && u.user_metadata.full_name) || email.split('@')[0], email, mobile: bi.mobile || '', role: retailRole, companyId: coId, termsAccepted: !!bi.terms_accepted_at, termsAcceptedAt: bi.terms_accepted_at || null, termsVersion: '1.0', active: bi.status === 'Active', createdAt: new Date().toISOString().slice(0, 10), source: 'bi' };
+                const co = pt ? pt.main : bi.companies;
+                if (bi.role !== 'SUPER_ADMIN' && co) coId = retailCompanyFromBI(co);
+                person = { id: uid('U-', db.users), name: bi.full_name || (u.user_metadata && u.user_metadata.full_name) || email.split('@')[0], email, mobile: bi.mobile || '', role: retailRole, companyId: coId, termsAccepted: !!bi.terms_accepted_at, termsAcceptedAt: bi.terms_accepted_at || null, termsVersion: '1.0', active: bi.status === 'Active', createdAt: new Date().toISOString().slice(0, 10), source: 'bi', ...partnerFieldsOf(pt) };
                 db.users.unshift(person); save();
               }
             }
@@ -590,7 +629,17 @@ app.use(async (req, _res, next) => {
         if (person && !isSuper) await syncPersonFromBI(person, email);
         const display = (u.user_metadata && (u.user_metadata.full_name || u.user_metadata.name)) || (person && person.name) || email;
         if (person && person.active === false) { req.ctx = { role: 'disabled', companyId: person.companyId, name: display, email, google: true, id: person.id }; return next(); }
-        if (person) { req.ctx = { role: person.role, companyId: person.companyId, name: display, email, google: true, id: person.id }; return next(); }
+        if (person) {
+          req.ctx = { role: person.role, companyId: person.companyId, name: display, email, google: true, id: person.id };
+          if (person.partnerCompanyId) {
+            // a partner sees its own documents and those of the partners under it
+            req.ctx.partnerCompanyId = person.partnerCompanyId;
+            req.ctx.partnerCompanyName = person.partnerCompanyName || '';
+            req.ctx.partnerType = person.partnerType || null;
+            req.ctx.partnerTeam = partnerTeamOf(await partnerCompanies(), person.partnerCompanyId);
+          }
+          return next();
+        }
         req.ctx = { role: 'pending', companyId: null, name: display, email, google: true }; return next(); // Google OK, no ERP account yet
       }
     } catch (e) {
@@ -669,6 +718,32 @@ function scopeCompany(req, res, next) {
   req.companyId = req.ctx.companyId;
   next();
 }
+/* Retail partner companies (see partnerTargetFromBI): the store and their own team's orders / quotations / invoices only.
+   Admin pages (users, audit, stats, settings, media, workflow, companies, permissions) and status changes are closed to them. */
+const partnerSees = (req, doc) => !req.ctx || !req.ctx.partnerTeam || !!(doc && doc.partnerCompanyId && req.ctx.partnerTeam.has(doc.partnerCompanyId));
+const partnerTagsOf = ctx => (ctx && ctx.partnerCompanyId ? { partnerCompanyId: ctx.partnerCompanyId, partnerCompanyName: ctx.partnerCompanyName || '', partnerType: ctx.partnerType || null, placedByEmail: ctx.email || '' } : {});
+app.use((req, res, next) => {
+  if (!req.ctx || !req.ctx.partnerTeam || !req.path.startsWith('/api/')) return next();
+  const p = req.path;
+  if (['/api/health', '/api/config', '/api/me'].includes(p) || /^\/api\/(bi-chat|adviser|adviser-mail|quote-confirm|quote)\//.test(p)) return next();   // these check the sign-in themselves
+  if (req.method === 'GET' && /^\/api\/(products|categories|catalog|settings\/invoice-profile)(\/|$)/.test(p)) return next();
+  const m = p.match(/^\/api\/(orders|quotations|invoices)(?:\/([^/]+)(\/.*)?)?$/);
+  if (m) {
+    const [, kind, rawId, rest] = m;
+    if (!rawId) return next();
+    let id = rawId;
+    try { id = decodeURIComponent(rawId); } catch { return res.status(400).json({ error: 'Bad document number' }); }   // invoice numbers contain "/"   // lists (filtered in the routes) and new orders / quotations
+    if ((kind === 'orders' && rest === '/status') || (kind === 'quotations' && !rest && req.method !== 'GET')) {
+      return res.status(403).json({ error: 'Only the store admin can change the status of an order or quotation.', code: 'PARTNER_DENIED' });
+    }
+    const doc = kind === 'orders' ? (db.orders || []).find(x => x.id === id)
+      : kind === 'quotations' ? (db.quotations || []).find(x => x.id === id)
+      : ((db.orders || []).find(x => x.invoiceNo === id || x.id === id) || (db.quotations || []).find(x => x.invoiceNo === id || x.id === id));
+    if (doc && !partnerSees(req, doc)) return res.status(403).json({ error: 'This document belongs to another partner.', code: 'PARTNER_DENIED' });
+    return next();
+  }
+  return res.status(403).json({ error: 'This page is not available to sales partners.', code: 'PARTNER_DENIED' });
+});
 const ok = (res, data) => res.json({ data });
 const isAdmin = req => req.ctx.role === 'company_admin' || req.ctx.role === 'super_admin';
 /* --- publishing workflow roles: content_writer prepares, finance approves --- */
@@ -1501,6 +1576,10 @@ app.get('/api/me', (req, res) => {
       mobile: (u && u.mobile) || '',
       google: !!req.ctx.google,
       salesTier: (roleObj && roleObj.category === 'sales_partner') ? roleObj.name : null,
+      // a retail partner company: its own name, its partner type and the main company whose store it sells from
+      partnerCompanyName: req.ctx.partnerCompanyId ? (req.ctx.partnerCompanyName || '') : null,
+      partnerType: req.ctx.partnerCompanyId ? (PARTNER_TYPE_LABEL[req.ctx.partnerType] || null) : null,
+      partnerTeamSize: req.ctx.partnerTeam ? req.ctx.partnerTeam.size - 1 : 0,
       markupPct: (roleObj && typeof roleObj.markupPct === 'number') ? roleObj.markupPct : 0,
       termsAccepted: (u && u.termsAccepted) || false,
       effectivePermissions,
@@ -2376,7 +2455,7 @@ function removeStoredMedia(url) {
 const FLOW = ['Pending', 'Confirmed', 'Processing', 'Ready for Dispatch', 'Shipped', 'Delivered'];
 app.get('/api/orders', scopeCompany, (req, res) => {
   const cid = req.ctx.role === 'super_admin' ? (req.query.companyId && req.query.companyId !== 'all' ? req.query.companyId : null) : req.companyId;
-  let list = db.orders.filter(o => !cid || o.companyId === cid);
+  let list = db.orders.filter(o => (!cid || o.companyId === cid) && partnerSees(req, o));
   if (req.query.status && req.query.status !== 'all') list = list.filter(o => o.status === req.query.status);
   if (req.query.q) { const q = req.query.q.toLowerCase(); list = list.filter(o => (o.id + o.customer + (o.companyName || '') + o.mobile + (o.poRef || '')).toLowerCase().includes(q)); }
   const withCo = l => l.map(o => ({ ...o, companyName2: (companyById(o.companyId) || {}).name || o.companyId }));
@@ -2456,6 +2535,7 @@ app.post('/api/orders', scopeCompany, async (req, res) => {
     date: new Date().toISOString().slice(0, 16).replace('T', ' '),
     salesUser: req.ctx.name,
     partnerRole: req.ctx.role,
+    ...partnerTagsOf(req.ctx),
     customer,
     contact: contact || customer,
     companyName: companyName || '',
@@ -2601,7 +2681,7 @@ app.get('/api/invoices', scopeCompany, (req, res) => {
   const cid = req.ctx.role === 'super_admin' ? (req.query.companyId && req.query.companyId !== 'all' ? req.query.companyId : null) : req.companyId;
 
   // Gather orders with invoiceNo
-  const invoicedOrders = (db.orders || []).filter(o => o.invoiceNo && (!cid || o.companyId === cid));
+  const invoicedOrders = (db.orders || []).filter(o => o.invoiceNo && (!cid || o.companyId === cid) && partnerSees(req, o));
 
   const invoices = invoicedOrders.map(o => {
     const items = (o.items || []).map(it => {
@@ -2648,7 +2728,7 @@ app.get('/api/invoices', scopeCompany, (req, res) => {
   });
 
   // Also include any quotations that were invoiced but not yet linked to an order in invoices list
-  const invoicedQuotes = (db.quotations || []).filter(q => q.invoiceNo && (!cid || q.companyId === cid));
+  const invoicedQuotes = (db.quotations || []).filter(q => q.invoiceNo && (!cid || q.companyId === cid) && partnerSees(req, q));
   for (const q of invoicedQuotes) {
     if (!invoices.some(inv => inv.invoiceNo === q.invoiceNo || (q.orderId && inv.orderId === q.orderId))) {
       const items = (q.items || []).map(it => {
@@ -2736,7 +2816,7 @@ app.patch('/api/orders/:id/status', scopeCompany, async (req, res) => {
 const QFLOW = ['Pending', 'Quoted', 'Accepted', 'Rejected', 'Cancelled'];
 app.get('/api/quotations', scopeCompany, (req, res) => {
   const cid = req.ctx.role === 'super_admin' ? (req.query.companyId && req.query.companyId !== 'all' ? req.query.companyId : null) : req.companyId;
-  let list = db.quotations.filter(q => !cid || q.companyId === cid);
+  let list = db.quotations.filter(q => (!cid || q.companyId === cid) && partnerSees(req, q));
   if (req.ctx.role === 'sales_user' && req.query.mine === '1') list = list.filter(q => q.requestedBy === req.ctx.name);
   if (req.query.status && req.query.status !== 'all') list = list.filter(q => q.status === req.query.status);
   const withNames = l => l.map(q => {
@@ -2812,7 +2892,8 @@ app.post('/api/quotations', scopeCompany, (req, res) => {
       pin: pin || '',
       poRef: poRef || '',
       status: 'Pending',
-      adminNote: ''
+      adminNote: '',
+      ...partnerTagsOf(req.ctx)
     };
     db.quotations.unshift(q);
     save();
@@ -2852,7 +2933,8 @@ app.post('/api/quotations', scopeCompany, (req, res) => {
     poRef: poRef || '',
     status: 'Pending',
     quotePrice: p.price != null ? Number(p.price) : null,
-    adminNote: ''
+    adminNote: '',
+    ...partnerTagsOf(req.ctx)
   };
   db.quotations.unshift(q);
   save();
@@ -2934,6 +3016,7 @@ function raiseQuotationInvoice(q, actor, discountOverride) {
       date: new Date().toISOString().slice(0, 16).replace('T', ' '),
       salesUser: actor.name,
       partnerRole: actor.role,
+      ...(q.partnerCompanyId ? { partnerCompanyId: q.partnerCompanyId, partnerCompanyName: q.partnerCompanyName || '', partnerType: q.partnerType || null, placedByEmail: q.placedByEmail || '' } : partnerTagsOf(actor)),
       customer: q.contact || q.requestedBy || q.companyName || 'Industrial Client',
       contact: q.contact || q.requestedBy || '',
       companyName: q.companyName || '',
@@ -3743,7 +3826,7 @@ async function reportOrderToBI(order) {
         order: {
           order_no: order.id, customer: order.customer, contact: order.contact, company_name: order.companyName, mobile: order.mobile,
           city: order.city, address: order.address, po_ref: order.poRef, total: order.total, status: order.status,
-          placed_by: order.salesUser, partner_role: order.partnerRole, invoice_no: order.invoiceNo || null,
+          placed_by: order.partnerCompanyName ? `${order.salesUser} (${order.partnerCompanyName})` : order.salesUser, partner_role: order.partnerRole, invoice_no: order.invoiceNo || null,
           ordered_at: (order.date || '').replace(' ', 'T') ? new Date(String(order.date).replace(' ', 'T')).toISOString() : undefined,
           items: (order.items || []).map(l => ({ name: l.name, sku: l.sku, qty: l.qty, uom: l.uom, price: l.price })),
         },

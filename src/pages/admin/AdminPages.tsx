@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Eye, Edit, Edit2, Trash2, Users as UsersIcon, Building2, ShieldCheck, Settings as SettingsIcon, FileText, ChevronDown, ChevronRight, Search, Lock, KeyRound, Plus, Download, Upload, Power, Briefcase, Store, Camera, CheckSquare, Square, Check, X, Layers, SlidersHorizontal, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Eye, Edit, Edit2, Trash2, Users as UsersIcon, Building2, ShieldCheck, Settings as SettingsIcon, FileText, ChevronDown, ChevronRight, Search, Lock, KeyRound, Plus, Download, Upload, Power, Briefcase, Store, Camera, CheckSquare, Square, Check, X, Layers, SlidersHorizontal, CheckCircle2, AlertCircle, Handshake } from 'lucide-react';
 import { fetchJobDescriptions, createJobDescription, EMPTY_JD, type JobDescription } from '@/lib/jdBuild';
 import { fetchUserJdMap, saveUserJd, getUserJdId } from '@/lib/userJd';
 import { JobDescriptionModal, JobDescriptionViewModal, JobDescriptionFormFields, toDraft, fromDraft, type JdDraft } from '@/components/admin/JobDescriptionModal';
@@ -75,6 +75,60 @@ function useCompanies() {
   }, []);
   useEffect(() => { load(); }, [load]);
   return { companies, reload: load };
+}
+
+// Retail sales partners: a partner is its own company (its BI users see only it) linked to the main company whose Retail Store it sells from.
+type PartnerType = 'regional' | 'channel' | 'referral';
+interface PartnerLink { id: string; partner_of: string | null; partner_type: PartnerType | null; partner_parent_id: string | null }
+const PARTNER_TYPES: { id: PartnerType; label: string; under: string }[] = [
+  { id: 'regional', label: 'Regional Partner', under: 'Comes directly under the main company. Can have Channel and Referral partners under it.' },
+  { id: 'channel', label: 'Channel Partner', under: 'Comes under a Regional partner, or directly under the main company. Can have Referral partners under it.' },
+  { id: 'referral', label: 'Referral Partner', under: 'Comes under a Channel or Regional partner, or directly under the main company.' },
+];
+const partnerLabel = (t: PartnerType | null | undefined) => PARTNER_TYPES.find((x) => x.id === t)?.label || 'Partner';
+/** Which partner types may be the one above a partner of type t */
+const PARENT_TYPES: Record<PartnerType, PartnerType[]> = { regional: [], channel: ['regional'], referral: ['regional', 'channel'] };
+
+function usePartnerLinks() {
+  const [links, setLinks] = useState<Map<string, PartnerLink>>(new Map());
+  const [ready, setReady] = useState(false);   // false = the partner columns do not exist yet (migration not applied)
+  const load = useCallback(async () => {
+    const { data, error } = await supabase.from('companies').select('id, partner_of, partner_type, partner_parent_id');
+    if (error) { setReady(false); setLinks(new Map()); return; }
+    setReady(true);
+    setLinks(new Map(((data as PartnerLink[]) || []).map((l) => [l.id, l])));
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  return { links, linksReady: ready, reloadLinks: load };
+}
+
+/** The partners of a main company as a tree: Regional > Channel > Referral */
+function PartnerTree({ mainId, links, companies, onOpen }: { mainId: string; links: Map<string, PartnerLink>; companies: CompanyRow[]; onOpen: (id: string) => void }) {
+  const name = (id: string) => companies.find((c) => c.id === id)?.company_name || '—';
+  const partners = [...links.values()].filter((l) => l.partner_of === mainId);
+  const order: Record<string, number> = { regional: 1, channel: 2, referral: 3 };
+  const kids = (parent: string | null) => partners.filter((l) => (l.partner_parent_id || null) === parent)
+    .sort((a, b) => (order[a.partner_type || ''] - order[b.partner_type || '']) || name(a.id).localeCompare(name(b.id)));
+  const tone: Record<string, string> = { regional: 'bg-indigo-50 text-indigo-700 border-indigo-200', channel: 'bg-sky-50 text-sky-700 border-sky-200', referral: 'bg-amber-50 text-amber-700 border-amber-200' };
+  const branch = (parent: string | null, depth: number): JSX.Element | null => {
+    const list = kids(parent);
+    if (!list.length) return null;
+    return (
+      <ul className={depth ? 'ml-5 border-l border-slate-200 pl-3 space-y-1.5 mt-1.5' : 'space-y-1.5'}>
+        {list.map((l) => (
+          <li key={l.id}>
+            <button type="button" onClick={() => onOpen(l.id)} className="inline-flex items-center gap-2 text-sm text-slate-800 hover:text-brand-600">
+              <span className={`text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${tone[l.partner_type || ''] || ''}`}>{partnerLabel(l.partner_type)}</span>
+              <span className="font-medium">{name(l.id)}</span>
+            </button>
+            {branch(l.id, depth + 1)}
+          </li>
+        ))}
+      </ul>
+    );
+  };
+  if (!partners.length) return <p className="text-sm text-slate-500 bg-white border border-slate-200 rounded-xl px-4 py-6 text-center">No retail partners yet. Create a company for the partner, then in Edit company tick “This company is a Retail sales partner”.</p>;
+  return <div className="bg-white border border-slate-200 rounded-xl px-4 py-3">{branch(null, 0)}</div>;
 }
 
 // ======================================================================================
@@ -847,9 +901,13 @@ export function UsersPage({ embeddedCompanyId }: { embeddedCompanyId?: string } 
 }
 
 // One page per company, like the Retail Store's Company Hub: the company's details and its users together.
-function CompanyHub({ company, onBack, onEdit }: { company: CompanyRow; onBack: () => void; onEdit: (c: CompanyRow) => void }) {
+function CompanyHub({ company, onBack, onEdit, links, companies, onOpen }: { company: CompanyRow; onBack: () => void; onEdit: (c: CompanyRow) => void; links: Map<string, PartnerLink>; companies: CompanyRow[]; onOpen: (id: string) => void }) {
   const navigate = useNavigate();
-  const [tab, setTab] = useState<'users' | 'details'>('users');
+  const [tab, setTab] = useState<'users' | 'details' | 'partners'>('users');
+  const link = links.get(company.id);
+  const isPartner = !!link?.partner_of;
+  const partnerCount = [...links.values()].filter((l) => l.partner_of === company.id).length;
+  const coName = (id: string | null | undefined) => companies.find((c) => c.id === id)?.company_name || '—';
   const [details, setDetails] = useState<Record<string, string | null>>({});
   useEffect(() => {
     supabase.from('companies').select(COMPANY_DETAIL_KEYS.join(',')).eq('id', company.id).maybeSingle().then(({ data }) => { if (data) setDetails(data as any); });
@@ -867,6 +925,11 @@ function CompanyHub({ company, onBack, onEdit }: { company: CompanyRow; onBack: 
           <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500"><Building2 size={15} /></div>
           <h2 className="text-lg font-bold text-slate-800">{company.company_name}</h2>
           <Badge variant={company.status === 'Active' ? 'success' : 'error'} dot>{company.status}</Badge>
+          {isPartner && (
+            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-full px-2 py-0.5">
+              <Handshake size={12} />{partnerLabel(link!.partner_type)} of {coName(link!.partner_of)}{link!.partner_parent_id ? ` · under ${coName(link!.partner_parent_id)}` : ''}
+            </span>
+          )}
         </div>
         <div className="ml-auto flex gap-2">
           <Button variant="secondary" size="sm" icon={<KeyRound size={13} />} onClick={() => navigate(`/admin/access?company=${company.id}`)} className="h-8 text-xs">Manage access</Button>
@@ -874,11 +937,19 @@ function CompanyHub({ company, onBack, onEdit }: { company: CompanyRow; onBack: 
         </div>
       </div>
       <div className="flex gap-1 border-b border-slate-200">
-        {([['users', 'Users'], ['details', 'Company details']] as const).map(([k, label]) => (
+        {([['users', 'Users'], ['details', 'Company details'], ...((!isPartner && partnerCount) || (isPartner && link!.partner_type !== 'referral') ? [['partners', isPartner ? 'Partners under it' : `Retail partners (${partnerCount})`]] : [])] as [typeof tab, string][]).map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)} className={`px-4 py-2 text-sm font-semibold -mb-px border-b-2 ${tab === k ? 'border-brand-500 text-brand-600' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>{label}</button>
         ))}
       </div>
+      {tab === 'users' && isPartner && (
+        <p className="text-xs text-indigo-800 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2">
+          Everyone in this company signs in as a <b>{partnerLabel(link!.partner_type)}</b> of {coName(link!.partner_of)} in the Retail Store, whatever Retail role is chosen below. In Argus BI they see only this company.
+        </p>
+      )}
       {tab === 'users' && <UsersPage embeddedCompanyId={company.id} />}
+      {tab === 'partners' && (isPartner
+        ? <PartnerTree mainId={link!.partner_of!} links={new Map([...links].filter(([id]) => { let p = links.get(id)?.partner_parent_id; while (p) { if (p === company.id) return true; p = links.get(p)?.partner_parent_id; } return false; }).map(([id, l]) => [id, l.partner_parent_id === company.id ? { ...l, partner_parent_id: null } : l]))} companies={companies} onOpen={onOpen} />
+        : <PartnerTree mainId={company.id} links={links} companies={companies} onOpen={onOpen} />)}
       {tab === 'details' && (
         <div className="bg-white border border-slate-200 rounded-xl divide-y divide-slate-100">
           {rows.map(([k, v]) => (
@@ -909,6 +980,10 @@ export function CompaniesPage() {
   const openHub = (id: string | null) => setHubParams(id ? { hub: id } : {});
   const { refresh, profile } = useAuth();
   const { companies, reload } = useCompanies();
+  const { links, linksReady, reloadLinks } = usePartnerLinks();
+  // Retail sales partner setting of the company being edited
+  const emptyPartner = { on: false, of: '', type: 'regional' as PartnerType, parent: '' };
+  const [partnerForm, setPartnerForm] = useState(emptyPartner);
   const [userCounts, setUserCounts] = useState<Record<string, number>>({});
   const [form, setForm] = useState(emptyCompanyForm);
   const [showForm, setShowForm] = useState(false);
@@ -1101,6 +1176,7 @@ export function CompaniesPage() {
 
   const openCreate = async () => {
     setBiOn(true); setRetailOn(true); setAttendanceOn(true);
+    setPartnerForm(emptyPartner);
     setForm(emptyCompanyForm);
     setFormError(null);
     setAccessTab('bi');
@@ -1154,6 +1230,10 @@ export function CompaniesPage() {
       if (data) { setBiOn((data as any).bi_enabled !== false); setRetailOn((data as any).retail_enabled !== false); setAttendanceOn((data as any).attendance_enabled !== false); }
     });
     setForm({ ...emptyCompanyForm, id: r.id, company_name: r.company_name, code: r.code ?? '', status: r.status });
+    {
+      const l = links.get(r.id);
+      setPartnerForm(l?.partner_of ? { on: true, of: l.partner_of, type: (l.partner_type || 'regional') as PartnerType, parent: l.partner_parent_id || '' } : emptyPartner);
+    }
     // company details are read separately: a failed read (migration not applied yet) just leaves them empty
     supabase.from('companies').select(COMPANY_DETAIL_KEYS.join(',')).eq('id', r.id).maybeSingle().then(({ data }) => {
       if (data) setForm(f => (f.id === r.id ? { ...f, ...Object.fromEntries(COMPANY_DETAIL_KEYS.map(k => [k, (data as any)[k] ?? (k === 'plan' ? 'Scale' : '')])) } : f));
@@ -1222,6 +1302,8 @@ export function CompaniesPage() {
 
   const handleSubmit = async () => {
     if (!form.company_name.trim()) { setFormError('Company name is required'); return; }
+    if (partnerForm.on && !linksReady) { setFormError('Retail partners need database update 20261121000000_retail_partner_companies.sql. Run it in the SQL Editor first.'); return; }
+    if (partnerForm.on && !partnerForm.of) { setFormError('Choose the main company this partner sells for.'); return; }
     setSaving(true);
     setFormError(null);
 
@@ -1331,9 +1413,32 @@ export function CompaniesPage() {
       if (pErr && (!biOn || !retailOn || !/erp_set_company_platforms|schema cache/i.test(pErr.message))) window.alert('The company was saved, but the Argus BI / Retail platform switches were not: ' + pErr.message + ' (If it mentions a missing function, apply database update 20261110060000_company_platforms.sql.)');
     } catch { /* the company is saved; the switches can be set again */ }
 
+    // 5. Retail sales partner: which main company it sells for, its type and the partner it comes under
+    const prevLink = links.get(targetCompanyId);
+    const wantOf = partnerForm.on ? partnerForm.of : null;
+    const linkChanged = linksReady && (
+      (prevLink?.partner_of || null) !== wantOf
+      || (wantOf && ((prevLink?.partner_type || null) !== partnerForm.type || (prevLink?.partner_parent_id || null) !== (partnerForm.parent || null))));
+    if (linkChanged) {
+      const { error: ptErr } = await supabase.rpc('erp_set_company_partner', {
+        p_company_id: targetCompanyId, p_partner_of: wantOf,
+        p_partner_type: wantOf ? partnerForm.type : null, p_parent_id: wantOf && partnerForm.parent ? partnerForm.parent : null,
+      });
+      if (ptErr) {
+        // the company itself is saved: keep the form open on it so only the partner setting has to be fixed
+        setForm((f) => ({ ...f, id: targetCompanyId }));
+        setSaving(false);
+        setFormError('The company was saved, but not its retail partner setting: ' + ptErr.message);
+        await reload();
+        await reloadLinks();
+        return;
+      }
+    }
+
     setSaving(false);
     setShowForm(false);
     await reload();
+    await reloadLinks();
     await refresh();
   };
 
@@ -1449,7 +1554,19 @@ export function CompaniesPage() {
     { key: 'company_name', label: 'Company', sortable: true, render: (r) => (
       <div className="flex items-center gap-3">
         <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500"><Building2 size={15} /></div>
-        <p className="font-medium text-slate-800 hover:text-brand-600">{r.company_name}</p>
+        <div className="min-w-0">
+          <p className="font-medium text-slate-800 hover:text-brand-600">{r.company_name}</p>
+          {(() => {
+            const l = links.get(r.id);
+            if (l?.partner_of) {
+              const main = companies.find((c) => c.id === l.partner_of)?.company_name || '—';
+              const up = l.partner_parent_id ? companies.find((c) => c.id === l.partner_parent_id)?.company_name : null;
+              return <p className="flex items-center gap-1 text-[11px] text-indigo-700"><Handshake size={11} />{partnerLabel(l.partner_type)} of {main}{up ? ` · under ${up}` : ''}</p>;
+            }
+            const n = [...links.values()].filter((x) => x.partner_of === r.id).length;
+            return n ? <p className="text-[11px] text-slate-500">{n} retail partner{n === 1 ? '' : 's'}</p> : null;
+          })()}
+        </div>
       </div>
     )},
     { key: 'code', label: 'GST No.', sortable: true, render: (r) => <span className="font-mono text-xs text-slate-600">{r.code || '—'}</span> },
@@ -1479,7 +1596,7 @@ export function CompaniesPage() {
         </div>
       </div>
       {hubId && companies.find(c => c.id === hubId) ? (
-        <CompanyHub company={companies.find(c => c.id === hubId)!} onBack={() => openHub(null)} onEdit={(c) => openEdit(c)} />
+        <CompanyHub key={hubId} company={companies.find(c => c.id === hubId)!} onBack={() => openHub(null)} onEdit={(c) => openEdit(c)} links={links} companies={companies} onOpen={(id) => openHub(id)} />
       ) : (
         <DataTable
           data={searchedRows}
@@ -1558,6 +1675,57 @@ export function CompaniesPage() {
             <div className="col-span-2 sm:col-span-4"><FormField label="Address"><input className={inputClass} value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Full company address" /></FormField></div>
             <div className="col-span-2 sm:col-span-4"><FormField label="Short Description"><input className={inputClass} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Brief summary or tagline" /></FormField></div>
           </div>
+
+          {/* Retail sales partner: its own company in Argus BI, selling from the main company's Retail Store */}
+          {(() => {
+            const mains = (companies as CompanyRow[]).filter((c) => c.id !== form.id && !links.get(c.id)?.partner_of);
+            const myPartners = form.id ? [...links.values()].filter((l) => l.partner_of === form.id).length : 0;
+            const parents = [...links.values()].filter((l) => l.partner_of === partnerForm.of && l.id !== form.id && PARENT_TYPES[partnerForm.type].includes(l.partner_type as PartnerType));
+            const coName = (id: string) => (companies as CompanyRow[]).find((c) => c.id === id)?.company_name || '—';
+            const mainName = partnerForm.of ? coName(partnerForm.of) : 'the main company';
+            return (
+              <div className={`p-3 rounded-xl border space-y-2 ${partnerForm.on ? 'bg-indigo-50/50 border-indigo-200' : 'bg-slate-50/70 border-slate-200'}`}>
+                <label className={`flex items-center gap-2 text-xs font-bold text-slate-800 ${myPartners ? 'opacity-60' : 'cursor-pointer'}`}>
+                  <input type="checkbox" disabled={!!myPartners} checked={partnerForm.on}
+                    onChange={(e) => setPartnerForm(e.target.checked ? { ...partnerForm, on: true } : emptyPartner)} />
+                  <Handshake size={14} className="text-indigo-600" /> This company is a Retail sales partner
+                </label>
+                <p className="text-[11px] leading-snug text-slate-500">
+                  {myPartners
+                    ? `This is a main company with ${myPartners} retail partner${myPartners === 1 ? '' : 's'}, so it cannot be a partner itself.`
+                    : "Its users sign in to Argus BI in this company only and never see the main company's data. In the Retail Store they sell the main company's products at their partner price, and see only their own orders plus those of the partners under them."}
+                </p>
+                {partnerForm.on && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <FormField label="Sells for (main company)" required>
+                      <select className={inputClass} value={partnerForm.of} onChange={(e) => setPartnerForm({ ...partnerForm, of: e.target.value, parent: '' })}>
+                        <option value="">Choose…</option>
+                        {mains.map((c) => <option key={c.id} value={c.id}>{c.company_name}</option>)}
+                      </select>
+                    </FormField>
+                    <FormField label="Partner type" required>
+                      <select className={inputClass} value={partnerForm.type}
+                        onChange={(e) => {
+                          const type = e.target.value as PartnerType;
+                          const keep = partnerForm.parent && PARENT_TYPES[type].includes(links.get(partnerForm.parent)?.partner_type as PartnerType);
+                          setPartnerForm({ ...partnerForm, type, parent: keep ? partnerForm.parent : '' });
+                        }}>
+                        {PARTNER_TYPES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+                      </select>
+                    </FormField>
+                    <FormField label="Comes under">
+                      <select className={inputClass} value={partnerForm.parent} disabled={partnerForm.type === 'regional' || !partnerForm.of}
+                        onChange={(e) => setPartnerForm({ ...partnerForm, parent: e.target.value })}>
+                        <option value="">Directly under {mainName}</option>
+                        {parents.map((l) => <option key={l.id} value={l.id}>{coName(l.id)} ({partnerLabel(l.partner_type)})</option>)}
+                      </select>
+                    </FormField>
+                    <p className="sm:col-span-3 text-[11px] text-indigo-800">{PARTNER_TYPES.find((t) => t.id === partnerForm.type)?.under}</p>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Menu Access Header & Controls */}
           <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs bg-white">
