@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useGlobalDateFilter } from '@/contexts/DateRangeContext';
 import { Card, Badge } from '@/components/ui/Card';
-import { Calendar, ChevronLeft, ChevronRight, Plus, User, Settings2, Clock, GripVertical, AlertTriangle, ListTodo } from 'lucide-react';
+import { Calendar, ChevronLeft, ChevronRight, Plus, User, Settings2, Clock, GripVertical, AlertTriangle, ListTodo, Trash2 } from 'lucide-react';
 import { AddTaskModal } from '@/components/production/AddTaskModal';
 import { fetchScheduledTasks, type ScheduledTask } from '@/lib/scheduledTasks';
 import { ymd } from '@/lib/operationPlans';
@@ -260,6 +260,29 @@ function ActualScheduling() {
 
   // The production order list already names the product, part and customer, so every schedulable order is offered.
   const schedulableWOs = allSchedulableWOs;
+
+  // Delete a scheduled job (job card). A job that has already started keeps its record: it is Cancelled instead,
+  // so the pieces made and the times stay in the reports.
+  const deleteJob = async (job: any) => {
+    const started = Number(job.qty_completed) > 0 || Number(job.qty_rejected) > 0 || !!job.actual_start
+      || ['In Progress', 'Running', 'Completed'].includes(String(job.status ?? ''));
+    const name = `${job.part_name || job.operation || 'this job'}${job.machine ? ` on ${job.machine}` : ''}`;
+    if (!window.confirm(started
+      ? `${name} has already started, so it will be cancelled (its work stays in the reports) and taken off the board. Continue?`
+      : `Delete the job ${name}? This cannot be undone.`)) return;
+    let error = null as any;
+    if (started) {
+      ({ error } = await supabase.from('cnc_job_cards').update({ status: 'Cancelled' }).eq('id', job.id));
+    } else {
+      ({ error } = await supabase.from('cnc_job_cards').delete().eq('id', job.id));
+      // linked records can block a delete: cancel it instead
+      if (error) ({ error } = await supabase.from('cnc_job_cards').update({ status: 'Cancelled' }).eq('id', job.id));
+    }
+    if (error) { alert('Could not delete the job: ' + error.message); return; }
+    setJobs(js => js.filter(j => j.id !== job.id));
+    setSelectedJob(null);
+    fetchData();
+  };
 
   const closeScheduleModal = () => {
     
@@ -979,6 +1002,7 @@ function ActualScheduling() {
                   <div className="pt-3 flex gap-2">
                     <Button variant="primary" className="flex-1 bg-blue-600 hover:bg-blue-700" onClick={() => openScheduleModal(selectedJob, false)}>Edit</Button>
                     <Button variant="secondary" className="flex-1" onClick={() => openScheduleModal(selectedJob, true)}>View</Button>
+                    <Button variant="secondary" className="!px-3 !text-red-600 hover:!bg-red-50 border-red-200" title="Delete this job" aria-label="Delete job" onClick={() => void deleteJob(selectedJob)}><Trash2 size={16} /></Button>
                   </div>
                 </div>
               ) : (
