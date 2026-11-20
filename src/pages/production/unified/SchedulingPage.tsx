@@ -17,7 +17,6 @@ import { ActualTimeline } from './ActualPage';
 import { ActualListView } from './ActualListView';
 import { PlannedListView } from './PlannedListView';
 import { formatWorkOrderOption } from '@/lib/workOrderFormat';
-import { buildPartChoices, buildProductChoices, workOrdersForPart } from '@/lib/partOrders';
 import { useHeaderKpis } from '@/contexts/HeaderKpiContext';
 
 function ActualScheduling() {
@@ -41,12 +40,6 @@ function ActualScheduling() {
   const [showAddJob, setShowAddJob] = useState(false);
   const [saving, setSaving] = useState(false);
   const [workOrders, setWorkOrders] = useState<any[]>([]);
-  // Product -> part picking (same lists as Production Orders): products from sales orders + inwards, parts from the inwards.
-  const [soRows, setSoRows] = useState<any[]>([]);
-  const [inwardRows, setInwardRows] = useState<any[]>([]);
-  const [allWoRows, setAllWoRows] = useState<any[]>([]);
-  const [schedProductKey, setSchedProductKey] = useState('');
-  const [schedPartKey, setSchedPartKey] = useState('');
   const [operations, setOperations] = useState<any[]>([]);
   const [opsMissing, setOpsMissing] = useState(false);
   // Work-order customer lookup across ALL orders (scheduling list is filtered).
@@ -199,7 +192,7 @@ function ActualScheduling() {
     setEditingJob(null);
     setViewOnly(false);
     const d = currentDate.toISOString().split('T')[0];
-    setSchedProductKey(''); setSchedPartKey('');
+    
     setNewJobForm(withEnd({
       workOrder: '', operationId: '', operationSeq: '', processName: '',
       partName: '', partNo: '', customer: '', qty: '',
@@ -265,36 +258,11 @@ function ActualScheduling() {
     wo => SCHEDULABLE_WO_STATUSES.includes(wo.status)
   );
 
-  // Parts offered here are the ones that have an order ready to schedule; ordered / remaining come from all orders.
-  const schedProducts = useMemo(() => buildProductChoices(soRows, inwardRows), [soRows, inwardRows]);
-  const schedParts = useMemo(() => buildPartChoices(schedProducts, inwardRows, allWoRows), [schedProducts, inwardRows, allWoRows]);
-  const schedPartOptions = schedParts.filter(
-    p => (!schedProductKey || p.productKey === schedProductKey) && workOrdersForPart(p, allSchedulableWOs).length > 0
-  );
-  const schedProductOptions = schedProducts.filter(p => schedParts.some(c => c.productKey === p.key && workOrdersForPart(c, allSchedulableWOs).length > 0));
-  const schedSelectedPart = schedParts.find(p => p.key === schedPartKey) ?? null;
-  // Once a part is chosen only its orders are listed; otherwise every schedulable order (as before).
-  const schedulableWOs = schedSelectedPart ? workOrdersForPart(schedSelectedPart, allSchedulableWOs) : allSchedulableWOs;
-
-  const handleSchedPartSelect = (key: string) => {
-    setSchedPartKey(key);
-    const part = schedParts.find(p => p.key === key);
-    if (!part) return;
-    setSchedProductKey(part.productKey);
-    const wos = workOrdersForPart(part, allSchedulableWOs);
-    if (wos.length === 1) handleWorkOrderSelect(wos[0].wo_no); // a single order: select it straight away
-    else handleWorkOrderSelect('');
-  };
-
-  const handleSchedProductSelect = (key: string) => {
-    setSchedProductKey(key);
-    setSchedPartKey('');
-    const parts = schedParts.filter(p => p.productKey === key && workOrdersForPart(p, allSchedulableWOs).length > 0);
-    if (parts.length === 1) handleSchedPartSelect(parts[0].key);
-  };
+  // The production order list already names the product, part and customer, so every schedulable order is offered.
+  const schedulableWOs = allSchedulableWOs;
 
   const closeScheduleModal = () => {
-    setSchedProductKey(''); setSchedPartKey('');
+    
     setShowAddJob(false);
     setEditingJob(null);
     setViewOnly(false);
@@ -436,8 +404,6 @@ function ActualScheduling() {
         machinesRes,
         jobsRes,
         woRes,
-        soRes,
-        inwRes,
         allWoRes,
         opsRes,
         procRes
@@ -445,8 +411,6 @@ function ActualScheduling() {
         supabase.from('cnc_machines').select('*').order('code'),
         supabase.from('cnc_job_cards').select('*'),
         supabase.from('cnc_work_orders').select('*').not('status', 'in', '("Completed","Dispatched","Cancelled")'),
-        supabase.from('cnc_sales_orders').select('*'),
-        supabase.from('cnc_inwards').select('*').neq('status', 'Deleted'),
         supabase.from('cnc_work_orders').select('*'),
         supabase.from('cnc_work_order_operations').select('*').order('operation_sequence'),
         supabase.from('cnc_processes').select('process_code,process_name,machine_type,status').order('process_code'),
@@ -469,9 +433,6 @@ function ActualScheduling() {
       if (woRes.error) console.error('Failed to load work orders:', woRes.error);
       if (woRes.data) setWorkOrders(woRes.data);
       
-      setSoRows(soRes.data ?? []);
-      setInwardRows(inwRes.data ?? []);
-      setAllWoRows(allWoRes.data ?? []);
 
       // Build customer and id map directly from all work orders
       const cmap: Record<string, string> = {};
@@ -1075,22 +1036,6 @@ function ActualScheduling() {
             <p className="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
               Work order operations are not provisioned yet — apply the work-order-operations migration to schedule specific operations.
             </p>
-          )}
-          {!editingJob && !viewOnly && (
-            <div className="grid grid-cols-1 gap-4">
-              <FormField label="Product">
-                <select className={inputClass} value={schedProductKey} onChange={e => handleSchedProductSelect(e.target.value)}>
-                  <option value="">Select product…</option>
-                  {schedProductOptions.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
-                </select>
-              </FormField>
-              <FormField label="Part">
-                <select className={inputClass} value={schedPartKey} onChange={e => handleSchedPartSelect(e.target.value)}>
-                  <option value="">Select part…</option>
-                  {schedPartOptions.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
-                </select>
-              </FormField>
-            </div>
           )}
           <FormField label="Select Production Order" required>
             <select className={inputClass} value={newJobForm.workOrder} onChange={e => handleWorkOrderSelect(e.target.value)}>
