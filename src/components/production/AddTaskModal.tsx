@@ -135,7 +135,7 @@ export function AddTaskModal({ open, onClose, onSaved, initialDate, initialMode 
       open={open}
       onClose={onClose}
       title={initialTask ? 'Edit task' : initialMode === 'actual' ? 'Add task (done)' : 'Add task'}
-      size={many ? 'lg' : 'md'}
+      size="xl"
       footer={
         <div className="flex w-full items-center justify-between">
           <div>{initialTask && <Button variant="secondary" className="!text-red-600 hover:!bg-red-50" onClick={() => void remove()} disabled={saving}><Trash2 size={15} /> Delete</Button>}</div>
@@ -151,50 +151,34 @@ export function AddTaskModal({ open, onClose, onSaved, initialDate, initialMode 
       <form onSubmit={(e) => { e.preventDefault(); void save(); }} className="space-y-3">
         {lines.map((l, i) => (
           <div key={l.key} onFocusCapture={() => setActive(i)}
-            className={many ? `space-y-3 rounded-lg border p-3 ${i === active ? 'border-indigo-300 bg-indigo-50/40' : 'border-slate-200'}` : 'space-y-4'}>
-            {many && (
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wide text-indigo-700">Task {i + 1}</span>
-                <button type="button" onClick={() => removeLine(i)} title="Remove this task" aria-label={`Remove task ${i + 1}`}
-                  className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"><X size={14} /></button>
-              </div>
-            )}
-            <FormField label="Task name" required>
-              <input type="text" aria-label="Task name" className={inputClass} placeholder="e.g. Machine cleaning, Tool preset, Quality audit"
-                value={l.name} onChange={(e) => patch(i, { name: e.target.value })} autoFocus={i === lines.length - 1} />
-            </FormField>
-            {(!many || i === active) && (
-              <div className="flex flex-wrap gap-1.5">
-                {QUICK.map((q) => (
-                  <button key={q} type="button" onClick={() => patch(i, { name: q })}
-                    className={`rounded-full border px-2 py-1 text-[11px] ${l.name === q ? 'border-indigo-400 bg-indigo-100 font-semibold text-indigo-800' : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'}`}>{q}</button>
-                ))}
-              </div>
-            )}
-
-            <FormField label="Assign to employee">
-              <div className="relative">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
-                  <User size={15} />
+            className={many ? `space-y-2 rounded-lg border p-2.5 ${i === active ? 'border-indigo-300 bg-indigo-50/40' : 'border-slate-200'}` : 'space-y-2'}>
+            {/* one line: task, employee, day, from, to */}
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-[minmax(0,2.2fr)_minmax(0,1.6fr)_minmax(0,1.15fr)_minmax(0,0.85fr)_minmax(0,0.85fr)_auto] lg:items-end">
+              <FormField label={many ? `Task ${i + 1}` : 'Task name'} required>
+                <input type="text" aria-label="Task name" className={inputClass} placeholder="e.g. Machine cleaning, Tool preset"
+                  value={l.name} onChange={(e) => patch(i, { name: e.target.value })} autoFocus={i === lines.length - 1} />
+              </FormField>
+              <FormField label="Assign to employee">
+                <div className="relative">
+                  <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                    <User size={15} />
+                  </div>
+                  <input
+                    type="text"
+                    aria-label="Assign to employee"
+                    list={`add-task-who-${l.key}`}
+                    className={`${inputClass} pl-9`}
+                    placeholder="Choose or type name"
+                    value={l.who}
+                    onChange={(e) => patch(i, { who: e.target.value })}
+                  />
+                  <datalist id={`add-task-who-${l.key}`}>
+                    {memberOptions.map((o) => (
+                      <option key={o} value={o} />
+                    ))}
+                  </datalist>
                 </div>
-                <input
-                  type="text"
-                  aria-label="Assign to employee"
-                  list={`add-task-who-${l.key}`}
-                  className={`${inputClass} pl-9`}
-                  placeholder="Choose or type employee name"
-                  value={l.who}
-                  onChange={(e) => patch(i, { who: e.target.value })}
-                />
-                <datalist id={`add-task-who-${l.key}`}>
-                  {memberOptions.map((o) => (
-                    <option key={o} value={o} />
-                  ))}
-                </datalist>
-              </div>
-            </FormField>
-
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              </FormField>
               <FormField label="Day" required>
                 <input type="date" aria-label="Day" className={inputClass} value={l.date} onChange={(e) => patch(i, { date: e.target.value })} />
               </FormField>
@@ -204,7 +188,19 @@ export function AddTaskModal({ open, onClose, onSaved, initialDate, initialMode 
               <FormField label="To" required>
                 <div className="inline-flex h-[38px] w-full items-center rounded border border-slate-300 bg-white text-sm shadow-sm"><Time24 label="To" value={l.end} onChange={(v) => patch(i, { end: v })} /></div>
               </FormField>
+              {many ? (
+                <button type="button" onClick={() => removeLine(i)} title="Remove this task" aria-label={`Remove task ${i + 1}`}
+                  className="h-[38px] w-9 flex items-center justify-center rounded text-slate-400 hover:bg-red-50 hover:text-red-600"><X size={16} /></button>
+              ) : <span className="hidden lg:block w-0" />}
             </div>
+            {(!many || i === active) && (
+              <div className="flex flex-wrap gap-1.5">
+                {QUICK.map((q) => (
+                  <button key={q} type="button" onClick={() => patch(i, { name: q })}
+                    className={`rounded-full border px-2 py-0.5 text-[11px] ${l.name === q ? 'border-indigo-400 bg-indigo-100 font-semibold text-indigo-800' : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'}`}>{q}</button>
+                ))}
+              </div>
+            )}
           </div>
         ))}
 
