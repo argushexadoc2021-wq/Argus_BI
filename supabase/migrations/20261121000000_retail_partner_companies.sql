@@ -16,6 +16,9 @@
 --   Channel partner   -> under a Regional partner, or directly under the main company
 --   Referral partner  -> under a Channel or Regional partner, or directly under the main company
 --
+-- Every partner must have a valid GST No., and one GST No. belongs to one company only, so the
+-- same partner can never be added twice (not even under a different Regional partner).
+--
 -- Only the Super Admin sets this (Company Management > Edit company > Retail partner).
 -- Safe to run more than once.
 -- =====================================================================================
@@ -68,6 +71,14 @@ begin
   end if;
   rank := case t when 'regional' then 1 when 'channel' then 2 else 3 end;
 
+  -- every partner is known by its GST No.: required, valid, and (unique index below) never used by two companies
+  if coalesce(btrim(co.code), '') = '' then
+    raise exception '% has no GST No. Enter the partner''s GST No. first, so the same partner cannot be added twice.', co.company_name;
+  end if;
+  if upper(btrim(co.code)) !~ '^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$' then
+    raise exception 'The GST No. % of % is not valid. It has 15 characters, like 33ABCDE1234F1Z5.', co.code, co.company_name;
+  end if;
+
   if p_partner_of = co.id then raise exception 'A company cannot be a partner of itself'; end if;
   select * into main from public.companies where id = p_partner_of;
   if main.id is null then raise exception 'Main company not found'; end if;
@@ -115,5 +126,77 @@ $$;
 
 revoke all on function public.erp_set_company_partner(uuid, uuid, text, uuid) from public, anon;
 grant execute on function public.erp_set_company_partner(uuid, uuid, text, uuid) to authenticated;
+
+-- ---------------------------------------------------------------------------------------------
+-- One GST No. = one company (so no partner can be added twice, under any Regional partner).
+-- companies.code already had a unique rule; this one also ignores spaces and small letters.
+-- If two companies already share a GST No., the rule is not added and the clash is listed.
+-- ---------------------------------------------------------------------------------------------
+do $$
+declare dup text;
+begin
+  select string_agg(format('%s (%s)', g, names), '; ') into dup
+    from (select upper(btrim(code)) g, string_agg(company_name, ', ' order by company_name) names
+            from public.companies where nullif(btrim(code), '') is not null
+           group by upper(btrim(code)) having count(*) > 1) x;
+  if dup is null then
+    create unique index if not exists companies_gst_key on public.companies (upper(btrim(code))) where nullif(btrim(code), '') is not null;
+  else
+    raise notice 'These companies share a GST No., so the GST rule was not added. Fix them in Company Management and run this file again: %', dup;
+  end if;
+end $$;
+
+-- Saving a company: a GST No. already used by another company is refused with that company's name.
+create or replace function public.erp_save_company(p_id uuid, p_company_name text, p_code text, p_status text)
+returns jsonb
+language plpgsql volatile security definer set search_path = ''
+as $$
+declare
+  saved public.companies;
+  v_code text := nullif(upper(regexp_replace(coalesce(p_code, ''), '\s+', '', 'g')), '');
+  other text;
+begin
+  if not public.erp_is_super_admin() then
+    raise exception 'Only the Super Admin can manage companies' using errcode = '42501';
+  end if;
+  if coalesce(btrim(p_company_name), '') = '' then
+    raise exception 'Company name is required';
+  end if;
+  if p_status not in ('Active', 'Inactive') then
+    raise exception 'Status must be Active or Inactive';
+  end if;
+  if v_code is not null then
+    select company_name into other from public.companies
+     where upper(btrim(code)) = v_code and id is distinct from p_id limit 1;
+    if other is not null then
+      raise exception 'GST No. % is already used by the company "%". The same company or partner cannot be added twice.', v_code, other;
+    end if;
+  end if;
+  select company_name into other from public.companies
+   where lower(company_name) = lower(btrim(p_company_name)) and id is distinct from p_id limit 1;
+  if other is not null then
+    raise exception 'A company named "%" already exists', other;
+  end if;
+  begin
+    if p_id is null then
+      insert into public.companies (company_name, code, status)
+      values (btrim(p_company_name), v_code, p_status)
+      returning * into saved;
+    else
+      update public.companies
+      set company_name = btrim(p_company_name), code = v_code, status = p_status, updated_at = now()
+      where id = p_id
+      returning * into saved;
+      if saved.id is null then raise exception 'Company not found'; end if;
+    end if;
+  exception when unique_violation then
+    raise exception 'A company with that name or GST No. already exists';
+  end;
+  return to_jsonb(saved);
+end;
+$$;
+
+revoke all on function public.erp_save_company(uuid, text, text, text) from public, anon;
+grant execute on function public.erp_save_company(uuid, text, text, text) to authenticated;
 
 commit;

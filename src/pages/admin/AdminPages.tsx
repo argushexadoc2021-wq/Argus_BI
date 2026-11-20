@@ -1304,6 +1304,10 @@ export function CompaniesPage() {
     if (!form.company_name.trim()) { setFormError('Company name is required'); return; }
     if (partnerForm.on && !linksReady) { setFormError('Retail partners need database update 20261121000000_retail_partner_companies.sql. Run it in the SQL Editor first.'); return; }
     if (partnerForm.on && !partnerForm.of) { setFormError('Choose the main company this partner sells for.'); return; }
+    if (partnerForm.on && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$/.test(form.code)) {
+      setFormError(form.code ? 'The GST No. is not valid. It has 15 characters, like 33ABCDE1234F1Z5.' : 'Enter the partner\'s GST No. Every partner needs one, so the same partner cannot be added twice.');
+      return;
+    }
     setSaving(true);
     setFormError(null);
 
@@ -1641,7 +1645,7 @@ export function CompaniesPage() {
                 placeholder="e.g. Argus Technology"
               />
             </FormField>
-            <FormField label="GST No.">
+            <FormField label="GST No." required={partnerForm.on}>
               <input
                 className={inputClass}
                 value={form.code}
