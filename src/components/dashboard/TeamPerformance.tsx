@@ -45,11 +45,12 @@ export function TeamPerformance({ from, to, onOpenScheduling }: { from: string; 
     const now = new Date();
     const out: Item[] = [];
     // 1. production operations: the plan (by work order + operation) against its job cards
-    const groups = new Map<string, { woNo: string; plans: PlanRow[]; jobs: any[] }>();
+    type Group = { woNo: string; plans: PlanRow[]; jobs: any[] };
+    const groups = new Map<string, Group>();
     for (const p of data.plans) {
       const wo = data.woById.get(String(p.work_order_id)); if (!wo) continue;
       const k = `${wo.wo_no}::${Number(p.operation_sequence) || 0}`;
-      const g = groups.get(k) ?? { woNo: wo.wo_no, plans: [], jobs: [] }; g.plans.push(p); groups.set(k, g);
+      const g: Group = groups.get(k) ?? { woNo: String(wo.wo_no), plans: [], jobs: [] }; g.plans.push(p); groups.set(k, g);
     }
     for (const j of data.jobs) {
       const g = groups.get(`${j.work_order}::${seqOfJob(j)}`); if (g) g.jobs.push(j);
