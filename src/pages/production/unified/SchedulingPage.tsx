@@ -708,41 +708,38 @@ function ActualScheduling() {
   };
 
   return (
-    <div className="p-4 lg:p-6 bg-slate-50 min-h-[calc(100vh-4rem)]">
-      {/* HEADER SECTION */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">Production Scheduling</h1>
-          <p className="text-slate-500 text-sm">Plan machines and manpower. Drag and drop jobs to reschedule.</p>
-        </div>
-        
-        <div className="flex flex-wrap items-center gap-3">
+    <div className="px-4 pb-4 pt-1 lg:px-6 bg-slate-50 min-h-[calc(100vh-4rem)]">
+      {/* HEADER SECTION: one line, same dark bar as the Planned / Actual timelines */}
+      <div className="head-bar flex flex-wrap items-center gap-2 rounded-xl px-2.5 py-2 mb-3">
+        <h1 className="text-sm font-bold whitespace-nowrap mr-1">Production Scheduling</h1>
+        <span className="flex-1 min-w-0" />
+        <div className="flex flex-wrap items-center gap-2">
           {dbError && <Badge variant="error">Failed to load schedule</Badge>}
           {loading && <Badge variant="neutral">Syncing...</Badge>}
-          <div className="flex bg-white rounded-lg border border-slate-200 p-1">
+          <div className="flex bg-white rounded-lg border border-slate-200 p-0.5 shadow-2xs">
             {['Day', 'Week', 'Month'].map(v => (
               <button 
                 key={v}
                 onClick={() => setView(v as any)}
-                className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${view === v ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-50'}`}
+                className={`px-2.5 py-0.5 text-xs font-medium rounded transition-colors ${view === v ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-50'}`}
               >
                 {v}
               </button>
             ))}
           </div>
 
-          <div className="flex items-center bg-white rounded-lg border border-slate-200">
-            <button className="p-2 text-slate-600 hover:bg-slate-50 border-r border-slate-200" onClick={() => { const d = new Date(currentDate); if (view === 'Day') d.setDate(d.getDate() - 1); else if (view === 'Week') d.setDate(d.getDate() - 7); else d.setMonth(d.getMonth() - 1); setCurrentDate(d); }}><ChevronLeft size={18} /></button>
-            <div className="px-4 py-1.5 text-sm font-medium text-slate-700 min-w-[200px] text-center flex items-center justify-center gap-2">
-              <Calendar size={16} className="text-slate-400" />
+          <div className="flex items-center bg-white rounded-lg border border-slate-200 shadow-2xs">
+            <button className="p-1.5 text-slate-600 hover:bg-slate-50 border-r border-slate-200" onClick={() => { const d = new Date(currentDate); if (view === 'Day') d.setDate(d.getDate() - 1); else if (view === 'Week') d.setDate(d.getDate() - 7); else d.setMonth(d.getMonth() - 1); setCurrentDate(d); }}><ChevronLeft size={14} /></button>
+            <div className="px-2.5 py-1 text-xs font-semibold text-slate-700 min-w-[190px] text-center flex items-center justify-center gap-1.5">
+              <Calendar size={13} className="text-slate-400" />
               {view === 'Day' ? activeDates[0].toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : view === 'Month' ? activeDates[0].toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }) : `${activeDates[0].toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} - ${activeDates[activeDates.length - 1].toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`}
             </div>
-            <button className="p-2 text-slate-600 hover:bg-slate-50 border-l border-slate-200" onClick={() => { const d = new Date(currentDate); if (view === 'Day') d.setDate(d.getDate() + 1); else if (view === 'Week') d.setDate(d.getDate() + 7); else d.setMonth(d.getMonth() + 1); setCurrentDate(d); }}><ChevronRight size={18} /></button>
+            <button className="p-1.5 text-slate-600 hover:bg-slate-50 border-l border-slate-200" onClick={() => { const d = new Date(currentDate); if (view === 'Day') d.setDate(d.getDate() + 1); else if (view === 'Week') d.setDate(d.getDate() + 7); else d.setMonth(d.getMonth() + 1); setCurrentDate(d); }}><ChevronRight size={14} /></button>
           </div>
 
-          <Button variant="secondary" className="bg-white" onClick={() => setCurrentDate(new Date())}>Today</Button>
-          <Button variant="primary" className="bg-brand-500 hover:bg-brand-600 text-white border-0 shadow-sm" onClick={openAddJob}><Plus size={18} /> Add Job</Button>
-          <Button variant="secondary" className="bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100 shadow-sm flex items-center gap-1.5" onClick={() => { setTaskToEdit(null); setShowAddTask(true); }}><ListTodo size={16} /> Add Task</Button>
+          <Button variant="secondary" size="sm" className="h-8 px-2.5 text-xs bg-white border border-slate-200 rounded-lg hover:bg-slate-50 shadow-2xs" onClick={() => setCurrentDate(new Date())}>Today</Button>
+          <Button variant="primary" size="sm" className="h-8 px-2.5 text-xs bg-brand-500 hover:bg-brand-600 text-white border-0 shadow-sm whitespace-nowrap" onClick={openAddJob}><Plus size={14} /> Add Job</Button>
+          <Button variant="secondary" size="sm" className="h-8 px-2.5 text-xs bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100 shadow-sm flex items-center gap-1 whitespace-nowrap" onClick={() => { setTaskToEdit(null); setShowAddTask(true); }}><ListTodo size={14} /> Add Task</Button>
         </div>
       </div>
 
