@@ -6,6 +6,8 @@ import { Check, Plus, X } from 'lucide-react';
 const added = new Set<string>();
 const listeners = new Set<() => void>();
 const addName = (n: string) => { added.add(n); listeners.forEach((l) => l()); };
+/** Add a new operator name to every operator dropdown on the page (used by a single "+" outside the rows). */
+export const addOperatorName = (n: string) => { const t = n.trim().replace(/\s+/g, ' '); if (t) addName(t); return t; };
 
 interface OperatorSelectProps {
   value: string;
@@ -13,10 +15,12 @@ interface OperatorSelectProps {
   options: string[];
   className?: string;
   placeholder?: string;
+  /** Hide the "+" beside the dropdown (when one "+" for all lines is shown elsewhere). */
+  hideAdd?: boolean;
 }
 
 /** A normal dropdown of operators with a "+" button to add a new name. */
-export function OperatorSelect({ value, onChange, options, className = '', placeholder = 'Operator' }: OperatorSelectProps) {
+export function OperatorSelect({ value, onChange, options, className = '', placeholder = 'Operator', hideAdd = false }: OperatorSelectProps) {
   const [, force] = useState(0);
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState('');
@@ -82,7 +86,7 @@ export function OperatorSelect({ value, onChange, options, className = '', place
         <option value="">{placeholder}…</option>
         {all.map((o) => <option key={o} value={o}>{o}</option>)}
       </select>
-      <button type="button" onClick={() => setAdding(true)} title="Add a new operator" aria-label="Add a new operator" className={`${btn} hover:!text-indigo-600 hover:!border-indigo-300`}><Plus size={15} /></button>
+      {!hideAdd && <button type="button" onClick={() => setAdding(true)} title="Add a new operator" aria-label="Add a new operator" className={`${btn} hover:!text-indigo-600 hover:!border-indigo-300`}><Plus size={15} /></button>}
     </div>
   );
 }

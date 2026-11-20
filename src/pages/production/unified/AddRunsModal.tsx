@@ -3,7 +3,7 @@ import { Plus, Trash2 } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Card';
 import { Time24 } from '@/components/ui/Time24';
-import { OperatorSelect } from '@/components/ui/OperatorSelect';
+import { OperatorSelect, addOperatorName } from '@/components/ui/OperatorSelect';
 import { supabase } from '@/lib/supabase';
 import { insertTolerant } from '@/lib/partRouting';
 import { generateJobNo } from '@/lib/jobCards';
@@ -59,6 +59,7 @@ export function AddRunsModal({ open, onClose, initial, mode = 'actual', onSaved 
   const blank = (): RunRow => ({ key: newKey(), partKey: '', qty: '', process: '', operator: '', date: initial.date, start: initial.start, end: initial.end });
   const [rows, setRows] = useState<RunRow[]>([blank()]);
   const [saving, setSaving] = useState(false);
+  const [newOp, setNewOp] = useState<string | null>(null); // the one "add operator" box, shared by all lines
   const [ref, setRef] = useState<RefData>(EMPTY_REF);
 
   // Everything the lines choose from is read fresh each time the window opens.
@@ -212,15 +213,33 @@ export function AddRunsModal({ open, onClose, initial, mode = 'actual', onSaved 
   };
 
   const qtyHead = plan ? 'Planned qty' : 'Finished qty';
-  const cols = 'grid grid-cols-[minmax(210px,2.2fr)_92px_minmax(120px,1fr)_minmax(100px,1fr)_128px_124px_124px_64px] items-center gap-2';
+  const cols = 'grid grid-cols-[minmax(210px,2.2fr)_92px_minmax(120px,1fr)_minmax(100px,1fr)_128px_124px_124px_36px] items-center gap-2';
   const noun = plan ? 'plan' : 'run';
   return (
     <Modal open={open} onClose={onClose} title={plan ? 'Add planned operations' : 'Add actual runs'} size="3xl"
       footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save} disabled={saving}>{saving ? 'Saving…' : `Save ${rows.length} ${noun}${rows.length > 1 ? 's' : ''}`}</Button></>}>
       <div className="space-y-2">
         <div className={`${cols} px-1 text-[10px] font-bold uppercase tracking-wider text-slate-500`}>
-          <span>Part name</span><span title={plan ? 'Pieces planned for this slot' : 'Pieces finished in this run'}>{qtyHead}</span><span>Process</span><span>Operator</span><span>Date</span><span>Start</span><span>End</span><span />
+          <span>Part name</span><span title={plan ? 'Pieces planned for this slot' : 'Pieces finished in this run'}>{qtyHead}</span><span>Process</span><span className="flex items-center gap-1">Operator<button type="button" onClick={() => setNewOp((v) => (v === null ? '' : null))} title="Add a new operator" aria-label="Add a new operator" className="inline-flex h-4 w-4 items-center justify-center rounded border border-slate-300 bg-white text-slate-500 hover:border-indigo-300 hover:text-indigo-600"><Plus size={11} /></button></span><span>Date</span><span>Start</span><span>End</span><span />
         </div>
+        {newOp !== null && (() => {
+          const addOp = () => {
+            const n = addOperatorName(newOp);
+            if (n) setRows((rs) => rs.map((r) => (r.operator ? r : { ...r, operator: n })));
+            setNewOp(null);
+          };
+          return (
+            <div className="flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50/60 px-2 py-1.5">
+              <span className="text-xs font-semibold text-indigo-800">New operator</span>
+              <input autoFocus className={`${cell} !h-8 max-w-[260px]`} placeholder="Operator name" value={newOp}
+                onChange={(e) => setNewOp(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addOp(); } if (e.key === 'Escape') setNewOp(null); }} />
+              <Button variant="primary" size="sm" className="h-8" onClick={addOp}>Add</Button>
+              <Button variant="secondary" size="sm" className="h-8" onClick={() => setNewOp(null)}>Cancel</Button>
+              <span className="text-[11px] text-slate-500">It is filled in on the lines with no operator and can be picked on every line.</span>
+            </div>
+          );
+        })()}
         {rows.map((r) => {
           const part = parts.find((p) => p.key === r.partKey);
           return (
@@ -236,13 +255,11 @@ export function AddRunsModal({ open, onClose, initial, mode = 'actual', onSaved 
                 <option value="">Process…</option>
                 {ref.processes.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
               </select>
-              <OperatorSelect className={cell} options={ref.operators} value={r.operator} onChange={(v) => upd(r.key, { operator: v })} />
+              <OperatorSelect hideAdd className={cell} options={ref.operators} value={r.operator} onChange={(v) => upd(r.key, { operator: v })} />
               <input type="date" aria-label="Date" className={cell} value={r.date} onChange={(e) => upd(r.key, { date: e.target.value })} />
               <div className="inline-flex h-9 w-full min-w-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-sm"><Time24 label="Start" value={r.start} onChange={(v) => upd(r.key, { start: v })} /></div>
               <div className="inline-flex h-9 w-full min-w-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-sm"><Time24 label="End" value={r.end} onChange={(v) => upd(r.key, { end: v })} /></div>
-              <div className="flex items-center gap-1">
-                <button type="button" onClick={() => addAfter(r.key)} title="Add the next line (starts when this one ends)" aria-label="Add next line"
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-brand-600 text-white hover:bg-brand-700"><Plus size={16} /></button>
+              <div className="flex items-center">
                 {rows.length > 1 && (
                   <button type="button" onClick={() => remove(r.key)} title="Remove this line" aria-label="Remove line"
                     className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600"><Trash2 size={15} /></button>
@@ -251,6 +268,10 @@ export function AddRunsModal({ open, onClose, initial, mode = 'actual', onSaved 
             </div>
           );
         })}
+        <button type="button" onClick={() => addAfter(rows[rows.length - 1].key)} title="Add the next line (starts when the last one ends)"
+          className="flex w-full items-center justify-center gap-1.5 rounded-lg border-2 border-dashed border-brand-300 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-50">
+          <Plus size={14} /> Add another line
+        </button>
       </div>
     </Modal>
   );
