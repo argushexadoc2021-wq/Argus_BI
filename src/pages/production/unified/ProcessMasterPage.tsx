@@ -117,11 +117,7 @@ export function ProcessMasterPage() {
       title: 'Process Master',
     });
     setHeaderCenter(null);
-    setTabActions(
-      <Button icon={<Plus size={14} />} onClick={openAdd} size="sm" className="h-7 py-1 text-xs px-2.5 shadow-sm">
-        Add Process
-      </Button>
-    );
+    setTabActions(null);   // "Add Process" sits in the table's toolbar, before Export
     return () => {
       setHeader(null);
       setHeaderCenter(null);
@@ -388,6 +384,9 @@ export function ProcessMasterPage() {
           data={processes}
           columns={columns}
           title="Processes"
+          onAdd={openAdd}
+          addLabel="Add Process"
+          inlineAdd
           searchKeys={['processCode', 'processName', 'processCategory', 'description']}
           emptyMessage={tableMissing ? 'Process table not provisioned yet' : 'No processes found'}
         />
