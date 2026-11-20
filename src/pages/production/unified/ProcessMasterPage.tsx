@@ -1,15 +1,12 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { formatINR } from '@/lib/format';
-import { StatCard, Badge, Button, statusToVariant } from '@/components/ui/Card';
+import { Badge, Button, statusToVariant } from '@/components/ui/Card';
 import { DataTable, type Column } from '@/components/ui/DataTable';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Modal, FormField, FormSection, ConfirmDialog, inputClass } from '@/components/ui/Modal';
 import { useHeaderKpis } from '@/contexts/HeaderKpiContext';
-import {
-  Cog, CheckCircle, XCircle, IndianRupee,
-  Plus, Pencil, Copy, Power, Trash2, X,
-} from 'lucide-react';
+import { Plus, Pencil, Copy, Power, Trash2 } from 'lucide-react';
 
 // Master record. Other production modules (Work Orders, Scheduling, Machine Log,
 // Process Costing, Finished Goods) reference a process by its stable processCode
@@ -107,13 +104,6 @@ export function ProcessMasterPage() {
     fetchData();
   }, []);
 
-  const stats = useMemo(() => {
-    const total = processes.length;
-    const active = processes.filter((p) => p.status === 'Active').length;
-    const inactive = total - active;
-    const avg = total === 0 ? 0 : processes.reduce((s, p) => s + p.costPerHour, 0) / total;
-    return { total, active, inactive, avg };
-  }, [processes]);
 
   const openAdd = useCallback(() => {
     setEditId(null);
@@ -126,38 +116,7 @@ export function ProcessMasterPage() {
     setHeader({
       title: 'Process Master',
     });
-    setHeaderCenter(
-      <div className="flex items-center gap-1.5 xl:gap-2">
-        <div className="flex items-center gap-1.5 px-2 py-0.5 bg-slate-100 hover:bg-slate-200/60 border border-slate-200 rounded-lg text-xs transition-colors">
-          <div className="w-4 h-4 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center">
-            <Cog size={11} />
-          </div>
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Total:</span>
-          <span className="text-xs font-black text-slate-800 tabular-nums">{stats.total}</span>
-        </div>
-        <div className="flex items-center gap-1.5 px-2 py-0.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs">
-          <div className="w-4 h-4 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center">
-            <CheckCircle size={11} />
-          </div>
-          <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600">Active:</span>
-          <span className="text-xs font-black text-emerald-800 tabular-nums">{stats.active}</span>
-        </div>
-        <div className="flex items-center gap-1.5 px-2 py-0.5 bg-slate-50 border border-slate-200 rounded-lg text-xs">
-          <div className="w-4 h-4 rounded-full bg-slate-200 text-slate-500 flex items-center justify-center">
-            <XCircle size={11} />
-          </div>
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Inactive:</span>
-          <span className="text-xs font-black text-slate-600 tabular-nums">{stats.inactive}</span>
-        </div>
-        <div className="flex items-center gap-1.5 px-2 py-0.5 bg-amber-50 border border-amber-200 rounded-lg text-xs">
-          <div className="w-4 h-4 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center">
-            <IndianRupee size={11} />
-          </div>
-          <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700">Avg/Hr:</span>
-          <span className="text-xs font-black text-amber-900 tabular-nums">{formatINR(Math.round(stats.avg * 100) / 100)}</span>
-        </div>
-      </div>
-    );
+    setHeaderCenter(null);
     setTabActions(
       <Button icon={<Plus size={14} />} onClick={openAdd} size="sm" className="h-7 py-1 text-xs px-2.5 shadow-sm">
         Add Process
@@ -168,7 +127,7 @@ export function ProcessMasterPage() {
       setHeaderCenter(null);
       setTabActions(null);
     };
-  }, [openAdd, setHeader, setHeaderCenter, setTabActions, stats]);
+  }, [openAdd, setHeader, setHeaderCenter, setTabActions]);
 
   const openEdit = (row: ProcessMaster) => {
     setEditId(row.id);
@@ -314,12 +273,6 @@ export function ProcessMasterPage() {
 
   const columns: Column<ProcessMaster>[] = [
     {
-      key: 'processCode',
-      label: 'Process Code',
-      sortable: true,
-      render: (r) => <span className="font-mono text-xs font-semibold text-slate-700">{r.processCode}</span>,
-    },
-    {
       key: 'processName',
       label: 'Process Name',
       sortable: true,
@@ -423,13 +376,6 @@ export function ProcessMasterPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 lg:hidden gap-3 mb-3">
-        <StatCard label="Total Processes" value={String(stats.total)} icon={<Cog size={20} />} accent="navy" />
-        <StatCard label="Active Processes" value={String(stats.active)} icon={<CheckCircle size={20} />} accent="success" />
-        <StatCard label="Inactive Processes" value={String(stats.inactive)} icon={<XCircle size={20} />} accent="neutral" />
-        <StatCard label="Average Cost / Hour" value={formatINR(Math.round(stats.avg * 100) / 100)} icon={<IndianRupee size={20} />} accent="brand" />
-      </div>
-
       {loading ? (
         <div className="flex items-center justify-center py-10">
           <div className="flex flex-col items-center gap-3">
@@ -443,10 +389,6 @@ export function ProcessMasterPage() {
           columns={columns}
           title="Processes"
           searchKeys={['processCode', 'processName', 'processCategory', 'description']}
-          filterOptions={[
-            { label: 'Active', value: 'Active' },
-            { label: 'Inactive', value: 'Inactive' },
-          ]}
           emptyMessage={tableMissing ? 'Process table not provisioned yet' : 'No processes found'}
         />
       )}
@@ -538,7 +480,7 @@ export function ProcessMasterPage() {
         onClose={() => setDeleteTarget(null)}
         onConfirm={handleDelete}
         title="Delete Process"
-        message={`Delete process "${deleteTarget?.processCode} — ${deleteTarget?.processName}"? This cannot be undone.`}
+        message={`Delete process "${deleteTarget?.processName}"? This cannot be undone.`}
         confirmLabel="Delete"
         danger
       />

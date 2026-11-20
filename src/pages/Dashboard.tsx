@@ -24,6 +24,7 @@ import { fetchRecentActivity, timeAgo, type ActivityItem } from '@/lib/recentAct
 import { accountingApi } from '@/lib/accounting';
 import { financeApi } from '@/lib/finance';
 import { fromInwards } from '@/lib/ledgerDashboard';
+import { TeamPerformance } from '@/components/dashboard/TeamPerformance';
 
 const activityIcons: Record<string, typeof Activity> = {
   production: Cog,
@@ -129,7 +130,7 @@ const inRange = (iso: string | null | undefined, start: string, end: string) => 
 
 export function Dashboard({ onNavigate }: { onNavigate: (page: string) => void }) {
   const { dateRange } = useDateRange();
-  const { company, isSuperAdmin } = useAuth();
+  const { company, isSuperAdmin, canView } = useAuth();
   const [loading, setLoading] = useState(true);
   const [workOrders, setWorkOrders] = useState<WorkOrderRow[]>([]);
   const [machines, setMachines] = useState<MachineRow[]>([]);
@@ -292,6 +293,11 @@ export function Dashboard({ onNavigate }: { onNavigate: (page: string) => void }
         <KpiTile tone="indigo" title="Open Order Value" value={loading ? '—' : inr(stats.openOrderValue)} note={`${stats.openOrderCount} open sales orders · today`} hint={`₹${stats.openOrderValue.toLocaleString('en-IN')}`} icon={<Package size={20} />} />
         <KpiTile tone="slate" title="Inventory Value" value={loading ? '—' : inr(inventoryValue)} note="Stock × unit price · today" hint={`₹${inventoryValue.toLocaleString('en-IN')}`} icon={<Boxes size={20} />} />
       </KpiSection>
+
+      {/* 3. People: what Scheduling planned for each person against what they actually did */}
+      {canView('scheduling') && (
+        <TeamPerformance key={company?.id ?? 'all'} from={dateRange.start} to={dateRange.end} onOpenScheduling={() => onNavigate('production/scheduling')} />
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
         {/* Machine status */}

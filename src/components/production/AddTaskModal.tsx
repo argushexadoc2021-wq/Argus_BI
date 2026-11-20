@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, Trash2, User, Wrench, X } from 'lucide-react';
+import { Plus, Trash2, User, X } from 'lucide-react';
 import { Modal, FormField, inputClass } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Card';
 import { Time24 } from '@/components/ui/Time24';
@@ -23,13 +23,13 @@ const QUICK = ['Machine cleaning (5S)', 'Tool preset & offsets', 'Material unloa
 const toMin = (t: string) => { const [h, m] = String(t || '0:0').split(':').map(Number); return (h || 0) * 60 + (m || 0); };
 const toHhmm = (m: number) => { const c = Math.max(0, Math.min(23 * 60 + 59, m)); return `${String(Math.floor(c / 60)).padStart(2, '0')}:${String(c % 60).padStart(2, '0')}`; };
 
-interface Line { key: number; name: string; forKind: 'machine' | 'member'; who: string; date: string; start: string; end: string }
+interface Line { key: number; name: string; who: string; date: string; start: string; end: string }
 let seq = 0;
-const blank = (date: string): Line => ({ key: ++seq, name: '', forKind: 'member', who: '', date, start: '09:00', end: '10:00' });
+const blank = (date: string): Line => ({ key: ++seq, name: '', who: '', date, start: '09:00', end: '10:00' });
 
-/** A small form: the task, who or what it is for (a machine or a team member), the day and the time.
+/** A form: the task, the employee it is assigned to, the day and the time.
  *  When adding, + Add another task adds more lines, and all of them are saved together. */
-export function AddTaskModal({ open, onClose, onSaved, initialDate, initialMode = 'planned', initialTask, machineOptions = [], memberOptions = [] }: AddTaskModalProps) {
+export function AddTaskModal({ open, onClose, onSaved, initialDate, initialMode = 'planned', initialTask, memberOptions = [] }: AddTaskModalProps) {
   const [lines, setLines] = useState<Line[]>([blank(ymd(new Date()))]);
   const [active, setActive] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -40,12 +40,10 @@ export function AddTaskModal({ open, onClose, onSaved, initialDate, initialMode 
     setError('');
     setActive(0);
     if (initialTask) {
-      const isMachine = !!initialTask.machine && !initialTask.member_name;
       setLines([{
         key: ++seq,
         name: initialTask.task_name || '',
-        forKind: isMachine ? 'machine' : 'member',
-        who: isMachine ? initialTask.machine || '' : initialTask.member_name || '',
+        who: initialTask.member_name || '',
         date: initialTask.task_date || ymd(new Date()),
         start: initialTask.start_time || '09:00',
         end: initialTask.end_time || '10:00',
@@ -57,12 +55,12 @@ export function AddTaskModal({ open, onClose, onSaved, initialDate, initialMode 
 
   const patch = (i: number, p: Partial<Line>) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...p } : l)));
 
-  // a new line follows the last one: same person / machine and day, starting when the last one ends
+  // a new line follows the last one: same employee and day, starting when the last one ends
   const addLine = () => {
     setLines((ls) => {
       const last = ls[ls.length - 1];
       const s = toMin(last.end);
-      const next: Line = { ...blank(last.date), forKind: last.forKind, who: last.who, start: toHhmm(s), end: toHhmm(s + 60) };
+      const next: Line = { ...blank(last.date), who: last.who, start: toHhmm(s), end: toHhmm(s + 60) };
       setActive(ls.length);
       return [...ls, next];
     });
@@ -89,12 +87,14 @@ export function AddTaskModal({ open, onClose, onSaved, initialDate, initialMode 
       for (const l of lines) {
         const fields = {
           task_name: l.name.trim(),
-          member_name: l.forKind === 'member' ? l.who.trim() : '',
-          machine: l.forKind === 'machine' ? l.who.trim() || undefined : undefined,
-          task_date: l.date, start_time: l.start, end_time: l.end,
+          member_name: l.who.trim(),
+          machine: '',
+          task_date: l.date,
+          start_time: l.start,
+          end_time: l.end,
         };
         if (initialTask?.id) {
-          const r = await updateScheduledTask(initialTask.id, { ...fields, machine: fields.machine ?? '' });
+          const r = await updateScheduledTask(initialTask.id, fields);
           local = local || !!r?.local;
         } else {
           const r = await createScheduledTask({ ...fields, mode: initialMode, status: initialMode === 'actual' ? 'Completed' : 'Planned' });
@@ -149,61 +149,64 @@ export function AddTaskModal({ open, onClose, onSaved, initialDate, initialMode 
       }
     >
       <form onSubmit={(e) => { e.preventDefault(); void save(); }} className="space-y-3">
-        {lines.map((l, i) => {
-          const options = l.forKind === 'machine' ? machineOptions : memberOptions;
-          return (
-            <div key={l.key} onFocusCapture={() => setActive(i)}
-              className={many ? `space-y-3 rounded-lg border p-3 ${i === active ? 'border-indigo-300 bg-indigo-50/40' : 'border-slate-200'}` : 'space-y-4'}>
-              {many && (
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold uppercase tracking-wide text-indigo-700">Task {i + 1}</span>
-                  <button type="button" onClick={() => removeLine(i)} title="Remove this task" aria-label={`Remove task ${i + 1}`}
-                    className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"><X size={14} /></button>
-                </div>
-              )}
-              <FormField label="Task name" required>
-                <input type="text" aria-label="Task name" className={inputClass} placeholder="e.g. Machine cleaning, Tool preset, Quality audit"
-                  value={l.name} onChange={(e) => patch(i, { name: e.target.value })} autoFocus={i === lines.length - 1} />
-              </FormField>
-              {(!many || i === active) && (
-                <div className="flex flex-wrap gap-1.5">
-                  {QUICK.map((q) => (
-                    <button key={q} type="button" onClick={() => patch(i, { name: q })}
-                      className={`rounded-full border px-2 py-1 text-[11px] ${l.name === q ? 'border-indigo-400 bg-indigo-100 font-semibold text-indigo-800' : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'}`}>{q}</button>
-                  ))}
-                </div>
-              )}
-
-              <FormField label="For">
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="inline-flex overflow-hidden rounded border border-slate-300" role="group" aria-label="Task is for">
-                    {([{ id: 'member', label: 'Team member', icon: User }, { id: 'machine', label: 'Machine', icon: Wrench }] as const).map((o) => (
-                      <button key={o.id} type="button" aria-pressed={l.forKind === o.id} onClick={() => patch(i, { forKind: o.id, who: '' })}
-                        className={`flex flex-1 items-center justify-center gap-1.5 px-2 py-2 text-xs font-semibold ${l.forKind === o.id ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}><o.icon size={13} />{o.label}</button>
-                    ))}
-                  </div>
-                  <div>
-                    <input type="text" aria-label={l.forKind === 'machine' ? 'Machine' : 'Team member'} list={`add-task-who-${l.key}`} className={inputClass}
-                      placeholder={l.forKind === 'machine' ? 'Choose or type a machine' : 'Choose or type a name'} value={l.who} onChange={(e) => patch(i, { who: e.target.value })} />
-                    <datalist id={`add-task-who-${l.key}`}>{options.map((o) => <option key={o} value={o} />)}</datalist>
-                  </div>
-                </div>
-              </FormField>
-
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <FormField label="Day" required>
-                  <input type="date" aria-label="Day" className={inputClass} value={l.date} onChange={(e) => patch(i, { date: e.target.value })} />
-                </FormField>
-                <FormField label="From" required>
-                  <div className="inline-flex h-[38px] w-full items-center rounded border border-slate-300 bg-white text-sm shadow-sm"><Time24 label="From" value={l.start} onChange={(v) => patch(i, { start: v })} /></div>
-                </FormField>
-                <FormField label="To" required>
-                  <div className="inline-flex h-[38px] w-full items-center rounded border border-slate-300 bg-white text-sm shadow-sm"><Time24 label="To" value={l.end} onChange={(v) => patch(i, { end: v })} /></div>
-                </FormField>
+        {lines.map((l, i) => (
+          <div key={l.key} onFocusCapture={() => setActive(i)}
+            className={many ? `space-y-3 rounded-lg border p-3 ${i === active ? 'border-indigo-300 bg-indigo-50/40' : 'border-slate-200'}` : 'space-y-4'}>
+            {many && (
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wide text-indigo-700">Task {i + 1}</span>
+                <button type="button" onClick={() => removeLine(i)} title="Remove this task" aria-label={`Remove task ${i + 1}`}
+                  className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"><X size={14} /></button>
               </div>
+            )}
+            <FormField label="Task name" required>
+              <input type="text" aria-label="Task name" className={inputClass} placeholder="e.g. Machine cleaning, Tool preset, Quality audit"
+                value={l.name} onChange={(e) => patch(i, { name: e.target.value })} autoFocus={i === lines.length - 1} />
+            </FormField>
+            {(!many || i === active) && (
+              <div className="flex flex-wrap gap-1.5">
+                {QUICK.map((q) => (
+                  <button key={q} type="button" onClick={() => patch(i, { name: q })}
+                    className={`rounded-full border px-2 py-1 text-[11px] ${l.name === q ? 'border-indigo-400 bg-indigo-100 font-semibold text-indigo-800' : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'}`}>{q}</button>
+                ))}
+              </div>
+            )}
+
+            <FormField label="Assign to employee">
+              <div className="relative">
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                  <User size={15} />
+                </div>
+                <input
+                  type="text"
+                  aria-label="Assign to employee"
+                  list={`add-task-who-${l.key}`}
+                  className={`${inputClass} pl-9`}
+                  placeholder="Choose or type employee name"
+                  value={l.who}
+                  onChange={(e) => patch(i, { who: e.target.value })}
+                />
+                <datalist id={`add-task-who-${l.key}`}>
+                  {memberOptions.map((o) => (
+                    <option key={o} value={o} />
+                  ))}
+                </datalist>
+              </div>
+            </FormField>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <FormField label="Day" required>
+                <input type="date" aria-label="Day" className={inputClass} value={l.date} onChange={(e) => patch(i, { date: e.target.value })} />
+              </FormField>
+              <FormField label="From" required>
+                <div className="inline-flex h-[38px] w-full items-center rounded border border-slate-300 bg-white text-sm shadow-sm"><Time24 label="From" value={l.start} onChange={(v) => patch(i, { start: v })} /></div>
+              </FormField>
+              <FormField label="To" required>
+                <div className="inline-flex h-[38px] w-full items-center rounded border border-slate-300 bg-white text-sm shadow-sm"><Time24 label="To" value={l.end} onChange={(v) => patch(i, { end: v })} /></div>
+              </FormField>
             </div>
-          );
-        })}
+          </div>
+        ))}
 
         {!initialTask && (
           <button type="button" onClick={addLine}
