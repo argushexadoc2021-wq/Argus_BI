@@ -1083,8 +1083,6 @@ function ActualScheduling() {
           <div className="grid grid-cols-2 gap-4">
             <FormField label="Company"><input className={inputClass + ' bg-slate-50'} value={newJobForm.customer} readOnly disabled/></FormField>
             <FormField label="Product"><input className={inputClass + ' bg-slate-50'} value={newJobForm.partName} readOnly disabled/></FormField>
-            <FormField label="Process"><input className={inputClass + ' bg-slate-50'} value={newJobForm.processName} readOnly disabled placeholder="Auto-filled from operation"/></FormField>
-            <FormField label="Operation Sequence"><input className={inputClass + ' bg-slate-50'} value={newJobForm.operationSeq} readOnly disabled placeholder="Auto-filled from operation"/></FormField>
             <FormField label="Target Quantity" required><input type="number" min="0" className={inputClass} value={newJobForm.qty} onChange={e => setNewJobForm(prev => withEnd({ ...prev, qty: e.target.value }))} /></FormField>
           </div>
 
