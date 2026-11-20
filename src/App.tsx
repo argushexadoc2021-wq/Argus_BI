@@ -366,6 +366,10 @@ function MainLayout() {
           </RequireModule>
           </div>
         </main>
+        {/* Brand signature on every page */}
+        <div className="flex-shrink-0 py-1 px-3 text-center bg-white/90 border-t border-slate-200 print:hidden">
+          <span className="text-[10px] font-semibold tracking-wider text-slate-500 uppercase">Powered by ARGUS CNC™</span>
+        </div>
         {/* Bottom menu position: compact bar docked to the bottom edge (reserves its own space). */}
         {position === 'bottom' && (
           <BottomNav currentPage={currentPage} onNavigate={handleNavigate} />
