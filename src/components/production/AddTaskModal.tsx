@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, Trash2, User, X } from 'lucide-react';
+import { ChevronDown, Plus, Trash2, User, X } from 'lucide-react';
 import { Modal, FormField, inputClass } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Card';
 import { Time24 } from '@/components/ui/Time24';
@@ -155,8 +155,14 @@ export function AddTaskModal({ open, onClose, onSaved, initialDate, initialMode 
             {/* one line: task, employee, day, from, to */}
             <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-[minmax(0,2.2fr)_minmax(0,1.6fr)_minmax(0,1.15fr)_minmax(0,0.85fr)_minmax(0,0.85fr)_auto] lg:items-end">
               <FormField label={many ? `Task ${i + 1}` : 'Task name'} required>
-                <input type="text" aria-label="Task name" className={inputClass} placeholder="e.g. Machine cleaning, Tool preset"
+                <div className="relative">
+                <input type="text" aria-label="Task name" list={`add-task-name-${l.key}`} className={`${inputClass} pr-8`} placeholder="Choose or type a task"
                   value={l.name} onChange={(e) => patch(i, { name: e.target.value })} autoFocus={i === lines.length - 1} />
+                <datalist id={`add-task-name-${l.key}`}>
+                  {QUICK.map((q) => <option key={q} value={q} />)}
+                </datalist>
+                <ChevronDown size={15} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                </div>
               </FormField>
               <FormField label="Assign to employee">
                 <div className="relative">
@@ -193,14 +199,6 @@ export function AddTaskModal({ open, onClose, onSaved, initialDate, initialMode 
                   className="h-[38px] w-9 flex items-center justify-center rounded text-slate-400 hover:bg-red-50 hover:text-red-600"><X size={16} /></button>
               ) : <span className="hidden lg:block w-0" />}
             </div>
-            {(!many || i === active) && (
-              <div className="flex flex-wrap gap-1.5">
-                {QUICK.map((q) => (
-                  <button key={q} type="button" onClick={() => patch(i, { name: q })}
-                    className={`rounded-full border px-2 py-0.5 text-[11px] ${l.name === q ? 'border-indigo-400 bg-indigo-100 font-semibold text-indigo-800' : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'}`}>{q}</button>
-                ))}
-              </div>
-            )}
           </div>
         ))}
 
