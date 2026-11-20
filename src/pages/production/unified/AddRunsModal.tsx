@@ -219,6 +219,10 @@ export function AddRunsModal({ open, onClose, initial, mode = 'actual', onSaved 
     <Modal open={open} onClose={onClose} title={plan ? 'Add planned operations' : 'Add actual runs'} size="3xl"
       footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save} disabled={saving}>{saving ? 'Saving…' : `Save ${rows.length} ${noun}${rows.length > 1 ? 's' : ''}`}</Button></>}>
       <div className="space-y-2">
+        <button type="button" onClick={() => addAfter(rows[rows.length - 1].key)} title="Add the next line (starts when the last one ends)"
+          className="flex w-full items-center justify-center gap-1.5 rounded-lg border-2 border-dashed border-brand-300 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-50">
+          <Plus size={14} /> Add another line
+        </button>
         <div className={`${cols} px-1 text-[10px] font-bold uppercase tracking-wider text-slate-500`}>
           <span>Part name</span><span title={plan ? 'Pieces planned for this slot' : 'Pieces finished in this run'}>{qtyHead}</span><span>Process</span><span className="flex items-center gap-1">Operator<button type="button" onClick={() => setNewOp((v) => (v === null ? '' : null))} title="Add a new operator" aria-label="Add a new operator" className="inline-flex h-4 w-4 items-center justify-center rounded border border-slate-300 bg-white text-slate-500 hover:border-indigo-300 hover:text-indigo-600"><Plus size={11} /></button></span><span>Date</span><span>Start</span><span>End</span><span />
         </div>
@@ -268,10 +272,6 @@ export function AddRunsModal({ open, onClose, initial, mode = 'actual', onSaved 
             </div>
           );
         })}
-        <button type="button" onClick={() => addAfter(rows[rows.length - 1].key)} title="Add the next line (starts when the last one ends)"
-          className="flex w-full items-center justify-center gap-1.5 rounded-lg border-2 border-dashed border-brand-300 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-50">
-          <Plus size={14} /> Add another line
-        </button>
       </div>
     </Modal>
   );

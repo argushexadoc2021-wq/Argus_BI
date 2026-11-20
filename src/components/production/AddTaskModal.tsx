@@ -149,6 +149,12 @@ export function AddTaskModal({ open, onClose, onSaved, initialDate, initialMode 
       }
     >
       <form onSubmit={(e) => { e.preventDefault(); void save(); }} className="space-y-3">
+        {!initialTask && (
+          <button type="button" onClick={addLine}
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg border-2 border-dashed border-indigo-300 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50">
+            <Plus size={14} /> Add another task{lastWho ? ` (for ${lastWho})` : ''}
+          </button>
+        )}
         {lines.map((l, i) => (
           <div key={l.key} onFocusCapture={() => setActive(i)}
             className={many ? `space-y-2 rounded-lg border p-2.5 ${i === active ? 'border-indigo-300 bg-indigo-50/40' : 'border-slate-200'}` : 'space-y-2'}>
@@ -202,12 +208,6 @@ export function AddTaskModal({ open, onClose, onSaved, initialDate, initialMode 
           </div>
         ))}
 
-        {!initialTask && (
-          <button type="button" onClick={addLine}
-            className="flex w-full items-center justify-center gap-1.5 rounded-lg border-2 border-dashed border-indigo-300 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50">
-            <Plus size={14} /> Add another task{lastWho ? ` (for ${lastWho})` : ''}
-          </button>
-        )}
         {error && <p role="alert" className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">{error}</p>}
       </form>
     </Modal>
