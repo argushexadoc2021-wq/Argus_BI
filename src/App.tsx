@@ -175,7 +175,8 @@ function MainLayout() {
     navigate(page.startsWith('/') ? page : `/${page}`);
   };
 
-  const { signOut, company, refreshPermissions } = useAuth();
+  const { signOut, company, refreshPermissions, isSuperAdmin, setActiveCompany, biEnabled, retailEnabled, attendanceEnabled } = useAuth();
+  const offPlatforms = [!biEnabled && 'Argus BI', !retailEnabled && 'Retail Store', !attendanceEnabled && 'AI Attendance'].filter(Boolean) as string[];
   const ai = useAiAccess();
   // every page fills the screen at every display size (re-attached when <main> is rebuilt for another company)
   useFitPage(mainRef, pageRef, displayScale, `${location.pathname}|${company?.id ?? ''}`);
@@ -222,6 +223,13 @@ function MainLayout() {
         />
         {/* Excel-style funnel + column menu on every table heading */}
         <TableAutoFilter />
+        {/* Super Admin with one company picked: the menus are that company's (its switches and its menu access) */}
+        {isSuperAdmin && company && (
+          <div className="flex-shrink-0 flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1 text-[11px] bg-indigo-50 border-b border-indigo-200 text-indigo-900 print:hidden">
+            <span>Viewing as <b>{company.company_name}</b>: you see only the menus this company has.{offPlatforms.length ? ` Switched off for it: ${offPlatforms.join(', ')}.` : ''}</span>
+            <button type="button" onClick={() => void setActiveCompany(null)} className="ml-auto font-bold text-indigo-700 hover:underline">Back to all companies</button>
+          </div>
+        )}
         {/* Keyed by company so every page refetches when the Super Admin switches company */}
         <main ref={mainRef} key={company?.id ?? 'all-companies'} className="flex-1 overflow-y-auto scrollbar-dark transition-[background] duration-500" style={{ background: getPageTheme(location.pathname).gradient }}>
           {/* Display size: the page content is scaled. useFitPage keeps this box exactly as tall as the screen, and the grid

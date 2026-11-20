@@ -94,10 +94,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [platforms, setPlatforms] = useState({ bi: true, retail: true, attendance: true, ready: false });
   const platformsRef = useRef({ bi: true, retail: true, attendance: true });
 
-  // Which platforms (BI / Retail Store) the user's company has switched on. Unknown or unreadable = on (nothing is hidden by mistake).
+  // Which platforms (BI / Retail Store / Attendance) the user's company has switched on. Unknown or unreadable = on (nothing is hidden by mistake).
+  // A Super Admin who picked one company sees it the way that company's people do (its switches and its menus);
+  // with "All companies" everything is on.
   const loadPlatforms = useCallback(async (companyId: string | null | undefined, role: ErpRole | null | undefined) => {
     let bi = true, retail = true, attendance = true;
-    if (role && role !== 'SUPER_ADMIN' && companyId) {
+    if (role && companyId) {
       try {
         const { data, error } = await supabase.from('companies').select('bi_enabled, retail_enabled, attendance_enabled').eq('id', companyId).maybeSingle();
         if (!error && data) { bi = (data as any).bi_enabled !== false; retail = (data as any).retail_enabled !== false; attendance = (data as any).attendance_enabled !== false; }
@@ -135,7 +137,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // modules switched fully off for the company (Access Management > Full off) are removed for everyone
       const off = await fetchDisabledModules();
       // a company with the Retail Store switched off also loses the BI pages linked to it (Digital Store, Retail Orders, Partner & Online Sales)
-      if (!platformsRef.current.retail && (payload.role ?? role) !== 'SUPER_ADMIN') RETAIL_LINKED_MODULES.forEach((k) => { if (!off.includes(k)) off.push(k); });
+      if (!platformsRef.current.retail) RETAIL_LINKED_MODULES.forEach((k) => { if (!off.includes(k)) off.push(k); });
       (window as unknown as { __fullOff?: string[] }).__fullOff = off;   // for support: type __fullOff in the browser console
       setPermissions(applyDisabledModules(effectiveMatrix(payload.role ?? role ?? null, payload.permissions), off));
     } catch (e) {
