@@ -17,6 +17,7 @@ import {
   saveStageRecord, moveStageRecord, type ActionCtx, type Preview, type PipelineItem
 } from '@/lib/copilot/actions';
 import { extractStageFieldsLocal, BLANK_WORD } from '@/lib/copilot/stageExtract';
+import { adviserVoiceCommand, sendAdviserCommand } from '@/lib/adviser/voiceCommands';
 import {
   ACTION_INTENTS, FIELD_QUESTION, missingOf, resolvePage, understandLocal,
   type Intent, type Params, type Pending, type Understood,
@@ -1158,6 +1159,7 @@ export function Copilot({
     let woke = false;
     let tainted = false;   // some of what was heard came while the assistant was talking: that is its own voice, not a command
     let wakeAlt: { matched: boolean; trailing: string } | null = null;
+    let advCmd: 'open' | 'close' | null = null;   // "open Raju" / "close Raju" heard: for the Adviser, not a Co-worker command
     const mine = () => recRef.current === r;
     const langName = () => (speechLangRef.current === 'ta-IN' ? 'Tamil' : 'English');
 
@@ -1183,6 +1185,11 @@ export function Copilot({
       interimText = inter;
       const spoken = `${fin} ${inter}`.trim();
       if (!spoken) return;
+
+      // 0. "Open Raju" / "Open AI box" / "Close Raju": open or close the Adviser (acted on when the sentence ends).
+      const adv = adviserVoiceCommand(spoken);
+      if (adv === 'open' || adv === 'close') { advCmd = adv; return; }
+      advCmd = null;
 
       // 1. Wake word: works from any screen, even when the panel is closed, and interrupts the assistant's own voice.
       let wake = checkWakeWord(spoken);
@@ -1249,7 +1256,13 @@ export function Copilot({
       const wake = own.matched ? own : (wakeAlt ?? own);
       const norm = (x: string) => x.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
       const echo = (tainted && !wake.matched) || (norm(said).length > 6 && norm(lastSpokenRef.current).includes(norm(said)));
-      if (!echo && (said.length >= 2 || wake.matched || (wizardRef.current && said.length >= 1))) {
+      const advFinal = advCmd ?? (() => { const c = adviserVoiceCommand(said); return c === 'open' || c === 'close' ? c : null; })();
+      if (advFinal) {
+        stopSpeaking();
+        setOpen(false);
+        setSpeechStatusText(advFinal === 'open' ? 'Opening the Adviser…' : 'Closing the Adviser…');
+        sendAdviserCommand(advFinal);
+      } else if (!echo && (said.length >= 2 || wake.matched || (wizardRef.current && said.length >= 1))) {
         const send = (text: string) => {
           const go = () => void submitRef.current(text);
           if (busyRef.current) window.setTimeout(go, 1200); else go();

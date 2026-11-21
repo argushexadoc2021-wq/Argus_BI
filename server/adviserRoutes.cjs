@@ -126,4 +126,39 @@ module.exports = function mountAdviser(app, SB) {
       res.send(buf);
     } catch { res.status(502).json({ error: 'The voice could not be reached.' }); }
   });
+
+  // Picture made from a description (the Adviser's [[IMAGE ...]] block). Returns { ok, image: "data:image/png;base64,..." }.
+  //   OPENAI_IMAGE_MODEL  optional, default gpt-image-1
+  app.post('/api/adviser/image', async (req, res) => {
+    if (!(await who(req, res))) return;
+    if (!key()) return res.status(503).json({ error: 'The AI is not set up yet. Please ask your administrator to switch it on.' });
+    const prompt = String((req.body || {}).prompt || '').trim().slice(0, 3800);
+    const size = ['1024x1024', '1536x1024', '1024x1536'].includes((req.body || {}).size) ? req.body.size : '1024x1024';
+    if (!prompt) return res.status(400).json({ error: 'Say what the picture should show.' });
+    try {
+      const up = await fetch('https://api.openai.com/v1/images/generations', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${key()}`, 'content-type': 'application/json' },
+        // "medium" quality comes back well inside the server's 60-second limit; OPENAI_IMAGE_QUALITY can change it.
+        // OPENAI_IMAGE_MODEL=dall-e-3 also works (its sizes and quality names differ, so they are mapped).
+        body: JSON.stringify((() => {
+          const m = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1';
+          if (/^dall-e-3/i.test(m)) {
+            return { model: m, prompt, n: 1, response_format: 'b64_json', quality: 'standard', size: size === '1536x1024' ? '1792x1024' : size === '1024x1536' ? '1024x1792' : '1024x1024' };
+          }
+          return { model: m, prompt, size, n: 1, quality: process.env.OPENAI_IMAGE_QUALITY || 'medium' };
+        })()),
+      });
+      const j = await up.json().catch(() => ({}));
+      if (!up.ok) {
+        console.warn('AI image error', up.status, JSON.stringify(j).slice(0, 300));   // details stay in the server log
+        const blocked = /safety|policy|moderation/i.test(JSON.stringify(j));
+        return res.status(502).json({ error: blocked ? 'That picture cannot be made. Please describe it differently.' : `The picture could not be made (HTTP ${up.status}).` });
+      }
+      const d = (j.data || [])[0] || {};
+      if (d.b64_json) return res.json({ ok: true, image: `data:image/png;base64,${d.b64_json}` });
+      if (d.url) return res.json({ ok: true, image: d.url });
+      res.status(502).json({ error: 'The picture could not be made.' });
+    } catch { res.status(502).json({ error: 'The picture service could not be reached.' }); }
+  });
 };

@@ -45,6 +45,18 @@ const headers = async () => {
 
 export interface ChatPiece { role: 'user' | 'assistant'; text: string }
 
+/** A picture made from a description, as a data: URL (or a web address). Throws with a readable message. */
+export async function serverImage(prompt: string, size = '1024x1024'): Promise<string> {
+  let res: Response;
+  try {
+    res = await fetch(url('image'), { method: 'POST', headers: await headers(), body: JSON.stringify({ prompt, size }) });
+  } catch { throw new Error('The picture service could not be reached. Check the internet connection.'); }
+  if (/text\/html/i.test(res.headers.get('content-type') || '')) throw new Error('Making pictures is not available on this server yet.');
+  const j = await res.json().catch(() => ({} as { error?: string; image?: string }));
+  if (!res.ok || !j.image) throw new Error(j.error || `The picture could not be made (${res.status}).`);
+  return j.image;
+}
+
 /** Streams ChatGPT's answer as text pieces. Throws ServerAiError (unreachable = try something else). */
 export async function* serverChat(system: string, messages: ChatPiece[], opts: { maxTokens?: number; temperature?: number } = {}): AsyncGenerator<string> {
   let res: Response;

@@ -8,6 +8,8 @@ import { AdviserReportPanel } from '@/components/AdviserReport';
 import { serverChat, serverSpeech, ServerAiError } from '@/lib/adviser/serverAi';
 import { businessData } from '@/lib/adviser/dataContext';
 import { DiagramView, MindMapView, TableView, parseVisuals } from '@/lib/adviser/visuals';
+import { adviserVoiceCommand } from '@/lib/adviser/voiceCommands';
+import { FileCard, ImageCard, parseFiles } from '@/lib/adviser/files';
 import { ChartView, parseBlocks, saveReportPdf, speakablePart, type DbActionBlock, type TeachBlock } from '@/lib/adviser/charts';
 import { EmailCard, MailConnect, useAdviserMail } from '@/lib/adviser/mail';
 import { WhatsAppCard } from '@/lib/adviser/whatsapp';
@@ -630,6 +632,13 @@ CORE CAPABILITIES — act as a full ChatGPT assistant that can do WHATEVER the u
    * Org chart: kind "org" with edges from the boss to each person. Timeline: kind "timeline" (nodes in order; edges may be left out). Cycle (PDCA etc.): kind "cycle".
    * Table: [[TABLE {"title":"Tool life","columns":["Tool","Life (pcs)"],"rows":[["Insert CNMG","450"],["Drill 8mm","1200"]]}]]
    * Graph: [[CHART ...]] (see GRAPHS below); type can be "bar", "line", "area", "stacked", "pie" or "donut".
+3c. MAKE ANY FILE OR PICTURE (NEVER say "I can't create files / images / documents" — you CAN, through these blocks): when the person asks for a PDF, Word / doc, Excel / sheet, CSV, text file, web page, letter, report, proposal, SOP, invoice format, price list, any document, or a picture / image / photo / logo / poster / illustration ("PDF போடு", "வேர்ட் ஃபைல்", "எக்செல்", "படம்", "இமேஜ்"), write the FULL content yourself and add at the VERY END, each on its own line, valid JSON (use \\n for new lines; inside "content" you may use # headings, - bullets, 1. numbered lists, **bold** and | tables |):
+   * Word: [[FILE {"type":"docx","title":"Quality Policy","content":"# Purpose\\n...\\n## Scope\\n- ...\\n| Item | Owner |\\n| --- | --- |\\n| Calibration | QA |"}]]
+   * PDF: [[FILE {"type":"pdf","title":"...","content":"..."}]]   (for a report with graphs you may still use [[CHART]] + [[PDF]])
+   * Excel: [[FILE {"type":"xlsx","title":"Pending invoices","sheets":[{"name":"Invoices","columns":["Invoice","Customer","Amount"],"rows":[["INV-101","ABC","25000"]]}]}]]  (several sheets allowed; numbers without symbols or commas)
+   * Also "csv", "txt", "md", "html" with "content".
+   * Picture: [[IMAGE {"prompt":"a detailed English description of the picture: subject, style, colours, background","size":"1024x1024"}]]  (size 1536x1024 = wide, 1024x1536 = tall). Write the prompt in English even when the person speaks Tamil. Never put real people's faces or brand logos of other companies in a picture.
+   The screen shows a Download button for each file and draws each picture. Fill files with complete, professional content (and real figures from COMPANY DATA when it is about this business), never a placeholder.
    Use the real figures and names from COMPANY DATA when the visual is about this business. Several blocks in one answer are fine. Never read the blocks aloud and never put them in the middle of the text. The screen draws them with Download buttons, and a mind map can be saved into the Mind Maps module.
 4. TAMIL / TANGLISH / VOICE UNDERSTANDING: Staff often speak in Tamil, Tanglish, or mixed Tamil-English. Speech-to-text may write English words in Tamil script (e.g. என்குயரி = enquiry, கொட்டேஷன் = quotation, இன்வாய்ஸ் = invoice, ஆர்டர் = order, சலான் = challan, ஸ்டாக் = stock, ஷெட்யூல் = schedule). Ignore a trailing "over" / "ஓவர்".
 ${styleRule} ${langRule}
@@ -823,6 +832,11 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
   const pageRef = useRef({ page: '', title: '' });
   const listenRef = useRef<() => void>(() => {});
   const lastSpoken = useRef('');
+  // answers written during this visit (pictures in them are made at once; older ones wait for a click)
+  const liveIds = useRef(new Set<number>());
+  // the listener that runs while the Adviser is talking (see the "close Raju" effect below)
+  const bargeRef = useRef<any>(null);
+  const stopBarge = () => { const b = bargeRef.current; bargeRef.current = null; if (b) { try { b.abort(); } catch { /* ended */ } } };
 
   const page = location.pathname;
   const pageTitle = (() => { try { const b = getBreadcrumbs(page.replace(/^\//, '')); return b[b.length - 1]?.label ?? ''; } catch { return ''; } })();
@@ -948,7 +962,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
   // ------------------------------------------------ the answer: stream it, show it, and speak each sentence as it completes
   const ask = useCallback(async (question: string) => {
     const q = question.trim();
-    const wantsChart = /mind ?map|flow|table|tree|timeline|org|cycle|draw|visual|மைண்ட்|ஃப்ளோ|டேபிள்|அட்டவணை|வரை|graph|chart|plot|diagram|pie|bar|trend|pdf|report|download|print|mail|e-mail|letter|whatsapp|whats app|msg|message|teach|how|where|find|locate|explain|show me|guide|steps|workflow|animat|add|create|insert|save|enter|edit|update|delete|move|record|வாட்ஸ்|மெசேஜ்|மெயில்|கடிதம்|வரைபட|அறிக்கை|ரிப்போர்ட்|கிராப்|எப்படி|எங்கே|எங்க|சொல்லி|காட்டு|போடணும்|போடு|சேர்|உருவாக்கு|மாற்று|நீக்கு/i.test(q);
+    const wantsChart = /word|docx?\b|excel|xlsx|sheet|csv|file|document|image|picture|photo|logo|poster|படம்|இமேஜ்|எக்செல்|வேர்ட்|ஃபைல்|mind ?map|flow|table|tree|timeline|org|cycle|draw|visual|மைண்ட்|ஃப்ளோ|டேபிள்|அட்டவணை|வரை|graph|chart|plot|diagram|pie|bar|trend|pdf|report|download|print|mail|e-mail|letter|whatsapp|whats app|msg|message|teach|how|where|find|locate|explain|show me|guide|steps|workflow|animat|add|create|insert|save|enter|edit|update|delete|move|record|வாட்ஸ்|மெசேஜ்|மெயில்|கடிதம்|வரைபட|அறிக்கை|ரிப்போர்ட்|கிராப்|எப்படி|எங்கே|எங்க|சொல்லி|காட்டு|போடணும்|போடு|சேர்|உருவாக்கு|மாற்று|நீக்கு/i.test(q);
     if (!q || busyRef.current) return;
 
     // "Minimize" / "Maximize" / "Normal size": the Adviser does it at once instead of answering a question.
@@ -988,6 +1002,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
     setLiveGuide(null);
     const visibleControls = collectVisibleScreenTargets();
     const aid = ++chatSeq;
+    liveIds.current.add(aid);
     setMsgs((m) => [...m, { id: ++chatSeq, role: 'user', text: q }, { id: aid, role: 'assistant', text: '', pending: true }]);
     setPhase('thinking');
     setHeard('');
@@ -1024,7 +1039,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
       try {
         const notesFirst = rankNotes(withEnglishTerms(q), pageRef.current.page).filter((r) => r.total > 0).slice(0, 2).map((r) => `## ${r.n.title}\n${r.n.body}`).join('\n\n');
         const data = await liveData();
-        for await (const piece of serverChat(adviserPrompt(langRef.current, pageRef.current.page, pageRef.current.title, notesFirst, data, speakRef.current, visibleControls), [...history.current.slice(-16), { role: 'user', text: q }], { maxTokens: wantsChart ? 3200 : speakRef.current ? 1100 : 2800 })) {
+        for await (const piece of serverChat(adviserPrompt(langRef.current, pageRef.current.page, pageRef.current.title, notesFirst, data, speakRef.current, visibleControls), [...history.current.slice(-16), { role: 'user', text: q }], { maxTokens: wantsChart ? 4096 : speakRef.current ? 1100 : 2800 })) {
           if (!activeRef.current) break;
           servedFirst = true; push(piece);
         }
@@ -1104,6 +1119,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
   // ------------------------------------------------ listening for the next question
   const listen = useCallback(() => {
     if (!SR || !activeRef.current) return;
+    stopBarge();   // the "while talking" listener hands the microphone back first
     stopListening();
     const r = new SR();
     r.lang = langRef.current === 'ta' ? 'ta-IN' : 'en-IN';
@@ -1119,6 +1135,9 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
       // Ignore Adviser's own echo
       const normEcho = (x: string) => x.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
       if (normEcho(chunk).length > 8 && normEcho(lastSpoken.current).includes(normEcho(chunk))) return;
+
+      // "Close Raju" / "Close AI box": the box closes at once, also in the "over" (keep listening) mode
+      if (adviserVoiceCommand(chunk) === 'close') { stopListening(); endSession(false); return; }
 
       if (overRef.current) {
         // 1) Voice command: Delete / Clear freshly recorded draft & keep listening
@@ -1261,6 +1280,61 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
     window.addEventListener('argus:mode', on);
     return () => window.removeEventListener('argus:mode', on);
   }, []);
+  // While the Adviser is talking, thinking or showing something on the screen, a light listener still hears
+  // "close Raju" (closes the box), "stop" / "நிறுத்து" (stops the voice) and "minimize" / "maximize".
+  // Its own voice coming back through the speakers is ignored.
+  useEffect(() => {
+    if (!SR || phase === 'idle' || phase === 'listening' || !(phase === 'speaking' || phase === 'thinking' || liveGuide)) return;
+    const r = new SR();
+    r.lang = lang === 'ta' ? 'ta-IN' : 'en-IN';
+    r.continuous = true;
+    r.interimResults = true;
+    let stopped = false;
+    const norm = (x: string) => x.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
+    r.onresult = (e: any) => {
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const heard = String(e.results[i][0]?.transcript || '').trim();
+        if (!heard) continue;
+        const n = norm(heard);
+        if (n.length > 3 && norm(lastSpoken.current).includes(n) && !/raa?ju|ராஜு/.test(n)) continue;   // its own voice
+        const cmd = adviserVoiceCommand(heard);
+        if (cmd === 'close') { stopped = true; endSession(false); return; }
+        if (cmd === 'stop') {
+          stopped = true;
+          stopSpeaking('adviser');
+          setLiveGuide(null);
+          setPhase('ready');
+          if (handsFreeRef.current) window.setTimeout(() => listenRef.current(), 400);
+          return;
+        }
+        if (e.results[i].isFinal) {
+          if (WIN_MIN.test(heard)) { autoMini.current = false; setMini(true); }
+          else if (WIN_MAX.test(heard)) { setMini(false); setMaxed(true); }
+          else if (WIN_RESTORE.test(heard)) { setMini(false); setMaxed(false); }
+        }
+      }
+    };
+    r.onend = () => { if (!stopped && bargeRef.current === r) { try { r.start(); } catch { /* already running */ } } };
+    r.onerror = () => { /* no speech / aborted: onend restarts it */ };
+    bargeRef.current = r;
+    try { r.start(); } catch { /* the microphone is busy */ }
+    return () => { stopped = true; if (bargeRef.current === r) bargeRef.current = null; try { r.abort(); } catch { /* ended */ } };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [SR, phase, lang, !!liveGuide, endSession]);
+
+  // "Open Raju" / "Close Raju" heard by the always-on microphone (or sent from anywhere in the app)
+  useEffect(() => {
+    const on = (e: Event) => {
+      const action = (e as CustomEvent<{ action: 'open' | 'close' }>).detail?.action;
+      if (action === 'open') {
+        autoMini.current = false; setMini(false);
+        if (!activeRef.current) toggleRef.current('adviser');
+      } else if (action === 'close' && activeRef.current) endSession(false);
+    };
+    window.addEventListener('argus:adviser', on);
+    return () => window.removeEventListener('argus:adviser', on);
+  }, [endSession]);
+
   const modesRef = useRef(modes);
   modesRef.current = modes;
   /** `kind` (Teaching only): 'page' = this screen, 'erp' = every screen. Without it the last kind used is repeated. */
@@ -1729,17 +1803,20 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
                   {m.role === 'assistant' && !m.error ? (() => {
                     const b = parseBlocks(m.text);
                     const vis = parseVisuals(m.text);
-                    const anyVis = vis.mindmaps.length + vis.diagrams.length + vis.tables.length > 0;
+                    const made = parseFiles(m.text);
+                    const anyVis = vis.mindmaps.length + vis.diagrams.length + vis.tables.length + made.files.length + made.images.length > 0;
                     if (!b.visible && !b.charts.length && !b.teaches.length && !b.dbActions.length && !anyVis) return m.pending ? <span className="inline-flex items-center gap-1 text-slate-400"><Loader2 size={13} className="animate-spin" />Thinking…</span> : '';
                     return (
                       <>
                         {b.visible}
                         {m.pending && /\[\[\s*(CHART|PDF)/.test(m.text) && <span className="mt-1 flex items-center gap-1 text-[11px] text-slate-400"><Loader2 size={12} className="animate-spin" />Drawing the graphs…</span>}
                         {b.charts.map((c, i) => <ChartView key={i} chart={c} />)}
-                        {m.pending && /\[\[\s*(MINDMAP|DIAGRAM|TABLE)/.test(m.text) && <span className="mt-1 flex items-center gap-1 text-[11px] text-slate-400"><Loader2 size={12} className="animate-spin" />{lang === 'ta' ? 'வரைகிறது…' : 'Drawing it…'}</span>}
+                        {m.pending && /\[\[\s*(MINDMAP|DIAGRAM|TABLE|FILE|IMAGE)/.test(m.text) && <span className="mt-1 flex items-center gap-1 text-[11px] text-slate-400"><Loader2 size={12} className="animate-spin" />{lang === 'ta' ? 'வரைகிறது…' : 'Drawing it…'}</span>}
                         {vis.mindmaps.map((mm, i) => <MindMapView key={`mm${i}`} spec={mm} companyId={company?.id ?? null} onOpen={(p) => { navigate(p); setMini(true); }} />)}
                         {vis.diagrams.map((d, i) => <DiagramView key={`dg${i}`} spec={d} />)}
                         {vis.tables.map((t, i) => <TableView key={`tb${i}`} spec={t} />)}
+                        {made.files.map((fl, i) => <FileCard key={`fl${i}`} file={fl} company={company?.company_name ?? ''} />)}
+                        {made.images.map((im, i) => <ImageCard key={`im${i}`} spec={im} auto={liveIds.current.has(m.id)} />)}
                         {m.pending && /\[\[\s*EMAIL/.test(m.text) && <span className="mt-1 flex items-center gap-1 text-[11px] text-slate-400"><Loader2 size={12} className="animate-spin" />Writing the e-mail…</span>}
                         {!m.pending && b.emails.map((e, i) => <EmailCard key={i} draft={e} onConnect={() => setMailOpen(true)} />)}
                         {m.pending && /\[\[\s*WHATSAPP/.test(m.text) && <span className="mt-1 flex items-center gap-1 text-[11px] text-slate-400"><Loader2 size={12} className="animate-spin" />Writing the WhatsApp message…</span>}
