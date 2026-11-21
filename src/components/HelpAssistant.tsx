@@ -96,7 +96,7 @@ const WIN_TARGET = '(?:\\s+(?:the|this|my|your|window|adviser|advisor|ai|chat|vi
 const WIN_POLITE = '(?:\\s+(?:please|pannu|pannunga|pannungal|seyyavum|பண்ணு|பண்ணுங்க|பண்ணுங்கள்|செய்|செய்யவும்))?';
 const winCmd = (words: string) => new RegExp('^(?:please\\s+|can you\\s+)?(?:' + words + ')' + WIN_TARGET + WIN_POLITE + '[.!\\s]*$', 'iu');
 const WIN_MIN = winCmd('minimi[sz]e|minimum|make\\s+(?:it\\s+)?small(?:er)?|hide|go\\s+small|small\\s+(?:aakku|pannu)|chinnadha(?:kku)?|chinnatha(?:kku)?|மினிமைஸ்|சின்னதாக்கு|சின்னதா|சிறிதாக்கு|சிறியதாக்கு|மறை');
-const WIN_MAX = winCmd('maximi[sz]e|maximum|full\\s*screen|make\\s+(?:it\\s+)?(?:big|bigger|large)|go\\s+big|big\\s+(?:aakku|pannu)|perusa(?:kku)?|perisa(?:kku)?|மேக்ஸிமைஸ்|பெருசாக்கு|பெருசா|பெரிதாக்கு|பெரியதாக்கு|முழு\\s*திரை');
+const WIN_MAX = winCmd('(?:open\\s+(?:in\\s+)?)?(?:maximi[sz]e|maximum|full\\s*screen|fullscreen|make\\s+(?:it\\s+)?(?:big|bigger|large)|go\\s+big|big\\s+(?:aakku|pannu)|perusa(?:kku)?|perisa(?:kku)?|மேக்ஸிமைஸ்|பெருசாக்கு|பெருசா|பெரிதாக்கு|பெரியதாக்கு|முழு\\s*திரை)');
 const WIN_RESTORE = winCmd('restore|normal(?:\\s+size)?|reset\\s+(?:the\\s+)?size|open|show|come\\s+back|back|திற|திரும்ப|சாதாரண\\s*அளவு|பழைய\\s*அளவு');
 
 const STOP_WORDS = /^(stop|bye|goodbye|that'?s all|enough|exit|close|நிறுத்து|போதும்|நிறுத்தவும்|பை|nirutthu|nirutha|podhum|pothum|bye bye)\b/i;
@@ -995,6 +995,30 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
     const wantsChart = /word|docx?\b|excel|xlsx|sheet|csv|file|document|image|picture|photo|logo|poster|படம்|இமேஜ்|எக்செல்|வேர்ட்|ஃபைல்|mind ?map|flow|table|tree|timeline|org|cycle|draw|visual|மைண்ட்|ஃப்ளோ|டேபிள்|அட்டவணை|வரை|graph|chart|plot|diagram|pie|bar|trend|pdf|report|download|print|mail|e-mail|letter|whatsapp|whats app|msg|message|teach|how|where|find|locate|explain|show me|guide|steps|workflow|animat|add|create|insert|save|enter|edit|update|delete|move|record|வாட்ஸ்|மெசேஜ்|மெயில்|கடிதம்|வரைபட|அறிக்கை|ரிப்போர்ட்|கிராப்|எப்படி|எங்கே|எங்க|சொல்லி|காட்டு|போடணும்|போடு|சேர்|உருவாக்கு|மாற்று|நீக்கு/i.test(q);
     if (!q || busyRef.current) return;
 
+    // Voice/Text commands for window actions: close, fullscreen, minimize, restore
+    const qCmd = adviserVoiceCommand(q);
+    if (qCmd === 'close') {
+      endSession(false);
+      return;
+    }
+    if (qCmd === 'fullscreen') {
+      autoMini.current = false;
+      setMini(false);
+      setMaxed(true);
+      const reply = langRef.current === 'ta' ? 'முழு திரையில் திறக்கப்பட்டது. "normal size" என்று சொன்னால் பழைய அளவுக்கு வரும்.' : 'Maximized to full screen. Say "normal size" to go back.';
+      setMsgs((m) => [...m, { id: ++chatSeq, role: 'user', text: q }, { id: ++chatSeq, role: 'assistant', text: reply }]);
+      if (handsFreeRef.current && SR && activeRef.current) listenRef.current(); else setPhase('ready');
+      return;
+    }
+    if (qCmd === 'minimize') {
+      autoMini.current = false;
+      setMini(true);
+      const reply = langRef.current === 'ta' ? 'சிறிதாக்கப்பட்டது. திறக்க கீழே இடது மூலையில் உள்ள பெட்டியைத் தொடவும் அல்லது "open" என்று சொல்லவும்.' : 'Minimized. Click the box in the bottom-left corner or say "open".';
+      setMsgs((m) => [...m, { id: ++chatSeq, role: 'user', text: q }, { id: ++chatSeq, role: 'assistant', text: reply }]);
+      if (handsFreeRef.current && SR && activeRef.current) listenRef.current(); else setPhase('ready');
+      return;
+    }
+
     // "Minimize" / "Maximize" / "Normal size": the Adviser does it at once instead of answering a question.
     const winAct = WIN_MIN.test(q) ? 'min' : WIN_MAX.test(q) ? 'max' : WIN_RESTORE.test(q) ? 'restore' : null;
     if (winAct) {
@@ -1173,8 +1197,11 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
       const normEcho = (x: string) => x.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
       if (normEcho(chunk).length > 8 && normEcho(lastSpoken.current).includes(normEcho(chunk))) return;
 
-      // "Close Raju" / "Close AI box": the box closes at once, also in the "over" (keep listening) mode
-      if (adviserVoiceCommand(chunk) === 'close') { stopListening(); endSession(false); return; }
+      // "Close Raju" / "Full screen" / "Minimize": act at once, also in "over" mode
+      const chunkCmd = adviserVoiceCommand(chunk);
+      if (chunkCmd === 'close') { stopListening(); endSession(false); return; }
+      if (chunkCmd === 'fullscreen') { autoMini.current = false; setMini(false); setMaxed(true); return; }
+      if (chunkCmd === 'minimize') { autoMini.current = false; setMini(true); return; }
 
       if (overRef.current) {
         // 1) Voice command: Delete / Clear freshly recorded draft & keep listening
@@ -1336,6 +1363,8 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
         if (n.length > 3 && norm(lastSpoken.current).includes(n) && !/raa?ju|ராஜு/.test(n)) continue;   // its own voice
         const cmd = adviserVoiceCommand(heard);
         if (cmd === 'close') { stopped = true; endSession(false); return; }
+        if (cmd === 'fullscreen') { autoMini.current = false; setMini(false); setMaxed(true); return; }
+        if (cmd === 'minimize') { autoMini.current = false; setMini(true); return; }
         if (cmd === 'stop') {
           stopped = true;
           stopSpeaking('adviser');
@@ -1359,23 +1388,40 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [SR, phase, lang, !!liveGuide, endSession]);
 
-  // "Open Raju" / "Close Raju" heard by the always-on microphone (or sent from anywhere in the app)
+  // "Open Raju" / "Close Raju" / "Fullscreen" heard by the always-on microphone (or sent from anywhere in the app)
   useEffect(() => {
     const on = (e: Event) => {
-      const detail = (e as CustomEvent<{ action: 'open' | 'close'; query?: string }>).detail;
+      const detail = (e as CustomEvent<{ action: 'open' | 'close' | 'fullscreen' | 'minimize'; query?: string }>).detail;
       const action = detail?.action;
       const query = detail?.query;
-      if (action === 'open') {
+      if (action === 'open' || action === 'fullscreen') {
         autoMini.current = false;
         setMini(false);
+        if (action === 'fullscreen') {
+          setMaxed(true);
+        }
         if (!activeRef.current) toggleRef.current('adviser');
         if (query && query.trim()) {
-          window.setTimeout(() => {
-            void ask(query.trim());
-          }, 350);
+          const qCmd = adviserVoiceCommand(query.trim());
+          if (qCmd === 'fullscreen') {
+            setMaxed(true);
+          } else if (qCmd === 'close') {
+            endSession(false);
+          } else if (qCmd === 'minimize') {
+            setMini(true);
+          } else {
+            window.setTimeout(() => {
+              void ask(query.trim());
+            }, 350);
+          }
         }
-      } else if (action === 'close' && activeRef.current) {
+      } else if (action === 'close') {
+        autoMini.current = false;
+        setMini(false);
         endSession(false);
+      } else if (action === 'minimize') {
+        autoMini.current = false;
+        setMini(true);
       }
     };
     window.addEventListener('argus:adviser', on);

@@ -1187,9 +1187,9 @@ export function Copilot({
       const spoken = `${fin} ${inter}`.trim();
       if (!spoken) return;
 
-      // 0. "Open Raju" / "Raaju open" / "Raaju" / "Close Raju" / "Close": open or close the Adviser
+      // 0. "Open Raju" / "Raaju open" / "Raaju" / "Close Raju" / "Close" / "Full screen"
       const adv = adviserVoiceCommand(spoken);
-      if (adv === 'open' || adv === 'close') {
+      if (adv === 'open' || adv === 'close' || adv === 'fullscreen' || adv === 'minimize') {
         advCmd = adv;
         return;
       }
@@ -1263,18 +1263,31 @@ export function Copilot({
       const wake = own.matched ? own : (wakeAlt ?? own);
       const norm = (x: string) => x.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
       const echo = (tainted && !wake.matched) || (norm(said).length > 6 && norm(lastSpokenRef.current).includes(norm(said)));
-      const advFinal = advCmd ?? (() => { const c = adviserVoiceCommand(said); return c === 'open' || c === 'close' ? c : null; })();
+      const advFinal = advCmd ?? (() => {
+        const c = adviserVoiceCommand(said);
+        return c === 'open' || c === 'close' || c === 'fullscreen' || c === 'minimize' ? c : null;
+      })();
       if (advFinal) {
         stopSpeaking();
         setOpen(false);
-        setSpeechStatusText(advFinal === 'open' ? 'Opening the Adviser…' : 'Closing the Adviser…');
+        setSpeechStatusText(
+          advFinal === 'fullscreen' ? 'Opening Adviser in full screen…' :
+          advFinal === 'open' ? 'Opening the Adviser…' :
+          advFinal === 'minimize' ? 'Minimizing the Adviser…' :
+          'Closing the Adviser…'
+        );
         sendAdviserCommand(advFinal, advQuery);
       } else if (!echo && (said.length >= 2 || wake.matched || (wizardRef.current && said.length >= 1))) {
         if (wake.matched) {
           stopSpeaking();
           setOpen(false);
-          setSpeechStatusText('Opening the Adviser…');
-          sendAdviserCommand('open', wake.trailing);
+          const trailingCmd = adviserVoiceCommand(wake.trailing);
+          if (trailingCmd === 'fullscreen' || trailingCmd === 'close' || trailingCmd === 'minimize') {
+            sendAdviserCommand(trailingCmd);
+          } else {
+            setSpeechStatusText('Opening the Adviser…');
+            sendAdviserCommand('open', wake.trailing);
+          }
         } else if (openRef.current) {
           const send = (text: string) => {
             const go = () => void submitRef.current(text);
