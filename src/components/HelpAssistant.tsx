@@ -860,6 +860,8 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
   const liveIds = useRef(new Set<number>());
   // the listener that runs while the Adviser is talking (see the "close Raju" effect below)
   const bargeRef = useRef<any>(null);
+  // "Raaju mic on" / "Raaju mic off": switch the Adviser's typing microphone (filled in next to toggleMic below)
+  const micCtl = useRef<{ on: () => void; off: () => void }>({ on: () => {}, off: () => {} });
   const stopBarge = () => { const b = bargeRef.current; bargeRef.current = null; if (b) { try { b.abort(); } catch { /* ended */ } } };
 
   const page = location.pathname;
@@ -1001,6 +1003,8 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
 
     // Voice/Text commands for window actions: close, fullscreen, minimize, restore
     const qCmd = adviserVoiceCommand(q);
+    if (qCmd === 'mic_on') { micCtl.current.on(); return; }
+    if (qCmd === 'mic_off') { micCtl.current.off(); return; }
     if (qCmd === 'close') {
       endSession(false);
       return;
@@ -1203,6 +1207,8 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
 
       // "Close Raju" / "Full screen" / "Minimize": act at once, also in "over" mode
       const chunkCmd = adviserVoiceCommand(chunk);
+      if (chunkCmd === 'mic_off') { micCtl.current.off(); return; }
+      if (chunkCmd === 'mic_on') return;   // already on
       if (chunkCmd === 'close') { stopListening(); endSession(false); return; }
       if (chunkCmd === 'fullscreen') { autoMini.current = false; setMini(false); setMaxed(true); return; }
       if (chunkCmd === 'minimize') { autoMini.current = false; setMini(true); return; }
@@ -1325,6 +1331,9 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
       const norm = (x: string) => x.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
       if (norm(said).length > 8 && norm(lastSpoken.current).includes(norm(said))) { if (handsFreeRef.current) listenRef.current(); else setPhase('ready'); return; }
       misses.current = 0;
+      const saidCmd = adviserVoiceCommand(said);
+      if (saidCmd === 'mic_off') { micCtl.current.off(); return; }
+      if (saidCmd === 'mic_on') { micCtl.current.on(); return; }
       if (STOP_WORDS.test(said)) { endSession(true); return; }
       if (GUIDE_WORDS.test(said)) { endSession(false); window.dispatchEvent(new CustomEvent('argus:guide')); return; }
       lastSpoken.current = '';
@@ -1348,11 +1357,11 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
     window.addEventListener('argus:mode', on);
     return () => window.removeEventListener('argus:mode', on);
   }, []);
-  // While the Adviser is talking, thinking or showing something on the screen, a light listener still hears
-  // "close Raju" (closes the box), "stop" / "நிறுத்து" (stops the voice) and "minimize" / "maximize".
-  // Its own voice coming back through the speakers is ignored.
+  // The always-on "Raaju" listener while the Adviser is open: whenever its typing microphone is NOT taking your words
+  // (talking, thinking, showing something on screen, or the mic is off) it still hears "Raaju mic on" / "Raaju mic off",
+  // "close Raju", "stop" and "minimize" / "maximize". Its own voice coming back through the speakers is ignored.
   useEffect(() => {
-    if (!SR || phase === 'idle' || phase === 'listening' || !(phase === 'speaking' || phase === 'thinking' || liveGuide)) return;
+    if (!SR || phase === 'idle' || phase === 'listening') return;
     const r = new SR();
     r.lang = lang === 'ta' ? 'ta-IN' : 'en-IN';
     r.continuous = true;
@@ -1366,6 +1375,8 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
         const n = norm(heard);
         if (n.length > 3 && norm(lastSpoken.current).includes(n) && !/raa?ju|ராஜு/.test(n)) continue;   // its own voice
         const cmd = adviserVoiceCommand(heard);
+        if (cmd === 'mic_on') { stopped = true; micCtl.current.on(); return; }
+        if (cmd === 'mic_off') { micCtl.current.off(); continue; }   // keeps listening for "mic on"
         if (cmd === 'close') { stopped = true; endSession(false); return; }
         if (cmd === 'fullscreen') { autoMini.current = false; setMini(false); setMaxed(true); return; }
         if (cmd === 'minimize') { autoMini.current = false; setMini(true); return; }
@@ -1395,9 +1406,17 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
   // "Open Raju" / "Close Raju" / "Fullscreen" heard by the always-on microphone (or sent from anywhere in the app)
   useEffect(() => {
     const on = (e: Event) => {
-      const detail = (e as CustomEvent<{ action: 'open' | 'close' | 'fullscreen' | 'minimize'; query?: string }>).detail;
+      const detail = (e as CustomEvent<{ action: 'open' | 'close' | 'fullscreen' | 'minimize' | 'mic_on' | 'mic_off'; query?: string }>).detail;
       const action = detail?.action;
       const query = detail?.query;
+      if (action === 'mic_on') {
+        // "Raaju mic on" while the box is closed: open it, then switch its microphone on
+        autoMini.current = false; setMini(false);
+        if (!activeRef.current) { toggleRef.current('adviser'); window.setTimeout(() => micCtl.current.on(), 900); }
+        else micCtl.current.on();
+        return;
+      }
+      if (action === 'mic_off') { if (activeRef.current) micCtl.current.off(); return; }
       if (action === 'open' || action === 'fullscreen') {
         autoMini.current = false;
         setMini(false);
@@ -1407,7 +1426,11 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
         if (!activeRef.current) toggleRef.current('adviser');
         if (query && query.trim()) {
           const qCmd = adviserVoiceCommand(query.trim());
-          if (qCmd === 'fullscreen') {
+          if (qCmd === 'mic_on') {
+            window.setTimeout(() => micCtl.current.on(), 900);
+          } else if (qCmd === 'mic_off') {
+            window.setTimeout(() => micCtl.current.off(), 900);
+          } else if (qCmd === 'fullscreen') {
             setMaxed(true);
           } else if (qCmd === 'close') {
             endSession(false);
@@ -1603,6 +1626,20 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
     }
     setHandsFree(true); handsFreeRef.current = true; misses.current = 0; overHit.current = false; setNote('');
     if (!busyRef.current) { stopSpeaking(); listenRef.current(); }
+  };
+  micCtl.current = {
+    on: () => {
+      if (!SR) { setNote('Voice input needs Chrome or Edge on a computer.'); return; }
+      setHandsFree(true); handsFreeRef.current = true; misses.current = 0; overHit.current = false;
+      setNote(langRef.current === 'ta' ? 'மைக் ஆன். பேசுங்கள்.' : 'Mic on. Speak now.');
+      if (!busyRef.current) { stopSpeaking('adviser'); window.setTimeout(() => listenRef.current(), 200); }
+    },
+    off: () => {
+      setHandsFree(false); handsFreeRef.current = false;
+      stopListening();
+      setNote(langRef.current === 'ta' ? 'மைக் ஆஃப். "ராஜு மைக் ஆன்" என்று சொன்னால் மீண்டும் ஆன் ஆகும்.' : 'Mic off. Say "Raaju mic on" to switch it on again.');
+      if (!busyRef.current) setPhase('ready');
+    },
   };
 
   const active = phase !== 'idle';

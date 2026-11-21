@@ -1159,7 +1159,7 @@ export function Copilot({
     let woke = false;
     let tainted = false;   // some of what was heard came while the assistant was talking: that is its own voice, not a command
     let wakeAlt: { matched: boolean; trailing: string } | null = null;
-    let advCmd: 'open' | 'close' | null = null;   // "open Raju" / "close Raju" heard: for the Adviser
+    let advCmd: 'open' | 'close' | 'fullscreen' | 'minimize' | 'mic_on' | 'mic_off' | null = null;   // "open Raju" / "close Raju" heard: for the Adviser
     let advQuery: string | undefined = undefined;
     const mine = () => recRef.current === r;
     const langName = () => (speechLangRef.current === 'ta-IN' ? 'Tamil' : 'English');
@@ -1189,7 +1189,7 @@ export function Copilot({
 
       // 0. "Open Raju" / "Raaju open" / "Raaju" / "Close Raju" / "Close" / "Full screen"
       const adv = adviserVoiceCommand(spoken);
-      if (adv === 'open' || adv === 'close' || adv === 'fullscreen' || adv === 'minimize') {
+      if (adv === 'open' || adv === 'close' || adv === 'fullscreen' || adv === 'minimize' || adv === 'mic_on' || adv === 'mic_off') {
         advCmd = adv;
         return;
       }
@@ -1265,7 +1265,7 @@ export function Copilot({
       const echo = (tainted && !wake.matched) || (norm(said).length > 6 && norm(lastSpokenRef.current).includes(norm(said)));
       const advFinal = advCmd ?? (() => {
         const c = adviserVoiceCommand(said);
-        return c === 'open' || c === 'close' || c === 'fullscreen' || c === 'minimize' ? c : null;
+        return c === 'open' || c === 'close' || c === 'fullscreen' || c === 'minimize' || c === 'mic_on' || c === 'mic_off' ? c : null;
       })();
       if (advFinal) {
         stopSpeaking();
@@ -1274,6 +1274,8 @@ export function Copilot({
           advFinal === 'fullscreen' ? 'Opening Adviser in full screen…' :
           advFinal === 'open' ? 'Opening the Adviser…' :
           advFinal === 'minimize' ? 'Minimizing the Adviser…' :
+          advFinal === 'mic_on' ? 'Opening the Adviser with the mic on…' :
+          advFinal === 'mic_off' ? 'Adviser mic off' :
           'Closing the Adviser…'
         );
         sendAdviserCommand(advFinal, advQuery);
@@ -1282,7 +1284,7 @@ export function Copilot({
           stopSpeaking();
           setOpen(false);
           const trailingCmd = adviserVoiceCommand(wake.trailing);
-          if (trailingCmd === 'fullscreen' || trailingCmd === 'close' || trailingCmd === 'minimize') {
+          if (trailingCmd === 'fullscreen' || trailingCmd === 'close' || trailingCmd === 'minimize' || trailingCmd === 'mic_on' || trailingCmd === 'mic_off') {
             sendAdviserCommand(trailingCmd);
           } else {
             setSpeechStatusText('Opening the Adviser…');

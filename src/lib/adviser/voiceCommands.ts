@@ -34,6 +34,19 @@ const OPEN_RE = new RegExp(
   'iu'
 );
 
+// The Adviser's typing microphone: "Raaju mic on" / "Raaju mic off", "மைக் ஆன்" / "மைக் ஆஃப்", "turn on the mic", "stop listening"
+const MIC = '(?:mic|mike|mic phone|microphone|மைக்|மைக்கு|மைக்க|மைக்ரோஃபோன்)';
+const ON_W = '(?:on|onn|ஆன்|start|open|திற|enable|போடு)';
+const OFF_W = '(?:off|of|ஆஃப்|ஆப்|stop|close|மூடு|disable|mute|நிறுத்து)';
+const MIC_ON_RE = new RegExp(
+  `^${GREET}(?:${NAME}\\s+)?(?:${MIC}\\s+${ON_W}|${ON_W}\\s+(?:the\\s+)?${MIC}|(?:turn|switch)\\s+on\\s+(?:the\\s+)?${MIC}|(?:turn|switch)\\s+(?:the\\s+)?${MIC}\\s+on|start\\s+listening)(?:\\s+${NAME})?${TAIL}$`,
+  'iu'
+);
+const MIC_OFF_RE = new RegExp(
+  `^${GREET}(?:${NAME}\\s+)?(?:${MIC}\\s+${OFF_W}|${OFF_W}\\s+(?:the\\s+)?${MIC}|(?:turn|switch)\\s+off\\s+(?:the\\s+)?${MIC}|(?:turn|switch)\\s+(?:the\\s+)?${MIC}\\s+off|stop\\s+listening)(?:\\s+${NAME})?${TAIL}$`,
+  'iu'
+);
+
 const STOP_RE = new RegExp(
   `^(?:(?:stop|wait|enough|silence|quiet|shut up|stop talking|stop speaking|நிறுத்து|நிறுத்துங்க|போதும்|நில்லு|சும்மா இரு)(?:\\s+${NAME})?|${NAME}\\s+(?:stop|wait|நிறுத்து|போதும்))${TAIL}$`,
   'iu'
@@ -50,11 +63,14 @@ export function cleanSpoken(raw: string): string {
     .trim();
 }
 
-export type AdviserVoiceCommand = 'open' | 'close' | 'stop' | 'fullscreen' | 'minimize' | null;
+export type AdviserVoiceCommand = 'open' | 'close' | 'stop' | 'fullscreen' | 'minimize' | 'mic_on' | 'mic_off' | null;
 
 export function adviserVoiceCommand(raw: string): AdviserVoiceCommand {
   const t = cleanSpoken(raw);
   if (!t || t.split(' ').length > 8) return null;
+  // the microphone words first, so "Raaju mic off" is never read as "close"
+  if (MIC_ON_RE.test(t)) return 'mic_on';
+  if (MIC_OFF_RE.test(t)) return 'mic_off';
   if (FULLSCREEN_RE.test(t)) return 'fullscreen';
   if (MINIMIZE_RE.test(t)) return 'minimize';
   if (CLOSE_RE.test(t)) return 'close';
@@ -64,6 +80,6 @@ export function adviserVoiceCommand(raw: string): AdviserVoiceCommand {
 }
 
 /** Tell the Adviser to open, close, fullscreen or minimize, from anywhere in the app (the always-on microphone uses this). */
-export function sendAdviserCommand(action: 'open' | 'close' | 'fullscreen' | 'minimize', query?: string) {
+export function sendAdviserCommand(action: 'open' | 'close' | 'fullscreen' | 'minimize' | 'mic_on' | 'mic_off', query?: string) {
   window.dispatchEvent(new CustomEvent('argus:adviser', { detail: { action, query } }));
 }
