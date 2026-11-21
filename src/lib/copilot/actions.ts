@@ -1483,13 +1483,29 @@ export async function moveStageRecord(
     const due = dueRaw ? (isoDateLoose(dueRaw) || '') : '';
     if (dueRaw && !due) return { ok: false, message: `I could not read the due date "${dueRaw}". Say it like 30 November 2026.` };
 
+    let copilotGstin = String(raw.customer_gstin || raw.gst || raw.party_gstin || '').trim();
+    let copilotAddress = String(raw.billing_address || raw.customer_address || raw.party_address || raw.city || '').trim();
+    let copilotCustId = String(raw.customer_id || raw.customer_code || '').trim();
+    if (!copilotGstin || !copilotAddress || !copilotCustId) {
+      try {
+        const { data: custRow } = await supabase.from('cnc_customers').select('id,gst,city,address').ilike('name', String(sourceCard.customer || '').trim()).limit(1).maybeSingle();
+        if (custRow) {
+          if (!copilotGstin) copilotGstin = custRow.gst || '';
+          if (!copilotAddress) copilotAddress = custRow.address || custRow.city || '';
+          if (!copilotCustId) copilotCustId = custRow.id || '';
+        }
+      } catch {}
+    }
+
     let res: { id: string; invoice_no: string };
     try {
       res = await financeApi.saveInvoice({
         invoice_no: null,
         invoice_type: docType,
         customer_name: sourceCard.customer,
-        customer_id: raw.customer_id || null,
+        customer_id: copilotCustId || null,
+        customer_gstin: copilotGstin || null,
+        billing_address: copilotAddress || null,
         part_name: sourceCard.part,
         quantity: qty,
         invoice_date: invDate,

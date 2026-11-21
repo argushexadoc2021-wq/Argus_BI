@@ -253,7 +253,7 @@ export function InvoicesPage({ onBack, onView, onEdit, onDelete }: { onBack?: ()
   useEffect(() => {
     let active = true;
     Promise.all([
-      supabase.from('cnc_customers').select('id,name').order('name'),
+      supabase.from('cnc_customers').select('*').order('name'),
       supabase.from('cnc_deliveries').select('*').order('created_at', { ascending: false }),
       financeApi.bankFilters(),
       supabase.from('cnc_parts').select('id,part_no,part_name,hsn,unit,unit_price,stock_qty').order('part_name'),
@@ -429,7 +429,20 @@ export function InvoicesPage({ onBack, onView, onEdit, onDelete }: { onBack?: ()
       const dueDate = String(form.due_days ?? '').trim() !== '' && form.invoice_date
         ? addDaysISO(form.invoice_date, Number(form.due_days))
         : (form.due_date || '');
-      const result = await financeApi.saveInvoice({ ...form, due_date: dueDate, quantity: items.reduce((sum, item) => sum + item.quantity, 0), part_name: items.map(item => item.description).join(', ') }, items);
+      const matchedCust = customers.find(x => x.id === form.customer_id || String(x.name || '').trim().toLowerCase() === String(form.customer_name || '').trim().toLowerCase());
+      const gstin = form.customer_gstin || matchedCust?.gst || matchedCust?.gstin || matchedCust?.gst_number || '';
+      const address = form.billing_address || matchedCust?.address || [matchedCust?.city, matchedCust?.state, matchedCust?.pincode].filter(Boolean).join(', ') || matchedCust?.city || '';
+      const customerId = form.customer_id || matchedCust?.id || '';
+
+      const result = await financeApi.saveInvoice({
+        ...form,
+        customer_id: customerId || null,
+        customer_gstin: gstin || null,
+        billing_address: address || null,
+        due_date: dueDate,
+        quantity: items.reduce((sum, item) => sum + item.quantity, 0),
+        part_name: items.map(item => item.description).join(', ')
+      }, items);
 
       // Mark all selected delivery rows as Billed
       const dcNosToBill = selectedDcNos.length > 0
@@ -817,7 +830,13 @@ export function InvoicesPage({ onBack, onView, onEdit, onDelete }: { onBack?: ()
         if (!dr.error && dr.data) dcDate = (dr.data as any).delivery_date || null;
       } catch { /* date stays empty */ }
     }
-    const custMatch: any = (customers || []).find((x: any) => String(x.name || '').trim().toLowerCase() === String(inv.customer_name || '').trim().toLowerCase()) || {};
+    const custMatch: any = (customers || []).find((x: any) =>
+      String(x.name || '').trim().toLowerCase() === String(inv.customer_name || '').trim().toLowerCase() ||
+      String(x.id || '') === String(inv.customer_id || '')
+    ) || {};
+    const partyAddress = inv.billing_address || custMatch.address || [custMatch.city, custMatch.state, custMatch.pincode].filter(Boolean).join(', ') || custMatch.city || '';
+    const partyGstin = inv.customer_gstin || custMatch.gst || custMatch.gstin || custMatch.gst_number || '';
+    const partyCode = String(custMatch.id || inv.customer_id || '');
     return {
       companyName: company?.company_name || 'ARGUS CNC',
       companyGstin: comp.gstin,
@@ -826,9 +845,9 @@ export function InvoicesPage({ onBack, onView, onEdit, onDelete }: { onBack?: ()
       docNo: inv.invoice_no,
       invDate: inv.invoice_date,
       partyName: inv.customer_name || '',
-      partyAddress: inv.billing_address || '',
-      partyCode: String(custMatch.id || inv.customer_id || ''),
-      partyGstin: inv.customer_gstin || '',
+      partyAddress,
+      partyCode,
+      partyGstin,
       dcNo: inv.dc_no || '',
       dcDate,
       poNo: inv.po_no || '',
@@ -1093,10 +1112,14 @@ export function InvoicesPage({ onBack, onView, onEdit, onDelete }: { onBack?: ()
             const cName = c?.name || '';
             const qTerms = findQuoteTermsForCustomer(cName);
             const days = qTerms ? extractDueDays(qTerms) : '';
+            const cGst = c?.gst || c?.gstin || c?.gst_number || '';
+            const cAddr = c?.address || [c?.city, c?.state, c?.pincode].filter(Boolean).join(', ') || c?.city || '';
             setForm({
               ...form,
               customer_id: e.target.value,
               customer_name: cName,
+              customer_gstin: cGst,
+              billing_address: cAddr,
               payment_terms: qTerms || form.payment_terms,
               due_days: (days && (!form.due_days || form.due_days === '0')) ? days : form.due_days,
             });

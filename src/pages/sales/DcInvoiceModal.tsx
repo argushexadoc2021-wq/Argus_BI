@@ -553,11 +553,27 @@ export function DcInvoiceModal({ card, onClose, onMoved }: {
       }
       const gstRate = (c !== null || s !== null || ig !== null) ? (c ?? 0) + (s ?? 0) + (ig ?? 0) : null;
       const refs = Array.from(new Set(lines.map((l) => l.sheetRef).filter(Boolean))).join(', ');
+      const d0: any = dcRowsRef.current[0] ?? raw ?? {};
+      let saveGstin = String(d0.customer_gstin || '').trim();
+      let saveAddr = String(d0.billing_address || d0.customer_address || '').trim();
+      let saveCode = String(raw.customer_id || d0.customer_id || d0.customer_code || '').trim();
+      if (!saveGstin || !saveAddr || !saveCode) {
+        try {
+          const { data: custRow } = await supabase.from('cnc_customers').select('id,gst,city,address').ilike('name', customer.trim()).limit(1).maybeSingle();
+          if (custRow) {
+            if (!saveGstin) saveGstin = custRow.gst || '';
+            if (!saveAddr) saveAddr = custRow.address || custRow.city || '';
+            if (!saveCode) saveCode = custRow.id || '';
+          }
+        } catch {}
+      }
       const res = await financeApi.saveInvoice({
         invoice_no: invoiceNo.trim() || null,
         invoice_type: docType,
         customer_name: customer.trim(),
-        customer_id: raw.customer_id || null,
+        customer_id: saveCode || null,
+        customer_gstin: saveGstin || null,
+        billing_address: saveAddr || null,
         part_name: lines[0].itemName,
         quantity: lines.reduce((n, l) => n + num(l.qty), 0),
         invoice_date: invDate || null,
@@ -600,6 +616,19 @@ export function DcInvoiceModal({ card, onClose, onMoved }: {
 
   const buildInvoicePdfInput = async (): Promise<SalesInvoiceInput> => {
     const d0: any = dcRowsRef.current[0] ?? raw ?? {};
+    let previewGstin = String(d0.customer_gstin || '').trim();
+    let previewAddr = String(d0.billing_address || d0.customer_address || '').trim();
+    let previewCode = String(d0.customer_code || d0.customer_id || raw.customer_id || '').trim();
+    if (!previewGstin || !previewAddr || !previewCode) {
+      try {
+        const { data: custRow } = await supabase.from('cnc_customers').select('id,gst,city,address').ilike('name', customer.trim()).limit(1).maybeSingle();
+        if (custRow) {
+          if (!previewGstin) previewGstin = custRow.gst || '';
+          if (!previewAddr) previewAddr = custRow.address || custRow.city || '';
+          if (!previewCode) previewCode = custRow.id || '';
+        }
+      } catch {}
+    }
     const comp = await fetchCompanyPrintDetails((company as any)?.id);
     const byDc = new Map((dcRowsRef.current as any[]).map((r: any) => [String(r.id), r]));
     return {
@@ -610,9 +639,9 @@ export function DcInvoiceModal({ card, onClose, onMoved }: {
       docNo: invoiceNo.trim() || 'DRAFT',
       invDate,
       partyName: customer,
-      partyAddress: String(d0.billing_address || d0.customer_address || ''),
-      partyCode: String(d0.customer_code || d0.customer_id || ''),
-      partyGstin: String(d0.customer_gstin || ''),
+      partyAddress: previewAddr,
+      partyCode: previewCode,
+      partyGstin: previewGstin,
       dcNo,
       dcDate: d0.delivery_date || null,
       poNo: String(d0.po_no || ''),

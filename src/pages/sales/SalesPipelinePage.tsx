@@ -3678,7 +3678,9 @@ export function SalesPipelinePage() {
       const invIgst = Number(record.igst ?? 0) || 0;
       const invRate = (amt: number) => (invBasic > 0 && amt > 0 ? Math.round((amt / invBasic) * 10000) / 100 : null);
       const custMatch: any = (customerList || []).find((x: any) =>
-        String(x.name || '').trim().toLowerCase() === String(record.customer_name || record.customer || '').trim().toLowerCase()) || {};
+        String(x.name || '').trim().toLowerCase() === String(record.customer_name || record.customer || '').trim().toLowerCase() ||
+        (x.id && (String(x.id) === String(record.customer_id || record.customer_code || '')))) || {};
+      const coDetails = lookupCompanyDetails(String(record.customer_name || record.customer || ''));
       let invDcDate: string | null = viewModalData?.dc?.delivery_date || null;
       const invDcNo = String(record.dc_no || record.delivery_no || '');
       if (!invDcDate && invDcNo) {
@@ -3689,6 +3691,35 @@ export function SalesPipelinePage() {
         } catch { /* date stays empty */ }
       }
       const invPo = String(record.po_no || viewModalData?.dc?.po_no || '');
+      const partyAddress = String(
+        record.billing_address ||
+        record.customer_address ||
+        viewModalData?.dc?.billing_address ||
+        viewModalData?.dc?.customer_address ||
+        custMatch.address ||
+        custMatch.billing_address ||
+        custMatch.city ||
+        coDetails?.address ||
+        ''
+      );
+      const partyCode = String(
+        record.customer_code ||
+        record.customer_id ||
+        custMatch.id ||
+        viewModalData?.dc?.customer_code ||
+        coDetails?.partyCode ||
+        ''
+      );
+      const partyGstin = String(
+        record.customer_gstin ||
+        record.gst ||
+        viewModalData?.dc?.customer_gstin ||
+        custMatch.gst ||
+        custMatch.gstin ||
+        custMatch.gst_number ||
+        coDetails?.gstin ||
+        ''
+      );
       return {
         companyName: company?.company_name || 'ARGUS CNC',
         companyGstin: comp.gstin,
@@ -3697,9 +3728,9 @@ export function SalesPipelinePage() {
         docNo: String(record.invoice_no || record.inv_no || ''),
         invDate: record.invoice_date || record.date,
         partyName: String(record.customer_name || record.customer || ''),
-        partyAddress: String(record.billing_address || viewModalData?.dc?.billing_address || ''),
-        partyCode: String(custMatch.id || viewModalData?.dc?.customer_code || ''),
-        partyGstin: String(record.customer_gstin || viewModalData?.dc?.customer_gstin || ''),
+        partyAddress,
+        partyCode,
+        partyGstin,
         dcNo: invDcNo,
         dcDate: invDcDate,
         poNo: invPo,
@@ -3861,9 +3892,30 @@ export function SalesPipelinePage() {
       poNumber: String(record.po_no || soRef || ''),
       placeOfSupply: String(record.place_of_supply || ''),
       customerName,
-      customerAddress: String(record.billing_address || record.customer_address || ''),
-      customerGstin: String(record.customer_gstin || ''),
-      customerCode: String(record.customer_code || ''),
+      customerAddress: String(
+        record.billing_address ||
+        record.customer_address ||
+        record.party_address ||
+        ((customerList || []).find((x: any) => String(x.name || '').trim().toLowerCase() === customerName.toLowerCase())?.address) ||
+        lookupCompanyDetails(customerName)?.address ||
+        ''
+      ),
+      customerGstin: String(
+        record.customer_gstin ||
+        record.party_gstin ||
+        record.gst ||
+        ((customerList || []).find((x: any) => String(x.name || '').trim().toLowerCase() === customerName.toLowerCase())?.gst) ||
+        lookupCompanyDetails(customerName)?.gstin ||
+        ''
+      ),
+      customerCode: String(
+        record.customer_code ||
+        record.customer_id ||
+        record.party_code ||
+        ((customerList || []).find((x: any) => String(x.name || '').trim().toLowerCase() === customerName.toLowerCase())?.id) ||
+        lookupCompanyDetails(customerName)?.partyCode ||
+        ''
+      ),
       category: String(record.category || ''),
       packaging: String(record.packaging_details || ''),
       enquiryNo: String(record.enquiry_no || ''),
@@ -5787,7 +5839,21 @@ export function SalesPipelinePage() {
                       setAddPopup('DC');
                     } else if (stageId === 'Invoice') {
                       setInvoiceForm({
-                        invoiceNo: '', partyName: '', dcNumber: '', date: new Date().toISOString().split('T')[0], partName: '', quantity: '', price: '', cgst: '', sgst: '', igst: ''
+                        invoiceNo: '',
+                        partyName: '',
+                        partyGstin: '',
+                        customer_gstin: '',
+                        partyAddress: '',
+                        billing_address: '',
+                        customer_id: '',
+                        dcNumber: '',
+                        date: new Date().toISOString().split('T')[0],
+                        partName: '',
+                        quantity: '',
+                        price: '',
+                        cgst: '',
+                        sgst: '',
+                        igst: ''
                       });
                       setInvoiceModalTarget({ id: 'dummy', stage: 'DC', type: 'dc', refNo: '', customer: '', part: '', qty: 1, value: 0, date: '', raw: {} });
                     }
@@ -5951,6 +6017,29 @@ export function SalesPipelinePage() {
             };
           }
         } catch { /* header-only fallback */ }
+        const invCustName = String(aggregated.invoice?.customer_name || aggregated.invoice?.customer || card.raw?.customer_name || card.raw?.customer || '').trim();
+        if (aggregated.invoice && invCustName) {
+          const custDetails = lookupCompanyDetails(invCustName);
+          const cm = (customerList || []).find((c: any) => String(c.name || '').trim().toLowerCase() === invCustName.toLowerCase()) || {};
+          if (!aggregated.invoice.customer_gstin) {
+            aggregated.invoice.customer_gstin = custDetails?.gstin || cm.gst || cm.gstin || cm.gst_number || '';
+          }
+          if (!aggregated.invoice.billing_address) {
+            aggregated.invoice.billing_address = custDetails?.address || cm.address || cm.billing_address || cm.city || '';
+          }
+          if (!aggregated.invoice.customer_code && !aggregated.invoice.customer_id) {
+            aggregated.invoice.customer_code = custDetails?.partyCode || cm.id || '';
+          }
+          if (card.raw?.id && (!card.raw.customer_gstin || !card.raw.billing_address)) {
+            const patch: any = {};
+            if (!card.raw.customer_gstin && aggregated.invoice.customer_gstin) patch.customer_gstin = aggregated.invoice.customer_gstin;
+            if (!card.raw.billing_address && aggregated.invoice.billing_address) patch.billing_address = aggregated.invoice.billing_address;
+            if (!card.raw.customer_id && (aggregated.invoice.customer_code || aggregated.invoice.customer_id)) patch.customer_id = aggregated.invoice.customer_code || aggregated.invoice.customer_id;
+            if (Object.keys(patch).length > 0) {
+              void supabase.from('cnc_invoices').update(patch).eq('id', card.raw.id);
+            }
+          }
+        }
         // Source lineage: Quotation → Sales Order → Finished Goods → DC → Invoice.
         try {
           let dc: any = null;
@@ -7504,11 +7593,21 @@ export function SalesPipelinePage() {
         : null;
       const target = invoiceModalTarget.raw || {};
       const deliveryId = invoiceModalTarget.type === 'dc' && target.id !== 'dummy' ? String(target.id) : null;
+      const coDetails = lookupCompanyDetails(invoiceForm.partyName.trim());
+      const custMatch: any = (customerList || []).find((c: any) =>
+        String(c.name || '').trim().toLowerCase() === invoiceForm.partyName.trim().toLowerCase()
+      ) || {};
+      const finalGstin = String(invoiceForm.partyGstin || invoiceForm.customer_gstin || coDetails?.gstin || custMatch.gst || custMatch.gstin || custMatch.gst_number || '').trim();
+      const finalAddress = String(invoiceForm.partyAddress || invoiceForm.billing_address || coDetails?.address || custMatch.address || [custMatch.city, custMatch.state, custMatch.pincode].filter(Boolean).join(', ') || custMatch.city || '').trim();
+      const finalCustId = String(invoiceForm.customer_id || coDetails?.partyCode || custMatch.id || target.customer_id || '').trim();
+
       await financeApi.saveInvoice({
         invoice_no: invoiceForm.invoiceNo || null,
         invoice_type: 'Sales Invoice',
         customer_name: invoiceForm.partyName.trim(),
-        customer_id: target.customer_id || null,
+        customer_id: finalCustId || null,
+        customer_gstin: finalGstin || null,
+        billing_address: finalAddress || null,
         part_name: invoiceForm.partName.trim(),
         quantity: q,
         invoice_date: invoiceForm.date || null,
@@ -10010,19 +10109,35 @@ export function SalesPipelinePage() {
             value={invoiceForm.partyName || ''}
             onChange={val => {
               const details = lookupCompanyDetails(val);
+              const cm = (customerList || []).find((c: any) => String(c.name || '').trim().toLowerCase() === String(val).trim().toLowerCase()) || {};
+              const gstin = details?.gstin || cm.gst || cm.gstin || cm.gst_number || '';
+              const address = details?.address || cm.address || cm.billing_address || cm.city || '';
+              const custId = details?.partyCode || cm.id || '';
               setInvoiceForm((prev: any) => ({
                 ...prev,
                 partyName: val,
-                ...(details?.partyCode ? { customer_id: details.partyCode } : {}),
+                customer_id: custId || prev.customer_id,
+                partyGstin: gstin || prev.partyGstin,
+                customer_gstin: gstin || prev.customer_gstin,
+                partyAddress: address || prev.partyAddress,
+                billing_address: address || prev.billing_address,
               }));
             }}
             onSelectCustomer={(c: any) => {
               const nm = String(c.company || c.name || '');
               const details = lookupCompanyDetails(nm);
+              const cm = (customerList || []).find((x: any) => String(x.name || '').trim().toLowerCase() === nm.toLowerCase()) || {};
+              const gstin = details?.gstin || c.gst || c.gstin || (c as any).gst_number || cm.gst || cm.gstin || '';
+              const address = details?.address || c.address || c.city || cm.address || cm.city || '';
+              const custId = details?.partyCode || c.id || cm.id || '';
               setInvoiceForm((prev: any) => ({
                 ...prev,
                 partyName: nm,
-                customer_id: details?.partyCode || c.id || prev.customer_id,
+                customer_id: custId || prev.customer_id,
+                partyGstin: gstin || prev.partyGstin,
+                customer_gstin: gstin || prev.customer_gstin,
+                partyAddress: address || prev.partyAddress,
+                billing_address: address || prev.billing_address,
               }));
             }}
             companies={allKnownCompanies}
@@ -10031,6 +10146,22 @@ export function SalesPipelinePage() {
           />
           <FormField label="DC Number"><input className={inputClass} value={invoiceForm.dcNumber || ''} onChange={e=>setInvoiceForm({...invoiceForm, dcNumber: e.target.value})} /></FormField>
           <FormField label="Date" required><input type="date" className={inputClass} value={invoiceForm.date || ''} onChange={e=>setInvoiceForm({...invoiceForm, date: e.target.value})} /></FormField>
+          <FormField label="Company GSTIN">
+            <input
+              className={inputClass}
+              placeholder="e.g. 33AAAAA0000A1Z5"
+              value={invoiceForm.partyGstin || invoiceForm.customer_gstin || ''}
+              onChange={e=>setInvoiceForm((prev: any) => ({ ...prev, partyGstin: e.target.value, customer_gstin: e.target.value }))}
+            />
+          </FormField>
+          <FormField label="Billing Address">
+            <input
+              className={inputClass}
+              placeholder="Billing Address / City"
+              value={invoiceForm.partyAddress || invoiceForm.billing_address || ''}
+              onChange={e=>setInvoiceForm((prev: any) => ({ ...prev, partyAddress: e.target.value, billing_address: e.target.value }))}
+            />
+          </FormField>
           <div className="col-span-2 border-t border-slate-100 mt-2 pt-4">
             <h4 className="font-semibold text-sm text-slate-800 mb-3">Product Details</h4>
             <div className="grid grid-cols-4 gap-4">
