@@ -3,7 +3,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 // One small arrow tab instead of two floating pills. Point at it (or click it) and the AI help + Co-worker buttons appear next to it;
 // move the mouse away and they tuck back. Drag the arrow anywhere; the place is remembered in this browser (double-click = reset).
-// The assistants keep running while tucked away (Co-worker still listens for "Hi Raaju"): only their buttons are hidden.
+// The assistants keep running while tucked away (Adviser listens for "Raaju" or "Raaju open"): only their buttons are hidden.
 const KEY = 'assistant-dock-pos';
 const W = 26, H = 58;
 
@@ -150,7 +150,7 @@ export function AssistantDock() {
     >
       <Icon size={16} />
       {cwState === 'listening' && (
-        <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5" title='Co-worker is listening: say "Hi Raaju"'>
+        <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5" title='Listening: say "Raaju" or "Raaju open"'>
           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
           <span className="relative inline-flex h-3.5 w-3.5 rounded-full border-2 border-slate-900 bg-emerald-500" />
         </span>

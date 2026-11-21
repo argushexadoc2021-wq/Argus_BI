@@ -1159,7 +1159,8 @@ export function Copilot({
     let woke = false;
     let tainted = false;   // some of what was heard came while the assistant was talking: that is its own voice, not a command
     let wakeAlt: { matched: boolean; trailing: string } | null = null;
-    let advCmd: 'open' | 'close' | null = null;   // "open Raju" / "close Raju" heard: for the Adviser, not a Co-worker command
+    let advCmd: 'open' | 'close' | null = null;   // "open Raju" / "close Raju" heard: for the Adviser
+    let advQuery: string | undefined = undefined;
     const mine = () => recRef.current === r;
     const langName = () => (speechLangRef.current === 'ta-IN' ? 'Tamil' : 'English');
 
@@ -1168,7 +1169,7 @@ export function Copilot({
       startedOnceRef.current = true;
       setListening(true);
       setMicError(null);
-      setSpeechStatusText(`Listening (${langName()})... say "Hi Raaju"`);
+      setSpeechStatusText(`Listening (${langName()})... say "Raaju" or "Raaju open"`);
     };
 
     r.onresult = (e: any) => {
@@ -1186,12 +1187,15 @@ export function Copilot({
       const spoken = `${fin} ${inter}`.trim();
       if (!spoken) return;
 
-      // 0. "Open Raju" / "Open AI box" / "Close Raju": open or close the Adviser (acted on when the sentence ends).
+      // 0. "Open Raju" / "Raaju open" / "Raaju" / "Close Raju" / "Close": open or close the Adviser
       const adv = adviserVoiceCommand(spoken);
-      if (adv === 'open' || adv === 'close') { advCmd = adv; return; }
+      if (adv === 'open' || adv === 'close') {
+        advCmd = adv;
+        return;
+      }
       advCmd = null;
 
-      // 1. Wake word: works from any screen, even when the panel is closed, and interrupts the assistant's own voice.
+      // 1. Wake word: "Hi Raaju", "Raaju" -> opens the Adviser
       let wake = checkWakeWord(spoken);
       let wakeSpoken = spoken;
       if (!wake.matched) {
@@ -1205,13 +1209,16 @@ export function Copilot({
       }
       if (wake.matched) {
         wakeAlt = wake;
+        advCmd = 'open';
+        advQuery = wake.trailing;
         if (!woke) {
           woke = true;
           stopSpeaking();
           speakingRef.current = false;
-          wakeOpen();
+          sendAdviserCommand('open', wake.trailing);
+          setSpeechStatusText(`Heard "${wakeSpoken}" → Opening Adviser…`);
+          return;
         }
-        if (openRef.current || woke) { setInput(wake.trailing); setSpeechStatusText(`Heard: "${wakeSpoken}"`); }
         return;
       }
 
@@ -1261,20 +1268,22 @@ export function Copilot({
         stopSpeaking();
         setOpen(false);
         setSpeechStatusText(advFinal === 'open' ? 'Opening the Adviser…' : 'Closing the Adviser…');
-        sendAdviserCommand(advFinal);
+        sendAdviserCommand(advFinal, advQuery);
       } else if (!echo && (said.length >= 2 || wake.matched || (wizardRef.current && said.length >= 1))) {
-        const send = (text: string) => {
-          const go = () => void submitRef.current(text);
-          if (busyRef.current) window.setTimeout(go, 1200); else go();
-        };
         if (wake.matched) {
-          if (wake.trailing.length >= 2) { setSpeechStatusText(`Submitted: "${wake.trailing}"`); send(wake.trailing); }
-          else handleWakeActivationRef.current('');
+          stopSpeaking();
+          setOpen(false);
+          setSpeechStatusText('Opening the Adviser…');
+          sendAdviserCommand('open', wake.trailing);
         } else if (openRef.current) {
+          const send = (text: string) => {
+            const go = () => void submitRef.current(text);
+            if (busyRef.current) window.setTimeout(go, 1200); else go();
+          };
           setSpeechStatusText(`Submitted: "${said}"`);
           send(said);
         } else {
-          setSpeechStatusText(`Heard "${said}" - not the wake word. Say "Hi Raaju" (${langName()})`);
+          setSpeechStatusText(`Heard "${said}" - say "Raaju" or "Raaju open" (${langName()})`);
         }
       } else {
         setSpeechStatusText(`Ready (${langName()})`);
@@ -1995,7 +2004,7 @@ export function Copilot({
           </div>
           {!embedded && (
             <p className="truncate text-[10px] text-white/70">
-              {L('🎙️ Say "Hi Raaju!" anytime · Ask what to add, edit or delete', '🎙️ "Hi Raaju!" என்று எப்போது வேண்டுமானாலும் சொல்லலாம்')}
+              {L('🎙️ Say "Raaju" or "Raaju open" anytime · "Raaju close" to close', '🎙️ "ராஜு" அல்லது "ராஜு ஓபன்" என்று சொல்லுங்கள் · "ராஜு மூடு" என்றால் மூடும்')}
             </p>
           )}
         </div>

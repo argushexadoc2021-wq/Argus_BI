@@ -1362,15 +1362,25 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
   // "Open Raju" / "Close Raju" heard by the always-on microphone (or sent from anywhere in the app)
   useEffect(() => {
     const on = (e: Event) => {
-      const action = (e as CustomEvent<{ action: 'open' | 'close' }>).detail?.action;
+      const detail = (e as CustomEvent<{ action: 'open' | 'close'; query?: string }>).detail;
+      const action = detail?.action;
+      const query = detail?.query;
       if (action === 'open') {
-        autoMini.current = false; setMini(false);
+        autoMini.current = false;
+        setMini(false);
         if (!activeRef.current) toggleRef.current('adviser');
-      } else if (action === 'close' && activeRef.current) endSession(false);
+        if (query && query.trim()) {
+          window.setTimeout(() => {
+            void ask(query.trim());
+          }, 350);
+        }
+      } else if (action === 'close' && activeRef.current) {
+        endSession(false);
+      }
     };
     window.addEventListener('argus:adviser', on);
     return () => window.removeEventListener('argus:adviser', on);
-  }, [endSession]);
+  }, [endSession, ask]);
 
   const modesRef = useRef(modes);
   modesRef.current = modes;
