@@ -7105,15 +7105,21 @@ export function SalesPipelinePage() {
     if (!String(f.date || '').trim()) { alert('Enter the date.'); return; }
     if (!String(f.partyName || '').trim()) { alert('Enter the company name.'); return; }
     const isCancelled = String(f.category || '').trim().toUpperCase() === 'CANCELLED' || String(f.status || '').trim().toLowerCase() === 'cancelled';
-    // Product lines (selected rows only).
-    const lines = (dcItems || []).filter((i) => i.selected).map((i) => ({
-      name: String(i.name || '').trim(),
-      qty: Number(i.qty) || 0,
-      hsn: String(i.hsn || '').trim(),
-      unit: String(i.unit || '').trim() || 'Nos',
-      price: Number(i.price) || 0,
-      avail: i.avail,
-    })).filter((l) => l.name);
+    // Product lines: take selected rows, or if none checked, take all rows that have a part name or qty
+    const anyChecked = (dcItems || []).some((i) => i.selected);
+    const activeItems = anyChecked ? (dcItems || []).filter((i) => i.selected) : (dcItems || []);
+
+    const lines = activeItems.map((i) => {
+      const resolvedName = String(i.originalName || i.name || i.reference || '').trim();
+      return {
+        name: resolvedName,
+        qty: Number(i.qty) || 0,
+        hsn: String(i.hsn || '').trim(),
+        unit: String(i.unit || '').trim() || 'Nos',
+        price: Number(i.price) || 0,
+        avail: i.avail,
+      };
+    }).filter((l) => l.name);
     if (!lines.length) { alert('Add at least one product with a part name.'); return; }
     for (const l of lines) {
       if (!(l.qty > 0)) { alert(`Enter a dispatch quantity greater than 0 for ${l.name}.`); return; }
@@ -8542,7 +8548,8 @@ export function SalesPipelinePage() {
       const fullDcRef = matchedRefDesc || nm || split.reference || formatFullReference(rawNm, bestCustomer || targetCust, split.dateTime, resolvedQty || split.qty);
       setDcItems((prev) => prev.map((x, i) => (i === idx ? {
         ...x,
-        name: combineProductAndRef(rawNm, fullDcRef),
+        selected: true,
+        name: rawNm || combineProductAndRef(rawNm, fullDcRef),
         originalName: rawNm,
         reference: fullDcRef,
         hsn: resolvedHsn || x.hsn || '',
@@ -8704,18 +8711,18 @@ export function SalesPipelinePage() {
                       handleDcPartChange(e.target.value, idx);
                     }}
                   />
-                  <span className={dcLbl}>Original:</span>
+                  <span className={dcLbl}>Part Name:</span>
                   <input
                     autoComplete="off"
                     className={`${dcInput} w-[16rem] sm:w-[18rem] min-w-[15rem]`}
-                    placeholder="Original Product"
+                    placeholder="Part Name (e.g. mt4 c-nut)"
                     title={it.originalName ?? (splitProductAndRef(it.name || '', (allKnownCompanies || []).map((c: any) => c.company || c.name), dcForm.partyName || dcForm.customer).original || it.name || '')}
                     value={it.originalName ?? (splitProductAndRef(it.name || '', (allKnownCompanies || []).map((c: any) => c.company || c.name), dcForm.partyName || dcForm.customer).original || it.name || '')}
                     onChange={(e) => {
                       const orig = e.target.value;
                       const ref = it.reference || (splitProductAndRef(it.name || '', (allKnownCompanies || []).map((c: any) => c.company || c.name), dcForm.partyName || dcForm.customer, it.qty).reference || '');
                       const combined = combineProductAndRef(orig, ref);
-                      setDcItems((prev) => prev.map((x, i) => (i === idx ? { ...x, originalName: orig, name: combined } : x)));
+                      setDcItems((prev) => prev.map((x, i) => (i === idx ? { ...x, selected: true, originalName: orig, name: orig || combined } : x)));
                     }}
                   />
                   <span className={dcLbl}>HSN:</span>
@@ -8725,10 +8732,9 @@ export function SalesPipelinePage() {
                     <input
                       type="number" min={0}
                       placeholder="Qty"
-                      disabled={!it.selected}
                       value={it.qty}
-                      onChange={(e) => setDcItems((prev) => prev.map((x, i) => (i === idx ? { ...x, qty: e.target.value } : x)))}
-                      className={`${dcInput} w-[3.5rem] tabular-nums disabled:bg-slate-100`}
+                      onChange={(e) => setDcItems((prev) => prev.map((x, i) => (i === idx ? { ...x, selected: true, qty: e.target.value } : x)))}
+                      className={`${dcInput} w-[3.5rem] tabular-nums`}
                     />
                     {it.avail != null && <span className="text-[9px] font-semibold text-violet-700 whitespace-nowrap">Avail:{it.avail}</span>}
                   </div>

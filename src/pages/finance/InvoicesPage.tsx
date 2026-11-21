@@ -1317,11 +1317,11 @@ export function InvoicesPage({ onBack, onView, onEdit, onDelete }: { onBack?: ()
                   }));
                 }}
               />
-              <span className={invLbl}>Original:</span>
+              <span className={invLbl}>Part Name:</span>
               <input
                 autoComplete="off"
                 className={`${invInput} w-[16rem] sm:w-[18rem] min-w-[15rem]`}
-                placeholder="Original Product"
+                placeholder="Part Name (e.g. mt4 c-nut)"
                 title={line.originalName ?? (splitProductAndRef(line.description || '', allCompanies, form.customer_name).original || line.description || '')}
                 value={line.originalName ?? (splitProductAndRef(line.description || '', allCompanies, form.customer_name).original || line.description || '')}
                 onChange={e => {
