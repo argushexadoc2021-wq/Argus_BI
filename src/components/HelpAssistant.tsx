@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AiAccess } from '@/lib/aiAccess';
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { BarChart3, Bot, Columns2, Crosshair, Download, Mail, CheckCircle2, GraduationCap, Lightbulb, Loader2, MessageCircle, Mic, Send, Sparkles, Undo2, Volume2, VolumeX, X, History, Plus, Trash2, Minus, Maximize2, Minimize2 } from 'lucide-react';
+import { BarChart3, Bot, Columns2, Crosshair, Download, Mail, Check, CheckCircle2, GraduationCap, Lightbulb, Loader2, MessageCircle, Mic, Send, Sparkles, Undo2, Volume2, VolumeX, X, History, Plus, Trash2, Minus, Maximize2, Minimize2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { AdviserReportPanel } from '@/components/AdviserReport';
 import { serverChat, serverSpeech, ServerAiError } from '@/lib/adviser/serverAi';
@@ -10,6 +10,7 @@ import { businessData } from '@/lib/adviser/dataContext';
 import { DiagramView, MindMapView, TableView, parseVisuals } from '@/lib/adviser/visuals';
 import { adviserVoiceCommand } from '@/lib/adviser/voiceCommands';
 import { FileCard, ImageCard, parseFiles } from '@/lib/adviser/files';
+import { describeStep, parseUiPlans, runUiPlan, type UiPlan } from '@/lib/adviser/uiDriver';
 import { ChartView, parseBlocks, saveReportPdf, speakablePart, type DbActionBlock, type TeachBlock } from '@/lib/adviser/charts';
 import { EmailCard, MailConnect, useAdviserMail } from '@/lib/adviser/mail';
 import { WhatsAppCard } from '@/lib/adviser/whatsapp';
@@ -660,6 +661,12 @@ type is "bar" (compare), "line" (trend over time), "area" (trend with the area f
 E-MAILS: when the person asks you to write, draft or send an e-mail (payment reminder, quotation follow-up, delivery update, thank-you, anything), write one short line saying the draft is below for them to check, then at the VERY END add exactly one block per e-mail, on its own line (valid JSON; use \n for new lines in the body):
 [[EMAIL {"to":"customer@example.com","cc":"","subject":"...","body":"Dear ...,\n\n...\n\nRegards,\n<sender name>\n<company>"}]]
 Write a polite, clear, professional e-mail in the language they ask for (English by default), with the real figures, invoice / order numbers and dates from COMPANY DATA. Take the receiver's address from CUSTOMER CONTACTS; if it is not there, leave "to" empty and say they must type it. Sign it with the SENDER's name and company. Never say the e-mail was sent: the person checks it and presses Send.
+DO IT ON THE SCREEN, LIKE A PERSON (FIRST CHOICE for adding / editing / moving records): when the person asks you to add, enter, create, edit or move something that has a screen in Argus BI (enquiry, quotation, sales order, moving a card to the next stage, a task, a job, an invoice, a supplier...), do it through the real screen: write ONE short line asking "Shall I do it on the screen? Say yes or no." (Tamil: "திரையில் செய்யவா? சரி / இல்லை சொல்லுங்கள்."), then at the VERY END add ONE block:
+[[UI {"title":"Add enquiry for Shakthi Motors","steps":[{"go":"/sales/in-house"},{"click":"+ Add Enquiry"},{"fill":{"Company Name":"Shakthi Motors Ltd","Product name":"Figure","Quantity":"30"}},{"ask":true},{"click":"Save"}]}]]
+Steps: {"go":"/route"} opens a page; {"click":"<exact visible text of a button / tab>"}; {"tick":"<text on a card or row, e.g. its number 1014>"} ticks that card's checkbox; {"fill":{"<field label as shown>":"<value>"}} types into the form (dropdowns pick the matching option); {"ask":true} asks the person for every required box still empty; a click on Save / Create / Submit / Move also asks for missing required boxes first. The screen asks the person by itself, so you do NOT need every detail before starting: fill what they said and let the form ask for the rest.
+Known screens: Sales Pipeline /sales/in-house: each column has a "+ Add Enquiry" / "+ Add Quotation" / "+ Add Sales Order" / "+ Add Inward" / "+ Add Finished Good" / "+ Add Delivery Challan" / "+ Add Invoice" button; to MOVE a record to the next stage (enquiry to quotation, quotation to sales order...): {"go":"/sales/in-house"},{"tick":"<its number, e.g. 1014>"},{"click":"Move to Next Stage"}, then fill the details the person gave (e.g. "Unit Price", "Payment Terms", "Delivery Date"), {"ask":true}, {"click":"Save"}. Production Scheduling /production/scheduling: tabs "Planned Timeline", "Actual Timeline", "Job Board (Machines & Manpower)"; buttons "Plan Operation", "+ Add runs", "Add Task", "Add Job". Use the CURRENT SCREEN VISIBLE CONTROLS above for the exact labels when the person is already on that page. Use [[DB_ACTION ...]] (below) only when no screen exists for it.
+MIND MAPS: when the person asks to make / create a mind map, also put "save":true in the [[MINDMAP ...]] block: it is then created in the Mind Maps module and opened in its editor by itself.
+
 DIRECT AUTONOMOUS DATABASE CONTROL & RPA AUTOMATION (TOP PRIORITY — THE ENTIRE DB IS UNDER AI CONTROL!):
 Whenever the user asks you to ADD / CREATE / INSERT / ENTER / PUT / RECORD / SCHEDULE / LOG / EDIT / UPDATE / DELETE / MOVE ANY record in Argus BI (in Tamil, Tanglish, or English):
 - The entire database is under your control! You have direct robotic execution across EVERY module: Enquiries, Companies, Quotations, Sales Orders, Scheduled Tasks (employee assigned), Job Cards, Work Orders, Machines, In-House & Outsource Processes, Inwards/GRN, Delivery Challans, Invoices, Purchase Orders, Suppliers, Inventory Items, Stock Adjustments, Bank Entries, Petty Cash, Attendance Punches, Leaves, Team Users, or ANY custom table via universal db_insert.
@@ -829,6 +836,13 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
   const senderRef = useRef(''); senderRef.current = `SENDER (the person using this chat): ${profile?.full_name ?? ''}${profile?.email ? ` <${profile.email}>` : ''}, company ${company?.company_name ?? ''}`;
   const [dbActionStates, setDbActionStates] = useState<Record<string, DbActionUiState>>({});
   const pendingDbRef = useRef<{ key: string; block: DbActionBlock } | null>(null);
+  // Doing a task on the real screen ([[UI ...]] plans): the plan waiting for "yes", its state, and the open question
+  const pendingUiRef = useRef<{ key: string; plan: UiPlan } | null>(null);
+  const [uiStates, setUiStates] = useState<Record<string, { status: 'pending' | 'running' | 'done' | 'error' | 'cancelled'; message?: string }>>({});
+  const [uiStatus, setUiStatus] = useState('');
+  const [uiQuestion, setUiQuestion] = useState<{ text: string; options?: string[] } | null>(null);
+  const uiAnswerRef = useRef<((a: string | null) => void) | null>(null);
+  const [uiReply, setUiReply] = useState('');
   const canDoRef = useRef(canDo); canDoRef.current = canDo;
   const [mailOpen, setMailOpen] = useState(false);
   // chat history (kept per person and company)
@@ -1049,6 +1063,33 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
       return;
     }
 
+    // The screen task asked something (e.g. "Unit Price?"): this message is the answer
+    if (uiAnswerRef.current) {
+      const answerIt = uiAnswerRef.current;
+      uiAnswerRef.current = null;
+      setUiQuestion(null);
+      setMsgs((m) => [...m, { id: ++chatSeq, role: 'user', text: q }]);
+      answerIt(CANCEL_DB_RE.test(q) || VOICE_CLEAR_RE.test(q) || VOICE_CLEAR_END_RE.test(q) ? null : q.replace(/\s*(?:over|ஓவர்)\s*$/iu, '').trim());
+      return;
+    }
+    // A screen task waiting for "yes" / "no"
+    if (pendingUiRef.current) {
+      const pendingUi = pendingUiRef.current;
+      if (CONFIRM_DB_RE.test(q)) {
+        setMsgs((m) => [...m, { id: ++chatSeq, role: 'user', text: q }]);
+        void runUiTask(pendingUi.key, pendingUi.plan);
+        return;
+      }
+      if (CANCEL_DB_RE.test(q) || VOICE_CLEAR_RE.test(q) || VOICE_CLEAR_END_RE.test(q)) {
+        pendingUiRef.current = null;
+        setUiStates((p) => ({ ...p, [pendingUi.key]: { status: 'cancelled' } }));
+        const msg = langRef.current === 'ta' ? 'சரி, ரத்து செய்தேன். முதலில் இருந்து சொல்லுங்கள்.' : 'Okay, cancelled. Tell me again from the start.';
+        setMsgs((m) => [...m, { id: ++chatSeq, role: 'user', text: q }, { id: ++chatSeq, role: 'assistant', text: msg }]);
+        if (handsFreeRef.current && SR && activeRef.current) listenRef.current(); else setPhase('ready');
+        return;
+      }
+    }
+
     // Direct voice / text confirmation or cancellation for a pending DB insert/update card
     if (pendingDbRef.current) {
       const pending = pendingDbRef.current;
@@ -1175,7 +1216,12 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
         history.current.push({ role: 'user', text: q }, { role: 'assistant', text: full });
         history.current = history.current.slice(-16);
         const parsedDone = parseBlocks(full);
-        if (parsedDone.dbActions.length > 0) {
+        const uiPlans = parseUiPlans(full);
+        if (uiPlans.length > 0) {
+          const k = `${aid}-ui0`;
+          pendingUiRef.current = { key: k, plan: uiPlans[0] };
+          setUiStates((p) => ({ ...p, [k]: { status: 'pending' } }));
+        } else if (parsedDone.dbActions.length > 0) {
           const firstBlock = parsedDone.dbActions[0];
           const firstKey = `${aid}-0`;
           pendingDbRef.current = { key: firstKey, block: firstBlock };
@@ -1625,6 +1671,48 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
     lastSpoken.current = '';
     void ask(text);
   };
+  // Does a screen task like a person: the Adviser shrinks to its corner box so the screen is visible, the task opens
+  // the page, clicks, types into the real form, asks for missing details (in the corner box and aloud) and saves.
+  const runUiTask = async (key: string, plan: UiPlan) => {
+    pendingUiRef.current = null;
+    setUiStates((p) => ({ ...p, [key]: { status: 'running' } }));
+    autoMini.current = false; setMini(true);
+    stopSpeaking('adviser');
+    const res = await runUiPlan(plan, {
+      navigate: (path) => navigate(path),
+      status: (t) => setUiStatus(t),
+      ask: (question, options) => new Promise<string | null>((resolve) => {
+        setUiQuestion({ text: question, options });
+        setUiReply('');
+        setMsgs((m) => [...m, { id: ++chatSeq, role: 'assistant', text: question }]);
+        uiAnswerRef.current = resolve;
+        if (speakRef.current) {
+          setPhase('speaking');
+          say(question, () => { if (handsFreeRef.current && SR && activeRef.current) listenRef.current(); else setPhase('ready'); }, setNote, 'adviser');
+        } else if (handsFreeRef.current && SR && activeRef.current) listenRef.current();
+        else setPhase('ready');
+      }),
+    });
+    uiAnswerRef.current = null;
+    setUiQuestion(null);
+    setUiStatus('');
+    setUiStates((p) => ({ ...p, [key]: { status: res.ok ? 'done' : 'error', message: res.message } }));
+    const text = res.ok ? `✓ ${res.message}` : `⚠ ${res.message}`;
+    setMsgs((m) => [...m, { id: ++chatSeq, role: 'assistant', text, error: !res.ok }]);
+    if (res.ok) window.dispatchEvent(new CustomEvent('argus:data-changed'));
+    if (speakRef.current) {
+      setPhase('speaking');
+      say(res.message, () => { if (handsFreeRef.current && SR && activeRef.current) listenRef.current(); else setPhase('ready'); }, setNote, 'adviser');
+    } else if (handsFreeRef.current && SR && activeRef.current) listenRef.current();
+    else setPhase('ready');
+  };
+  const answerUi = (a: string | null) => {
+    const r = uiAnswerRef.current; if (!r) return;
+    uiAnswerRef.current = null; setUiQuestion(null); setUiReply('');
+    if (a != null) setMsgs((m) => [...m, { id: ++chatSeq, role: 'user', text: a }]);
+    r(a);
+  };
+
   const toggleMic = () => {
     if (!SR) { setNote('Voice input needs Chrome or Edge on a computer.'); return; }
     if (phase === 'speaking') {                          // talking over the answer: stop it and listen now
@@ -1769,14 +1857,18 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
       {/* Minimized Adviser: a small box in the corner. While it is pointing things out on the screen it says so. */}
       {active && mini && createPortal(
         <div role="dialog" aria-label="Adviser (minimized)" data-voice-ignore onMouseDown={(e) => e.stopPropagation()}
-          className="no-glass fixed bottom-4 left-4 z-[70] flex w-[305px] items-center gap-2.5 rounded-2xl border border-slate-200/90 bg-white/95 backdrop-blur-xl px-3 py-2.5 shadow-[0_20px_50px_-10px_rgba(99,102,241,0.35),0_4px_16px_rgba(0,0,0,0.06)] ring-1 ring-indigo-500/10">
+          className="no-glass fixed bottom-4 left-4 z-[70] flex w-[340px] flex-wrap items-center gap-2.5 rounded-2xl border border-slate-200/90 bg-white/95 backdrop-blur-xl px-3 py-2.5 shadow-[0_20px_50px_-10px_rgba(99,102,241,0.35),0_4px_16px_rgba(0,0,0,0.06)] ring-1 ring-indigo-500/10">
           <button type="button" onClick={() => { autoMini.current = false; setMini(false); }} title="Open the Adviser"
             className="flex min-w-0 flex-1 items-center gap-2 text-left">
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 via-fuchsia-500 to-orange-400 text-white shadow-md"><Lightbulb size={16} /></span>
             <span className="min-w-0">
               <span className="block text-[13px] font-bold leading-tight text-slate-800">Adviser</span>
               <span className="block truncate text-[11px] text-slate-500">
-                {liveGuide
+                {uiQuestion
+                  ? (lang === 'ta' ? 'உங்கள் பதில் தேவை' : 'Needs your answer')
+                  : uiStatus
+                  ? uiStatus
+                  : liveGuide
                   ? (lang === 'ta' ? `திரையில் காட்டுகிறது: ${liveGuide.title}` : `Showing on screen: ${liveGuide.title}`)
                   : (lang === 'ta' ? 'திறக்க இங்கே தொடவும்' : 'Click to open')}
               </span>
@@ -1790,6 +1882,24 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
             className="shrink-0 rounded p-1.5 text-slate-500 hover:bg-slate-100 hover:text-indigo-700"><Maximize2 size={15} /></button>
           <button type="button" aria-label="Close the Adviser" title="Close" onClick={() => endSession(false)}
             className="shrink-0 rounded p-1.5 text-slate-500 hover:bg-red-50 hover:text-red-600"><X size={16} /></button>
+          {uiQuestion && (
+            <form className="basis-full space-y-1.5 border-t border-slate-100 pt-2" onSubmit={(e) => { e.preventDefault(); if (uiReply.trim()) answerUi(uiReply.trim()); }}>
+              <p className="text-[12px] font-semibold text-slate-800">{uiQuestion.text}</p>
+              {uiQuestion.options && uiQuestion.options.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {uiQuestion.options.slice(0, 10).map((o) => (
+                    <button key={o} type="button" onClick={() => answerUi(o)} className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10.5px] font-semibold text-indigo-700 hover:bg-indigo-100">{o}</button>
+                  ))}
+                </div>
+              )}
+              <div className="flex items-center gap-1">
+                <input autoFocus value={uiReply} onChange={(e) => setUiReply(e.target.value)} placeholder={lang === 'ta' ? 'பதிலை எழுதுங்கள் அல்லது பேசுங்கள்…' : 'Type or say the answer…'}
+                  className="h-8 min-w-0 flex-1 rounded-lg border border-slate-200 px-2 text-[12px] focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100" />
+                <button type="submit" className="h-8 rounded-lg bg-gradient-to-r from-indigo-600 to-fuchsia-600 px-2.5 text-[11px] font-bold text-white">OK</button>
+                <button type="button" onClick={() => answerUi(null)} className="h-8 rounded-lg border border-slate-200 px-2 text-[11px] font-bold text-slate-500 hover:bg-red-50 hover:text-red-600">{lang === 'ta' ? 'நிறுத்து' : 'Stop'}</button>
+              </div>
+            </form>
+          )}
         </div>,
         document.body,
       )}
@@ -1983,11 +2093,44 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
                         {m.pending && /\[\[\s*(CHART|PDF)/.test(m.text) && <span className="mt-1 flex items-center gap-1 text-[11px] text-slate-400"><Loader2 size={12} className="animate-spin" />Drawing the graphs…</span>}
                         {b.charts.map((c, i) => <ChartView key={i} chart={c} />)}
                         {m.pending && /\[\[\s*(MINDMAP|DIAGRAM|TABLE|FILE|IMAGE)/.test(m.text) && <span className="mt-1 flex items-center gap-1 text-[11px] text-slate-400"><Loader2 size={12} className="animate-spin" />{lang === 'ta' ? 'வரைகிறது…' : 'Drawing it…'}</span>}
-                        {vis.mindmaps.map((mm, i) => <MindMapView key={`mm${i}`} spec={mm} companyId={company?.id ?? null} onOpen={(p) => { navigate(p); setMini(true); }} />)}
+                        {vis.mindmaps.map((mm, i) => <MindMapView key={`mm${i}`} spec={mm} companyId={company?.id ?? null} auto={!m.pending && liveIds.current.has(m.id)} onOpen={(p) => { navigate(p); setMini(true); }} />)}
                         {vis.diagrams.map((d, i) => <DiagramView key={`dg${i}`} spec={d} />)}
                         {vis.tables.map((t, i) => <TableView key={`tb${i}`} spec={t} />)}
                         {made.files.map((fl, i) => <FileCard key={`fl${i}`} file={fl} company={company?.company_name ?? ''} />)}
                         {made.images.map((im, i) => <ImageCard key={`im${i}`} spec={im} auto={liveIds.current.has(m.id)} />)}
+                        {!m.pending && parseUiPlans(m.text).slice(0, 1).map((plan) => {
+                          const k = `${m.id}-ui0`;
+                          const st = uiStates[k]?.status ?? (liveIds.current.has(m.id) ? 'pending' : 'cancelled');
+                          return (
+                            <div key={k} className="mt-2 overflow-hidden rounded-xl border border-indigo-200 bg-white shadow-sm">
+                              <div className="flex items-center gap-2 border-b border-indigo-100 bg-gradient-to-r from-indigo-50 to-fuchsia-50 px-2.5 py-1.5">
+                                <Sparkles size={13} className="text-fuchsia-500" />
+                                <span className="min-w-0 flex-1 truncate text-[12px] font-bold text-slate-800">{plan.title}</span>
+                                <span className="text-[10px] font-semibold text-slate-500">{lang === 'ta' ? 'திரையில் செய்யும்' : 'Done on screen'}</span>
+                              </div>
+                              <ol className="space-y-0.5 px-3 py-1.5 text-[11px] text-slate-600">
+                                {plan.steps.map((s2, i2) => <li key={i2} className="list-decimal ml-3">{describeStep(s2)}</li>)}
+                              </ol>
+                              {st === 'pending' && (
+                                <div className="flex items-center gap-1.5 border-t border-slate-100 px-2.5 py-1.5">
+                                  <button type="button" onClick={() => { if (pendingUiRef.current?.key === k || !pendingUiRef.current) void runUiTask(k, plan); }}
+                                    className="inline-flex items-center gap-1 rounded-md bg-gradient-to-r from-indigo-600 to-fuchsia-600 px-2.5 py-1 text-[11px] font-bold text-white shadow hover:brightness-110">
+                                    <Check size={12} /> {lang === 'ta' ? 'சரி, செய்' : 'Yes, do it'}
+                                  </button>
+                                  <button type="button" onClick={() => { pendingUiRef.current = null; setUiStates((p) => ({ ...p, [k]: { status: 'cancelled' } })); }}
+                                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-500 hover:bg-red-50 hover:text-red-600">
+                                    <X size={12} /> {lang === 'ta' ? 'வேண்டாம்' : 'No'}
+                                  </button>
+                                  <span className="ml-auto text-[10px] text-slate-400">{lang === 'ta' ? 'அல்லது "சரி" சொல்லுங்கள்' : 'or say "yes"'}</span>
+                                </div>
+                              )}
+                              {st === 'running' && <p className="flex items-center gap-1.5 border-t border-slate-100 px-2.5 py-1.5 text-[11px] font-semibold text-indigo-700"><Loader2 size={12} className="animate-spin" />{uiStatus || (lang === 'ta' ? 'செய்கிறது…' : 'Working…')}</p>}
+                              {st === 'done' && <p className="border-t border-slate-100 bg-emerald-50 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-700">✓ {uiStates[k]?.message}</p>}
+                              {st === 'error' && <p className="border-t border-slate-100 bg-red-50 px-2.5 py-1.5 text-[11px] font-semibold text-red-700">⚠ {uiStates[k]?.message}</p>}
+                              {st === 'cancelled' && <p className="border-t border-slate-100 bg-slate-50 px-2.5 py-1.5 text-[11px] font-semibold text-slate-500">{lang === 'ta' ? 'ரத்து செய்யப்பட்டது.' : 'Not done.'}</p>}
+                            </div>
+                          );
+                        })}
                         {m.pending && /\[\[\s*EMAIL/.test(m.text) && <span className="mt-1 flex items-center gap-1 text-[11px] text-slate-400"><Loader2 size={12} className="animate-spin" />Writing the e-mail…</span>}
                         {!m.pending && b.emails.map((e, i) => <EmailCard key={i} draft={e} onConnect={() => setMailOpen(true)} />)}
                         {m.pending && /\[\[\s*WHATSAPP/.test(m.text) && <span className="mt-1 flex items-center gap-1 text-[11px] text-slate-400"><Loader2 size={12} className="animate-spin" />Writing the WhatsApp message…</span>}

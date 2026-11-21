@@ -5,12 +5,12 @@
 // Each is drawn on screen as a picture (or a table) with Download buttons; a mind map can also be saved into the Mind Maps module.
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- the AI's JSON is read loosely and checked field by field */
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Download, ExternalLink, Loader2, Network } from 'lucide-react';
 import type { NodeStyle, TemplateEdgeSeed, TemplateNodeSeed } from '@/lib/mindmap/types';
 
 export interface MindNode { label: string; children?: MindNode[] }
-export interface MindMapSpec { title: string; root: MindNode }
+export interface MindMapSpec { title: string; root: MindNode; save?: boolean }
 export interface DiagramNode { id: string; label: string; shape?: 'start' | 'end' | 'step' | 'decision' | 'data' | 'person' }
 export interface DiagramEdge { from: string; to: string; label?: string }
 export interface DiagramSpec { title: string; kind: 'flow' | 'org' | 'timeline' | 'cycle'; direction: 'TB' | 'LR'; nodes: DiagramNode[]; edges: DiagramEdge[] }
@@ -36,7 +36,7 @@ export function parseVisuals(text: string): Visuals {
       const j = JSON.parse(text.slice(start, end + 1));
       if (m[1] === 'MINDMAP') {
         const root = toMindNode(j.root ?? j, 0);
-        if (root) out.mindmaps.push({ title: String(j.title || root.label || 'Mind map'), root });
+        if (root) out.mindmaps.push({ title: String(j.title || root.label || 'Mind map'), root, save: j.save === true });
       } else if (m[1] === 'DIAGRAM') {
         const d = toDiagram(j);
         if (d) out.diagrams.push(d);
@@ -318,10 +318,14 @@ function mindToSeeds(spec: MindMapSpec): { nodes: TemplateNodeSeed[]; edges: Tem
   return { nodes, edges: [] };
 }
 
-export function MindMapView({ spec, companyId, onOpen }: { spec: MindMapSpec; companyId: string | null; onOpen: (path: string) => void }) {
+// mind maps already saved in this visit (so a re-drawn chat never saves the same map twice)
+const savedMaps = new Set<string>();
+
+export function MindMapView({ spec, companyId, onOpen, auto = false }: { spec: MindMapSpec; companyId: string | null; onOpen: (path: string) => void; auto?: boolean }) {
   const { svg, W, H } = mindMapSvg(spec);
   const [state, setState] = useState<'idle' | 'saving' | 'error'>('idle');
   const [err, setErr] = useState('');
+  const started = useRef(false);
   const save = async () => {
     setState('saving'); setErr('');
     try {
@@ -334,6 +338,14 @@ export function MindMapView({ spec, companyId, onOpen }: { spec: MindMapSpec; co
       setState('error'); setErr(e instanceof Error ? e.message : String(e));
     }
   };
+  // "make a mind map": created in the Mind Maps module and opened by itself (once, only for a new answer)
+  useEffect(() => {
+    const key = `${spec.title}|${JSON.stringify(spec.root).length}`;
+    if (!auto || !spec.save || started.current || savedMaps.has(key)) return;
+    started.current = true; savedMaps.add(key);
+    void save();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auto, spec.save]);
   return (
     <PictureCard title={spec.title} svg={svg} W={W} H={H} extra={<>
       <button type="button" className={`${btn} !border-indigo-200 !text-indigo-700 hover:!bg-indigo-50`} onClick={() => void save()} disabled={state === 'saving'}>
