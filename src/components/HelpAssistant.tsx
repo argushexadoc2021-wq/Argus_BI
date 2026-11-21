@@ -1657,7 +1657,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
       {/* Minimized Adviser: a small box in the corner. While it is pointing things out on the screen it says so. */}
       {active && mini && createPortal(
         <div role="dialog" aria-label="Adviser (minimized)" data-voice-ignore onMouseDown={(e) => e.stopPropagation()}
-          className="no-glass fixed bottom-4 left-4 z-[70] flex w-[290px] items-center gap-2 rounded-xl border border-slate-200 bg-white px-2.5 py-2 shadow-[0_18px_45px_-12px_rgba(99,102,241,0.45)] ring-1 ring-indigo-100">
+          className="no-glass fixed bottom-4 left-4 z-[70] flex w-[305px] items-center gap-2.5 rounded-2xl border border-slate-200/90 bg-white/95 backdrop-blur-xl px-3 py-2.5 shadow-[0_20px_50px_-10px_rgba(99,102,241,0.35),0_4px_16px_rgba(0,0,0,0.06)] ring-1 ring-indigo-500/10">
           <button type="button" onClick={() => { autoMini.current = false; setMini(false); }} title="Open the Adviser"
             className="flex min-w-0 flex-1 items-center gap-2 text-left">
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 via-fuchsia-500 to-orange-400 text-white shadow-md"><Lightbulb size={16} /></span>
@@ -1686,7 +1686,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
       {active && createPortal(
         <div role="dialog" aria-label="Adviser" data-voice-ignore onMouseDown={(e) => e.stopPropagation()}
           style={{ left: popX, top: popY, width: popW, height: popHeight, display: mini ? 'none' : undefined }}
-          className="adviser-split no-glass fixed z-[70] flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_28px_70px_-18px_rgba(99,102,241,0.45)] ring-1 ring-indigo-100">
+          className="adviser-split no-glass fixed z-[70] flex flex-col overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_25px_70px_-15px_rgba(99,102,241,0.25),0_10px_30px_-10px_rgba(236,72,153,0.12),0_0_0_1px_rgba(226,232,240,0.8)] ring-1 ring-indigo-500/10">
           {/* right edge: drag to make it wider or narrower (double-click = default width) */}
           <div role="separator" aria-orientation="vertical" aria-label="Resize the Adviser" title="Drag to resize · double-click to reset"
             className="absolute inset-y-0 right-0 z-10 w-2 cursor-col-resize touch-none hover:bg-indigo-400/30"
@@ -1707,7 +1707,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
             onDoubleClick={() => { setPopH(0); setPopPos((p) => ({ ...p, y: 0 })); store.set(H_KEY, '0'); }} />
           {/* title bar: drag to move the window anywhere (double-click = back to the left side) */}
           <div title="Drag to move · double-click to put it back on the left"
-            className="flex cursor-move touch-none select-none relative items-center gap-2 border-b border-slate-100 bg-white px-3 py-2.5 text-slate-800 before:absolute before:inset-x-0 before:top-0 before:h-[3px] before:bg-gradient-to-r before:from-indigo-500 before:via-fuchsia-500 before:to-orange-400"
+            className="flex cursor-move touch-none select-none relative items-center gap-2 border-b border-slate-100/80 bg-gradient-to-b from-white via-white to-slate-50/50 px-3.5 py-3 text-slate-800 before:absolute before:inset-x-0 before:top-0 before:h-[3.5px] before:bg-gradient-to-r before:from-cyan-400 before:via-indigo-500 before:via-fuchsia-500 before:to-amber-400 before:shadow-[0_1px_8px_rgba(99,102,241,0.4)]"
             onPointerDown={(e) => {
               if ((e.target as HTMLElement).closest('button, select, input, a')) return;
               if (maxed) return;
@@ -1717,10 +1717,10 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
             onPointerMove={(e) => { if (popDrag.current?.kind !== 'move') return; setPopPos({ x: Math.round(e.clientX - popDrag.current.dx), y: Math.round(e.clientY - popDrag.current.dy) }); }}
             onPointerUp={() => { if (!popDrag.current) return; popDrag.current = null; savePop(); }}
             onDoubleClick={(e) => { if ((e.target as HTMLElement).closest('button, select, input, a')) return; setPopPos({ x: 0, y: 0 }); setPopH(0); store.set(POS_KEY, JSON.stringify({ x: 0, y: 0 })); store.set(H_KEY, '0'); }}>
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 via-fuchsia-500 to-orange-400 text-white shadow-lg shadow-fuchsia-500/25"><Lightbulb size={18} /></span>
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white shadow-md shadow-purple-500/30 ring-2 ring-white/90"><Lightbulb size={18} /></span>
             <div className="min-w-0 flex-1">
-              <p className="bg-gradient-to-r from-indigo-600 via-violet-600 to-fuchsia-600 bg-clip-text text-[15px] font-extrabold leading-tight text-transparent">Adviser</p>
-              <p className="truncate text-[10px] font-medium text-slate-500">Ask anything · Live Business Analysis, Actions &amp; Guidance</p>
+              <p className="bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-[15px] font-black tracking-tight text-transparent">Adviser</p>
+              <p className="truncate text-[10.5px] font-medium text-slate-500 flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0 inline-block" />Ask anything · Live Business Analysis, Actions &amp; Guidance</p>
             </div>
             <button type="button" aria-label="E-mail" title={mail.state?.connected ? `E-mail connected: ${mail.state.mail?.smtp_user ?? ''}` : 'Connect your e-mail so the Adviser can send e-mails for you'}
               onClick={() => setMailOpen((v) => !v)} className={`relative rounded p-1.5 text-slate-500 hover:bg-indigo-50 hover:text-indigo-600 ${mailOpen ? 'bg-indigo-50 text-indigo-600' : ''}`}>
@@ -1745,15 +1745,15 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
           </div>
           {mailOpen && <MailConnect onClose={() => setMailOpen(false)} />}
 
-          <div className="flex items-center gap-1.5 border-b border-slate-100 bg-slate-50 px-3 py-1.5">
-            <span className="text-[10px] font-semibold uppercase text-slate-400">Language</span>
+          <div className="flex items-center gap-1.5 border-b border-slate-100 bg-gradient-to-r from-slate-50/60 via-white to-slate-50/60 px-3.5 py-2">
+            <span className="text-[10px] font-extrabold tracking-wider uppercase text-slate-400">Language</span>
             {LANGS.map((l) => (
               <button key={l.code} type="button" onClick={() => setLang(l.code)}
-                className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${lang === l.code ? 'bg-gradient-to-r from-indigo-600 via-violet-600 to-fuchsia-600 text-white shadow-sm shadow-indigo-500/30' : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-100'}`}>{l.label}</button>
+                className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold transition-all ${lang === l.code ? 'bg-gradient-to-r from-indigo-600 via-violet-600 to-fuchsia-600 text-white shadow-md shadow-indigo-500/25 ring-1 ring-white/40' : 'border border-slate-200/80 bg-white text-slate-700 hover:border-indigo-300 hover:text-indigo-600 hover:bg-indigo-50/40 hover:shadow-xs'}`}>{l.label}</button>
             ))}
             <button type="button" role="switch" aria-checked={natural} onClick={() => setNatural((v) => !v)}
               title={natural ? 'A natural, human-sounding voice is used (click for the plain browser voice)' : 'The plain browser voice is used (click for the natural voice)'}
-              className={`ml-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${natural ? 'bg-violet-600 text-white' : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-100'}`}>Natural voice</button>
+              className={`ml-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold transition-all ${natural ? 'bg-gradient-to-r from-violet-600 to-pink-600 text-white shadow-md shadow-pink-500/20 ring-1 ring-white/40' : 'border border-slate-200/80 bg-white text-slate-600 hover:border-pink-300 hover:text-pink-600 hover:bg-pink-50/30'}`}>Natural voice</button>
             {lang === 'ta' && (
               <select aria-label="Tamil voice" value={tamilPick} onChange={(e) => { const v = e.target.value as TamilEngine; setTamilEngine(v); setTamilPick(v); stopSpeaking(); }}
                 title="Which voice speaks Tamil. Clear is the easiest to follow." className="ml-1 h-6 rounded border border-slate-200 bg-white px-1 text-[10px] font-semibold text-slate-700">
@@ -1769,7 +1769,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
             )}
           </div>
 
-          <div className="flex border-b border-slate-100 bg-white text-[12px] font-bold" role="tablist">
+          <div className="flex border-b border-slate-100 bg-slate-50/70 p-1 text-[12px] font-bold gap-1" role="tablist">
             {([
               { id: 'both' as const, label: 'Both (Side by side)', icon: Columns2 },
               { id: 'report' as const, label: 'Report & ideas', icon: BarChart3 },
@@ -1782,7 +1782,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
                   // two halves need room: widen the chat panel when it is narrow
                   if (t.id === 'both' && splitW < 720) { const w = Math.min(splitMax(), 760); setSplitW(w); store.set(SPLIT_KEY, String(w)); }
                 }}
-                className={`flex flex-1 items-center justify-center gap-1.5 border-b-2 px-2 py-2 whitespace-nowrap ${view === t.id ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}><t.icon size={13} />{t.label}</button>
+                className={`flex flex-1 items-center justify-center gap-1.5 px-3 py-1.5 whitespace-nowrap rounded-xl transition-all ${view === t.id ? 'bg-white text-indigo-700 font-extrabold shadow-sm shadow-slate-200/80 border border-slate-200/80 ring-1 ring-black/[0.02]' : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'}`}><t.icon size={13} className={view === t.id ? 'text-indigo-600' : 'text-slate-400'} />{t.label}</button>
             ))}
           </div>
           <div className={view === 'both' ? 'flex min-h-0 flex-1' : 'contents'}>
@@ -1840,10 +1840,16 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
             ))}
           </div>
           ) : (
-          <div className="flex-1 space-y-2 overflow-y-auto px-3 py-3" aria-live="polite">
+          <div className="flex-1 space-y-3 overflow-y-auto bg-gradient-to-b from-white via-slate-50/25 to-white px-3.5 py-3.5" aria-live="polite">
             {msgs.map((m) => (
               <div key={m.id} className={m.role === 'user' ? 'flex justify-end' : 'flex'}>
-                <div className={`max-w-[88%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-[13px] leading-relaxed ${m.role === 'user' ? 'bg-gradient-to-r from-indigo-600 via-violet-600 to-fuchsia-600 text-white shadow-md shadow-indigo-500/20' : m.error ? 'border border-red-200 bg-red-50 text-red-800' : 'border border-slate-100 bg-slate-100 text-slate-800'}`}>
+                <div className={`max-w-[88%] whitespace-pre-wrap px-4 py-2.5 text-[13px] leading-relaxed transition-all ${
+                  m.role === 'user'
+                    ? 'rounded-2xl rounded-tr-xs bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 text-white shadow-md shadow-indigo-500/20 ring-1 ring-white/20 font-medium tracking-wide'
+                    : m.error
+                      ? 'rounded-2xl rounded-tl-xs border border-rose-200 bg-rose-50 text-rose-800 px-4 py-3 shadow-xs'
+                      : 'rounded-2xl rounded-tl-xs border border-slate-200/90 bg-white text-slate-800 shadow-md shadow-slate-900/[0.03] ring-1 ring-black/[0.02] hover:border-indigo-200/80 px-4 py-3'
+                }`}>
                   {m.role === 'assistant' && !m.error ? (() => {
                     const b = parseBlocks(m.text);
                     const vis = parseVisuals(m.text);
@@ -1898,10 +1904,10 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
                               <button
                                 type="button"
                                 onClick={() => setLiveGuide(isShowing ? null : lesson)}
-                                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-bold shadow-sm transition-all ${
+                                className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[11px] font-extrabold shadow-md transition-all hover:scale-[1.02] ${
                                   isShowing
-                                    ? 'bg-orange-600 text-white hover:bg-orange-700'
-                                    : 'border border-orange-300 bg-orange-50 text-orange-700 hover:bg-orange-100'
+                                    ? 'bg-rose-600 text-white hover:bg-rose-700 shadow-rose-500/25'
+                                    : 'bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 text-white hover:from-amber-600 hover:to-orange-600 shadow-orange-500/25'
                                 }`}
                               >
                                 <Crosshair size={13} />
@@ -2017,11 +2023,11 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
               {note && !status && <span className="text-slate-500">{note}</span>}
             </div>
           )}
-          <form className="flex items-center gap-1.5 border-t border-slate-200 bg-white p-2" onSubmit={(e) => { e.preventDefault(); send(); }}>
+          <form className="flex items-center gap-2 border-t border-slate-100 bg-white/95 backdrop-blur-md p-2.5 shadow-sm" onSubmit={(e) => { e.preventDefault(); send(); }}>
             <button type="button" onClick={toggleMic} aria-pressed={handsFree} aria-label={handsFree ? 'Turn the microphone off' : 'Talk using the microphone'}
               title={handsFree ? 'Voice recording is active (click to pause)' : 'Talk using the microphone'}
-              className={`relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${handsFree ? 'bg-red-600 text-white' : 'border border-slate-200 text-slate-500 hover:bg-slate-100'}`}>
-              {phase === 'listening' && <span className="absolute inset-0 animate-ping rounded-full bg-red-500/30" />}
+              className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-all ${handsFree ? 'bg-gradient-to-tr from-rose-500 to-red-600 text-white shadow-lg shadow-rose-500/35 ring-4 ring-rose-100 animate-pulse' : 'border border-slate-200/90 bg-white text-slate-600 hover:text-indigo-600 hover:border-indigo-300 hover:bg-indigo-50/50 shadow-xs'}`}>
+              {phase === 'listening' && <span className="absolute inset-0 animate-ping rounded-full bg-rose-500/30" />}
               <Mic size={16} className="relative" />
             </button>
             <button type="button" onClick={() => {
@@ -2033,11 +2039,11 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
               if (phase === 'listening') listenRef.current();
             }} aria-pressed={overMode}
               title={overMode ? 'OVER mode ON: message sends ONLY when you say "over" / "ஓவர்" (click to turn off)' : 'OVER mode OFF: sends automatically when you pause (click to turn ON)'}
-              className={`h-9 shrink-0 rounded-full px-2.5 text-[10px] font-extrabold uppercase ${overMode ? 'bg-violet-600 text-white shadow-sm' : 'border border-slate-200 text-slate-500 hover:bg-slate-100'}`}>{overMode ? 'OVER ✓' : 'OVER'}</button>
+              className={`h-10 shrink-0 rounded-full px-3 text-[10.5px] font-black uppercase tracking-wider transition-all ${overMode ? 'bg-gradient-to-r from-violet-600 via-indigo-600 to-blue-600 text-white shadow-md shadow-violet-500/30 ring-1 ring-white/30' : 'border border-slate-200/90 bg-white text-slate-600 hover:text-indigo-600 hover:border-indigo-200 hover:bg-slate-50'}`}>{overMode ? 'OVER ✓' : 'OVER'}</button>
             <input value={input} onChange={(e) => setInput(e.target.value)} placeholder={lang === 'ta' ? 'உங்கள் கேள்வியை எழுதுங்கள்…' : 'Type your question…'} aria-label="Your question"
-              className="h-9 min-w-0 flex-1 rounded-full border border-slate-200 bg-slate-50 px-3 text-sm text-slate-800 placeholder:text-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:outline-none" />
+              className="h-10 min-w-0 flex-1 rounded-full border border-slate-200/90 bg-slate-50/80 px-4 text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none shadow-inner transition-all" />
             <button type="submit" disabled={(!input.trim() && !voiceDraft.trim()) || phase === 'thinking'} aria-label="Send" title="Send"
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-r from-indigo-600 via-violet-600 to-fuchsia-600 text-white shadow-md shadow-fuchsia-500/30 hover:brightness-110 disabled:opacity-40"><Send size={15} /></button>
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white shadow-md shadow-purple-500/30 hover:scale-105 active:scale-95 transition-all disabled:opacity-35 disabled:hover:scale-100"><Send size={15} /></button>
           </form>
           </>
           </div>

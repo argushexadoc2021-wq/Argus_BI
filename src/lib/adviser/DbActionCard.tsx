@@ -676,12 +676,14 @@ export function DbActionCard({
   const targetWhere = block.where || defaultWhereForAction(block.action);
 
   return (
-    <div className="mt-1.5 overflow-hidden rounded-xl border border-indigo-200/80 bg-white shadow-sm transition-all hover:shadow-md">
+    <div className="mt-2 overflow-hidden rounded-2xl border border-indigo-200/90 bg-white shadow-md shadow-indigo-500/5 hover:shadow-lg hover:shadow-indigo-500/10 transition-all ring-1 ring-black/[0.02]">
       {/* Header */}
-      <div className="flex items-center justify-between gap-2 border-b border-indigo-100 bg-gradient-to-r from-indigo-50/80 to-slate-50 px-3 py-1.5">
-        <div className="flex min-w-0 items-center gap-1.5">
-          <Database size={13} className="shrink-0 text-indigo-600" />
-          <span className="truncate text-[11px] font-extrabold text-slate-800">
+      <div className="flex items-center justify-between gap-2 border-b border-indigo-100/80 bg-gradient-to-r from-indigo-50/90 via-purple-50/40 to-white px-3.5 py-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-xs">
+            <Database size={11} />
+          </span>
+          <span className="truncate text-[11.5px] font-black text-slate-900">
             {ta ? 'சரிபார்த்து உறுதிசெய் (Auto-Action)' : 'AI Database Automation'}
           </span>
         </div>
@@ -765,7 +767,7 @@ export function DbActionCard({
                 className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-extrabold text-white shadow-sm transition-all hover:scale-[1.02] ${
                   isDestructive
                     ? 'bg-red-600 hover:bg-red-700'
-                    : 'bg-gradient-to-r from-indigo-600 to-brand-600 hover:from-indigo-700 hover:to-brand-700'
+                    : 'bg-gradient-to-r from-indigo-600 via-violet-600 to-fuchsia-600 hover:brightness-110 shadow-md shadow-indigo-500/30'
                 }`}
               >
                 <Sparkles size={12} className="text-amber-300" />

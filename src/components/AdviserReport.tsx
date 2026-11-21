@@ -234,14 +234,14 @@ export function AdviserReportPanel({ lang, speakOn, can, onOpenPage, say, stopSp
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="adviser-report">
-      <div className="flex items-center gap-1.5 border-b border-slate-100 bg-slate-50 px-3 py-1.5">
-        <span className="text-[11px] font-semibold text-slate-600">{loading ? 'Reading your records…' : report ? `Report · ${new Date(report.generatedAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })}` : ''}</span>
+      <div className="flex items-center gap-1.5 border-b border-slate-100/90 bg-gradient-to-r from-slate-50/60 via-white to-slate-50/60 px-3 py-2">
+        <span className="text-[11px] font-bold text-slate-700">{loading ? 'Reading your records…' : report ? `Report · ${new Date(report.generatedAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })}` : ''}</span>
         <button type="button" onClick={() => { setHistoryList(readHistory()); setShowHistory((v) => !v); }} title="Every day's advice, date wise" aria-label="History"
-          className={`ml-auto flex h-6 items-center gap-1 rounded border px-1.5 text-[10px] font-semibold ${showHistory ? 'border-violet-600 bg-violet-600 text-white' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-100'}`}><History size={11} />History</button>
+          className={`ml-auto flex h-6 items-center gap-1 rounded-lg border px-2 text-[10px] font-bold transition-all ${showHistory ? 'border-violet-600 bg-violet-600 text-white shadow-xs' : 'border-violet-200/80 bg-violet-50/60 text-violet-700 hover:bg-violet-100'}`}><History size={11} />History</button>
         <button type="button" onClick={() => void load()} disabled={loading} title="Read the records again" aria-label="Refresh the report"
-          className="flex h-6 items-center gap-1 rounded border border-slate-200 bg-white px-1.5 text-[10px] font-semibold text-slate-600 hover:bg-slate-100 disabled:opacity-40"><RefreshCw size={11} className={loading ? 'animate-spin' : ''} />Refresh</button>
+          className="flex h-6 items-center gap-1 rounded-lg border border-sky-200/80 bg-sky-50/60 px-2 text-[10px] font-bold text-sky-700 hover:bg-sky-100 disabled:opacity-40 transition-all"><RefreshCw size={11} className={loading ? 'animate-spin' : ''} />Refresh</button>
         <button type="button" onClick={readAloud} disabled={!report || loading} title={reading ? 'Stop reading' : 'Read the main points aloud'} aria-label="Read the report aloud"
-          className="flex h-6 items-center gap-1 rounded border border-slate-200 bg-white px-1.5 text-[10px] font-semibold text-slate-600 hover:bg-slate-100 disabled:opacity-40">{reading ? <VolumeX size={11} /> : <Volume2 size={11} />}{reading ? 'Stop' : 'Read'}</button>
+          className="flex h-6 items-center gap-1 rounded-lg border border-emerald-200/80 bg-emerald-50/60 px-2 text-[10px] font-bold text-emerald-700 hover:bg-emerald-100 disabled:opacity-40 transition-all">{reading ? <VolumeX size={11} /> : <Volume2 size={11} />}{reading ? 'Stop' : 'Read'}</button>
         {onClose && <button type="button" onClick={onClose} aria-label="Close" className="rounded p-1 text-slate-400 hover:bg-slate-100"><X size={13} /></button>}
       </div>
 
@@ -268,17 +268,49 @@ export function AdviserReportPanel({ lang, speakOn, can, onOpenPage, say, stopSp
 
         {!showHistory && !loading && report && s && (
           <>
-            <div className="grid grid-cols-2 gap-1.5">
+            <div className="grid grid-cols-2 gap-2">
               {[
-                { label: 'Unpaid invoices', value: money(s.outstanding), bad: s.overdue > 0, sub: s.overdue > 0 ? `${money(s.overdue)} overdue` : 'none overdue' },
-                { label: 'Enquiries waiting', value: String(s.openEnquiries), bad: s.openEnquiries > 0, sub: 'no quotation yet' },
-                { label: 'Orders late', value: String(s.lateOrders), bad: s.lateOrders > 0, sub: 'past delivery date' },
-                { label: 'Delivered, not billed', value: String(s.unbilledDcs), bad: s.unbilledDcs > 0, sub: 'delivery challans' },
+                {
+                  label: 'Unpaid invoices',
+                  value: money(s.outstanding),
+                  sub: s.overdue > 0 ? `${money(s.overdue)} overdue` : 'none overdue',
+                  border: 'border-emerald-200/90 border-l-emerald-500',
+                  bg: 'from-white via-white to-emerald-50/30',
+                  titleColor: 'text-emerald-700',
+                  subColor: 'text-emerald-600',
+                },
+                {
+                  label: 'Enquiries waiting',
+                  value: String(s.openEnquiries),
+                  sub: 'no quotation yet',
+                  border: 'border-blue-200/90 border-l-blue-500',
+                  bg: 'from-white via-white to-blue-50/30',
+                  titleColor: 'text-blue-700',
+                  subColor: 'text-blue-600',
+                },
+                {
+                  label: 'Orders late',
+                  value: String(s.lateOrders),
+                  sub: 'past delivery date',
+                  border: 'border-rose-200/90 border-l-rose-500',
+                  bg: 'from-white via-white to-rose-50/30',
+                  titleColor: 'text-rose-700',
+                  subColor: 'text-rose-600',
+                },
+                {
+                  label: 'Delivered, not billed',
+                  value: String(s.unbilledDcs),
+                  sub: 'delivery challans',
+                  border: 'border-violet-200/90 border-l-violet-500',
+                  bg: 'from-white via-white to-violet-50/30',
+                  titleColor: 'text-violet-700',
+                  subColor: 'text-violet-600',
+                },
               ].map((k) => (
-                <div key={k.label} className={`rounded-lg border px-2.5 py-1.5 ${k.bad ? 'border-slate-200 border-l-4 border-l-orange-400 bg-white shadow-sm' : 'border-slate-200 border-l-4 border-l-indigo-400 bg-white shadow-sm'}`}>
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-700">{k.label}</p>
-                  <p className="text-base font-extrabold leading-tight text-slate-950">{k.value}</p>
-                  <p className="text-[10px] text-slate-700">{k.sub}</p>
+                <div key={k.label} className={`rounded-xl border border-l-[4px] ${k.border} bg-gradient-to-br ${k.bg} px-3 py-2 shadow-sm shadow-slate-200/60 hover:shadow-md transition-all hover:scale-[1.01]`}>
+                  <p className={`text-[10px] font-bold uppercase tracking-wider ${k.titleColor}`}>{k.label}</p>
+                  <p className="text-[17px] font-black leading-tight text-slate-950 my-0.5">{k.value}</p>
+                  <p className={`text-[10.5px] font-medium ${k.subColor}`}>{k.sub}</p>
                 </div>
               ))}
             </div>
@@ -287,22 +319,24 @@ export function AdviserReportPanel({ lang, speakOn, can, onOpenPage, say, stopSp
             </p>
 
             {daily && daily.ideas.length > 0 && (
-              <div className="rounded-xl border border-indigo-100 bg-gradient-to-br from-white via-indigo-50/60 to-fuchsia-50/70 p-2.5 shadow-sm ring-1 ring-white" data-testid="daily-ideas">
-                <div className="mb-1.5 flex items-center gap-1.5">
-                  <Lightbulb size={14} className="text-fuchsia-500" />
-                  <span className="bg-gradient-to-r from-indigo-600 to-fuchsia-600 bg-clip-text text-[11px] font-extrabold uppercase tracking-wide text-transparent">{lang === 'ta' ? 'இன்றைய மேம்பாட்டு யோசனைகள்' : "Today's improvements"}</span>
-                  <span className="text-[10px] text-slate-500">{new Date().toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' })}</span>
-                  <span className={`ml-auto rounded-full px-1.5 py-px text-[9px] font-bold uppercase ${daily.ai ? 'bg-violet-100 text-violet-700' : 'bg-emerald-100 text-emerald-700'}`}>{dailyBusy ? 'AI writing…' : daily.ai ? 'AI' : 'Daily tips'}</span>
+              <div className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-white via-indigo-50/25 to-pink-50/30 p-3 shadow-sm ring-1 ring-white/90" data-testid="daily-ideas">
+                <div className="mb-2 flex items-center gap-2">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-pink-500 text-white shadow-xs">
+                    <Lightbulb size={12} />
+                  </span>
+                  <span className="bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-[11.5px] font-black uppercase tracking-wider text-transparent">{lang === 'ta' ? 'இன்றைய மேம்பாட்டு யோசனைகள்' : "Today's improvements"}</span>
+                  <span className="text-[10px] font-medium text-slate-500">{new Date().toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' })}</span>
+                  <span className={`ml-auto rounded-full px-2 py-0.5 text-[9px] font-bold uppercase shadow-2xs ${daily.ai ? 'bg-gradient-to-r from-violet-100 to-fuchsia-100 text-violet-800 border border-violet-200/60' : 'bg-emerald-100 text-emerald-800 border border-emerald-200/60'}`}>{dailyBusy ? 'AI writing…' : daily.ai ? 'AI' : 'Daily tips'}</span>
                 </div>
-                <ol className="space-y-1.5">
+                <ol className="space-y-2">
                   {daily.ideas.map((x, n) => (
-                    <li key={`${n}-${x.title}`} className="flex gap-2 text-[12px] leading-snug text-slate-900">
-                      <span className="mt-px flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 via-fuchsia-500 to-orange-400 text-[10px] font-bold text-white">{n + 1}</span>
-                      <span><b className="text-slate-900">{x.title}.</b> {x.how}</span>
+                    <li key={`${n}-${x.title}`} className="flex gap-2.5 text-[12px] leading-snug text-slate-900">
+                      <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-[10px] font-black text-white shadow-xs">{n + 1}</span>
+                      <span><b className="text-slate-950 font-bold">{x.title}.</b> {x.how}</span>
                     </li>
                   ))}
                 </ol>
-                <p className="mt-1.5 text-[10px] text-slate-500">{lang === 'ta' ? 'ஒவ்வொரு நாளும் மாறும்.' : 'A new set every day.'}</p>
+                <p className="mt-2 text-[10px] font-medium text-slate-500">{lang === 'ta' ? 'ஒவ்வொரு நாளும் மாறும்.' : 'A new set every day.'}</p>
               </div>
             )}
 
