@@ -45,11 +45,11 @@ const diffDaysISO = (from: string, to: string): string => {
 const emptySummary: InvoiceSummary = { total_invoices: 0, total_value: '0', total_received: '0', outstanding: '0', overdue_count: 0, overdue_amount: '0', by_status: {}, ageing: { current: '0', d31_60: '0', d61_90: '0', d90_plus: '0' }, top_customers: [], monthly: [] };
 
 export function InvoicesPage({ onBack, onView, onEdit, onDelete }: { onBack?: () => void; onView?: (record: any) => void; onEdit?: (record: any) => void; onDelete?: (record: any) => void } = {}) {
-  const { company, canDo } = useAuth();
-  const canCreateInv: boolean = typeof canDo === 'function' ? !!canDo('menu-invoices', 'create') : true;
-  const canEditInv: boolean = typeof canDo === 'function' ? !!canDo('menu-invoices', 'edit') : true;
-  const canDeleteInv: boolean = typeof canDo === 'function' ? !!canDo('menu-invoices', 'delete') : true;
-  const canExportInv: boolean = typeof canDo === 'function' ? !!canDo('menu-invoices', 'export') : true;
+  const { company, canDo, isSuperAdmin, isCompanyAdmin } = useAuth();
+  const canCreateInv: boolean = isSuperAdmin || isCompanyAdmin || (typeof canDo === 'function' ? (Boolean(canDo('invoices', 'create')) || Boolean(canDo('menu-invoices', 'create'))) : true);
+  const canEditInv: boolean = isSuperAdmin || isCompanyAdmin || (typeof canDo === 'function' ? (Boolean(canDo('invoices', 'edit')) || Boolean(canDo('menu-invoices', 'edit'))) : true);
+  const canDeleteInv: boolean = isSuperAdmin || isCompanyAdmin || (typeof canDo === 'function' ? (Boolean(canDo('invoices', 'delete')) || Boolean(canDo('menu-invoices', 'delete'))) : true);
+  const canExportInv: boolean = isSuperAdmin || isCompanyAdmin || (typeof canDo === 'function' ? (Boolean(canDo('invoices', 'export')) || Boolean(canDo('menu-invoices', 'export'))) : true);
   const { companyFilter, setCompanyFilter, companyOptions } = useHeaderKpis();
   const [searchParams] = useSearchParams();
   const linkedInvoiceId = searchParams.get('invoice') || '';
@@ -421,10 +421,64 @@ export function InvoicesPage({ onBack, onView, onEdit, onDelete }: { onBack?: ()
     setFormOpen(true);
   };
   const save = async (printAfter: boolean | unknown = false) => {
-    if (!form.customer_name?.trim() || !lines.length || lines.some(line => !line.description?.trim() || Number(line.quantity) <= 0 || Number(line.rate) < 0)) { setError('Company and at least one item with a positive quantity and valid rate are required.'); return; }
-    setBusy(true); setError('');
+    // 1. Validate Company Name
+    if (!form.customer_name?.trim()) {
+      const msg = 'Please select or enter a Company Name before saving.';
+      setError(msg);
+      alert(msg);
+      return;
+    }
+
+    // 2. Validate Lines Exist
+    if (!lines || lines.length === 0) {
+      const msg = 'Please add at least one product item.';
+      setError(msg);
+      alert(msg);
+      return;
+    }
+
+    // 3. Validate each Line Item
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const partName = String(line.originalName || line.description || line.reference || '').trim();
+      if (!partName) {
+        const msg = `Please enter a Part Name / Product for item #${i + 1}.`;
+        setError(msg);
+        alert(msg);
+        return;
+      }
+      const qty = Number(line.quantity);
+      if (!line.quantity || isNaN(qty) || qty <= 0) {
+        const msg = `Please enter a valid Quantity greater than 0 for item #${i + 1}.`;
+        setError(msg);
+        alert(msg);
+        return;
+      }
+      const rate = Number(line.rate);
+      if (line.rate === '' || line.rate === null || line.rate === undefined || isNaN(rate) || rate < 0) {
+        const msg = `Please enter a valid Rate / Price for item #${i + 1}.`;
+        setError(msg);
+        alert(msg);
+        return;
+      }
+    }
+
+    setBusy(true);
+    setError('');
     try {
-      const items = lines.map(line => ({ ...line, quantity: Number(line.quantity), rate: Number(line.rate), gst_rate: line.gst_rate === '' ? null : Number(line.gst_rate), discount_pct: Number(line.discount_pct || 0) }));
+      const items = lines.map(line => {
+        const desc = String(line.originalName || line.description || line.reference || '').trim();
+        return {
+          ...line,
+          description: desc,
+          part_name: desc,
+          quantity: Number(line.quantity),
+          rate: Number(line.rate),
+          gst_rate: line.gst_rate === '' || line.gst_rate == null ? null : Number(line.gst_rate),
+          discount_pct: Number(line.discount_pct || 0)
+        };
+      });
+
       // Due Days wins when set; otherwise the stored due date (edit flow) is kept as-is.
       const dueDate = String(form.due_days ?? '').trim() !== '' && form.invoice_date
         ? addDaysISO(form.invoice_date, Number(form.due_days))
@@ -465,6 +519,11 @@ export function InvoicesPage({ onBack, onView, onEdit, onDelete }: { onBack?: ()
         ...form,
         id: result.id,
         invoice_no: result.invoice_no || form.invoice_no || result.id,
+        customer_name: form.customer_name,
+        customer_id: customerId || null,
+        customer_gstin: gstin || null,
+        billing_address: address || null,
+        due_date: dueDate,
         items,
         total: items.reduce((sum, item) => sum + (item.quantity * item.rate), 0),
       };
@@ -472,7 +531,12 @@ export function InvoicesPage({ onBack, onView, onEdit, onDelete }: { onBack?: ()
       await reload(1);
 
       if (printAfter === true) {
-        printInvoice(savedInvoiceRecord);
+        try {
+          await printInvoice(savedInvoiceRecord);
+        } catch (printErr) {
+          console.error('Print error:', printErr);
+          alert('Invoice saved successfully! Could not trigger automatic print: ' + (printErr instanceof Error ? printErr.message : String(printErr)));
+        }
       }
 
       if (editId) {
@@ -483,11 +547,18 @@ export function InvoicesPage({ onBack, onView, onEdit, onDelete }: { onBack?: ()
         startNew();
       } else {
         // Creating: keep the inline form on screen, confirm, then reset it for the next one.
-        setSavedNote(result.invoice_no || result.id);
+        const invNum = result.invoice_no || result.id;
+        setSavedNote(invNum);
+        alert(`Invoice ${invNum} saved successfully!`);
         startNew();
       }
-    } catch (e) { setError(e instanceof Error ? e.message : 'Unable to save invoice.'); }
-    finally { setBusy(false); }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Unable to save invoice.';
+      setError(msg);
+      alert('Error saving invoice: ' + msg);
+    } finally {
+      setBusy(false);
+    }
   };
   const extractDueDays = (termsText: string): string => {
     const s = String(termsText || '').trim();
@@ -1382,28 +1453,45 @@ export function InvoicesPage({ onBack, onView, onEdit, onDelete }: { onBack?: ()
 
         {!editId && (
           <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+            {error && (
+              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-600 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded mr-1">
+                ⚠️ {error}
+              </span>
+            )}
             <button
               type="button"
-              onClick={() => { startNew(); setSavedNote(''); }}
-              className="h-6 px-2 text-[11px] font-medium rounded border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition-colors"
+              onClick={() => { startNew(); setSavedNote(''); setError(''); }}
+              className="h-6 px-2 text-[11px] font-medium rounded border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
             >
               Clear / Reset
             </button>
             <button
               type="button"
-              onClick={() => void save(true)}
-              disabled={busy || !canCreateInv}
+              onClick={() => {
+                if (!canCreateInv) {
+                  alert('You do not have permission to create invoices.');
+                  return;
+                }
+                void save(true);
+              }}
+              disabled={busy}
               title={!canCreateInv ? 'Invoice create permission is required' : 'Save invoice and print'}
-              className={`h-6 px-2.5 text-[11px] font-bold rounded text-white bg-brand-700 hover:bg-brand-800 shadow-sm transition-colors flex items-center gap-1 shrink-0 ${busy ? 'opacity-60 cursor-not-allowed' : ''}`}
+              className={`h-6 px-2.5 text-[11px] font-bold rounded text-white bg-brand-700 hover:bg-brand-800 shadow-sm transition-colors flex items-center gap-1 shrink-0 cursor-pointer ${busy ? 'opacity-60 cursor-not-allowed' : ''}`}
             >
-              <Printer size={12} /> Save & Print
+              <Printer size={12} /> {busy ? 'Saving...' : 'Save & Print'}
             </button>
             <button
               type="button"
-              onClick={() => void save(false)}
-              disabled={busy || !canCreateInv}
+              onClick={() => {
+                if (!canCreateInv) {
+                  alert('You do not have permission to create invoices.');
+                  return;
+                }
+                void save(false);
+              }}
+              disabled={busy}
               title={!canCreateInv ? 'Invoice create permission is required' : undefined}
-              className={`h-6 px-3 text-[11px] font-bold rounded text-white bg-brand-600 hover:bg-brand-700 shadow-sm transition-colors ${busy ? 'opacity-60 cursor-not-allowed' : ''}`}
+              className={`h-6 px-3 text-[11px] font-bold rounded text-white bg-brand-600 hover:bg-brand-700 shadow-sm transition-colors cursor-pointer ${busy ? 'opacity-60 cursor-not-allowed' : ''}`}
             >
               {busy ? 'Saving...' : 'Save Invoice'}
             </button>
@@ -1438,12 +1526,14 @@ export function InvoicesPage({ onBack, onView, onEdit, onDelete }: { onBack?: ()
           Export
         </Button>
         <Button variant="secondary" size="sm" icon={<Printer size={13}/>} onClick={() => {
-          if (form.customer_name?.trim() && lines.some(l => l.description?.trim())) {
+          if (form.customer_name?.trim() && lines.some(l => (l.originalName || l.description || l.reference)?.trim())) {
             void save(true);
           } else if (selected) {
             printInvoice();
           } else {
-            setError('Please enter company and product details to Save & Print, or select an invoice to print.');
+            const msg = 'Please enter company and product details to Save & Print, or select an invoice to print.';
+            setError(msg);
+            alert(msg);
           }
         }} className="h-7 py-1 text-xs px-2.5 shadow-xs">
           Save & Print
@@ -1719,7 +1809,7 @@ export function InvoicesPage({ onBack, onView, onEdit, onDelete }: { onBack?: ()
       </div>
     </Modal>
 
-    <Modal open={formOpen && !!editId} onClose={()=>!busy&&setFormOpen(false)} title="Edit Invoice" subtitle="Tax totals and ledger postings are calculated by the database." size="2xl" footer={<><Button variant="secondary" onClick={()=>setFormOpen(false)}>Cancel</Button><Button variant="secondary" onClick={()=>void save(true)} disabled={busy || !canEditInv} title={!canEditInv ? 'Invoice edit permission is required' : 'Save invoice and print'}><Printer size={13}/> Save & Print</Button><Button onClick={()=>void save(false)} disabled={busy || !canEditInv} title={!canEditInv ? 'Invoice edit permission is required' : undefined}>{busy?'Saving...':'Save Invoice'}</Button></>}>
+    <Modal open={formOpen && !!editId} onClose={()=>!busy&&setFormOpen(false)} title="Edit Invoice" subtitle="Tax totals and ledger postings are calculated by the database." size="2xl" footer={<><Button variant="secondary" onClick={()=>setFormOpen(false)}>Cancel</Button><Button variant="secondary" onClick={()=>{ if (!canEditInv) { alert('You do not have permission to edit invoices.'); return; } void save(true); }} disabled={busy} title={!canEditInv ? 'Invoice edit permission is required' : 'Save invoice and print'}><Printer size={13}/> Save & Print</Button><Button onClick={()=>{ if (!canEditInv) { alert('You do not have permission to edit invoices.'); return; } void save(false); }} disabled={busy} title={!canEditInv ? 'Invoice edit permission is required' : undefined}>{busy?'Saving...':'Save Invoice'}</Button></>}>
       {invoiceFormBody}
     </Modal>
     <Modal open={payOpen} onClose={()=>!busy&&setPayOpen(false)} title="Record Company Receipt" subtitle={selected?.invoice_no} footer={<><Button variant="secondary" onClick={()=>setPayOpen(false)}>Cancel</Button><Button onClick={()=>void saveReceipt()} disabled={busy}>Record Receipt</Button></>}>
