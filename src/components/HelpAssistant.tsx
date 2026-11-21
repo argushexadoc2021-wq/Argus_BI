@@ -1858,22 +1858,31 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
           {mailOpen && <MailConnect onClose={() => setMailOpen(false)} />}
 
           <div className="flex items-center gap-1.5 border-b border-slate-100 bg-gradient-to-r from-slate-50/60 via-white to-slate-50/60 px-3.5 py-2">
-            <span className="text-[10px] font-extrabold tracking-wider uppercase text-slate-400">Language</span>
-            {LANGS.map((l) => (
-              <button key={l.code} type="button" onClick={() => setLang(l.code)}
-                className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold transition-all ${lang === l.code ? 'bg-gradient-to-r from-indigo-600 via-violet-600 to-fuchsia-600 text-white shadow-md shadow-indigo-500/25 ring-1 ring-white/40' : 'border border-slate-200/80 bg-white text-slate-700 hover:border-indigo-300 hover:text-indigo-600 hover:bg-indigo-50/40 hover:shadow-xs'}`}>{l.label}</button>
-            ))}
-            <button type="button" role="switch" aria-checked={natural} onClick={() => setNatural((v) => !v)}
-              title={natural ? 'A natural, human-sounding voice is used (click for the plain browser voice)' : 'The plain browser voice is used (click for the natural voice)'}
-              className={`ml-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold transition-all ${natural ? 'bg-gradient-to-r from-violet-600 to-pink-600 text-white shadow-md shadow-pink-500/20 ring-1 ring-white/40' : 'border border-slate-200/80 bg-white text-slate-600 hover:border-pink-300 hover:text-pink-600 hover:bg-pink-50/30'}`}>Natural voice</button>
-            {lang === 'ta' && (
-              <select aria-label="Tamil voice" value={tamilPick} onChange={(e) => { const v = e.target.value as TamilEngine; setTamilEngine(v); setTamilPick(v); stopSpeaking(); }}
-                title="Which voice speaks Tamil. Clear is the easiest to follow." className="ml-1 h-6 rounded border border-slate-200 bg-white px-1 text-[10px] font-semibold text-slate-700">
-                <option value="clear">Tamil: Clear</option>
-                <option value="natural">Tamil: Natural</option>
-                <option value="browser">Tamil: Browser</option>
-              </select>
-            )}
+            {/* two small choices: the language it answers in, and the voice that reads the answers */}
+            <select aria-label="Language" value={lang} onChange={(e) => setLang(e.target.value as Lang)}
+              title="The language the Adviser answers and speaks in"
+              className="h-7 rounded-full border border-indigo-200 bg-indigo-50/60 px-2.5 text-[11px] font-bold text-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-100">
+              {LANGS.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}
+            </select>
+            <select aria-label="Voice"
+              value={lang === 'ta' ? tamilPick : natural ? 'natural' : 'basic'}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (lang === 'ta') { const t = v as TamilEngine; setTamilEngine(t); setTamilPick(t); setNatural(t !== 'browser'); }
+                else setNatural(v === 'natural');
+                stopSpeaking();
+              }}
+              title="The voice that reads the answers aloud"
+              className="h-7 rounded-full border border-slate-200 bg-white px-2.5 text-[11px] font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-100">
+              {lang === 'ta' ? (<>
+                <option value="clear">Voice: Clear</option>
+                <option value="natural">Voice: Natural</option>
+                <option value="browser">Voice: Basic</option>
+              </>) : (<>
+                <option value="natural">Voice: Natural</option>
+                <option value="basic">Voice: Basic</option>
+              </>)}
+            </select>
             {choices.length > 1 && !natural && (
               <select aria-label="Choose the voice" value={chosen} onChange={(e) => pickVoice(e.target.value)} className="ml-auto h-6 max-w-[7.5rem] rounded border border-slate-200 bg-white px-1 text-[10px]">
                 {choices.map((v) => <option key={v.name} value={v.name}>{v.name.replace(/^(Microsoft|Google)\s+/, '$1 ')}</option>)}
