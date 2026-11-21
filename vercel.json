@@ -5,6 +5,13 @@
       "maxDuration": 60
     }
   },
+  "redirects": [
+    {
+      "source": "/downloads/(cncforge-erp-setup|business-intelligence-setup|Argus-Business-Intelligence-Setup).exe",
+      "destination": "/api/desktop/setup",
+      "permanent": false
+    }
+  ],
   "rewrites": [
     {
       "source": "/api/retail-sync/(.*)",

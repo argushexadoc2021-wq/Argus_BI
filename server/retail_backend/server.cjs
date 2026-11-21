@@ -427,6 +427,42 @@ app.use(express.json({ limit: '10mb' }));
 app.use((req, _res, next) => { if (req.body === undefined) req.body = {}; next(); });
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
+/* The Windows installer: always the NEWEST "Argus Business Intelligence" setup (read from the same latest.json the
+   installed apps update from). Old download links (/downloads/cncforge-erp-setup.exe, business-intelligence-setup.exe)
+   are redirected here in vercel.json, so nobody installs an old version under an old name any more.
+   GET /api/desktop/setup        -> 302 to the newest installer
+   GET /api/desktop/latest       -> { version, url, notes }                                                     */
+async function latestDesktop(req) {
+  const host = req.headers['x-forwarded-host'] || req.headers.host;
+  const proto = req.headers['x-forwarded-proto'] || 'https';
+  const sources = [
+    host ? `${proto}://${host}/downloads/latest.json` : '',
+    'https://raw.githubusercontent.com/jananimohan-04/with_cnc/main/public/downloads/latest.json',
+  ].filter(Boolean);
+  for (const src of sources) {
+    try {
+      const r = await fetch(src, { headers: { 'cache-control': 'no-cache' } });
+      if (!r.ok) continue;
+      const j = await r.json();
+      const p = (j.platforms || {})['windows-x86_64-nsis'] || (j.platforms || {})['windows-x86_64'];
+      if (p && p.url) return { version: String(j.version || ''), url: String(p.url), notes: String(j.notes || '') };
+    } catch { /* try the next source */ }
+  }
+  return null;
+}
+app.get('/api/desktop/latest', async (req, res) => {
+  const l = await latestDesktop(req);
+  res.setHeader('Cache-Control', 'no-store');
+  if (!l) return res.status(503).json({ error: 'The latest version could not be found. Please try again in a minute.' });
+  res.json(l);
+});
+app.get('/api/desktop/setup', async (req, res) => {
+  const l = await latestDesktop(req);
+  res.setHeader('Cache-Control', 'no-store');
+  if (!l) return res.redirect(302, 'https://github.com/jananimohan-04/with_cnc/releases/latest');
+  res.redirect(302, l.url);
+});
+
 // Middleware: keep db synchronized across Vercel serverless instances and ensure saves complete
 app.use(async (req, res, next) => {
   if (req.path.startsWith('/api') && req.path !== '/api/health' && req.path !== '/api/config' && !req.path.startsWith('/api/bi-chat/')) {

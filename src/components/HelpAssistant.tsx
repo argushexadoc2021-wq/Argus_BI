@@ -15,7 +15,7 @@ import { EmailCard, MailConnect, useAdviserMail } from '@/lib/adviser/mail';
 import { WhatsAppCard } from '@/lib/adviser/whatsapp';
 import { LiveScreenGuide, collectVisibleScreenTargets } from '@/lib/adviser/LiveScreenGuide';
 import { DbActionCard, executeAdviserDbAction, defaultWhereForAction, type DbActionUiState } from '@/lib/adviser/DbActionCard';
-import { runAiAutomation, isAutoExecuteEnabled, setAutoExecuteEnabled } from '@/lib/adviser/aiAutomator';
+import { runAiAutomation, isAutoExecuteEnabled, isDestructiveAction, setAutoExecuteEnabled } from '@/lib/adviser/aiAutomator';
 import { deleteChat, groupByDay, loadChats, saveChat, type SavedChat } from '@/lib/adviser/chatHistory';
 import { boostAudio } from '@/lib/voiceBoost';
 import { supabase } from '@/lib/supabase';
@@ -665,7 +665,7 @@ Whenever the user asks you to ADD / CREATE / INSERT / ENTER / PUT / RECORD / SCH
   * Numbers: parse spoken Tamil/English numbers (ஒன்னு=1, ரெண்டு=2, பத்து=10, etc.) into numbers.
   * Transliterate Tamil names cleanly to English (சிஸ்டம் -> System, ஃபிகர் -> Figure, ஷாஃப்ட் -> Shaft, லேத் -> Lathe).
   * Match existing companies or parts from COMPANY DATA if named.
-- Write ONE concise sentence in the user's language (Tamil: "கீழே உள்ள விவரங்களைச் சரிபார்த்து உறுதிசெய்யுங்கள்." / English: "Automating record entry — details below:").
+- Write ONE concise sentence in the user's language (Tamil: "இப்போது சேமிக்கிறேன்." / English: "Saving it now."), except for a delete (see SAVING HAPPENS AT ONCE below).
 - The action types & parameters (always include "where" with the destination route):
   * Add Enquiry: [[DB_ACTION {"action":"add_enquiry","where":"/sales/in-house","title":"Add Enquiry","summary":"Insert new enquiry","params":{"company":"System","products":[{"name":"Figure","qty":2}],"remarks":""}}]]
   * Edit Enquiry: [[DB_ACTION {"action":"edit_enquiry","where":"/sales/in-house","title":"Edit Enquiry","summary":"Update enquiry","params":{"identifier":"1002","updates":{"quantity":10,"part_name":"","customer":""}}}]]
@@ -692,6 +692,10 @@ Whenever the user asks you to ADD / CREATE / INSERT / ENTER / PUT / RECORD / SCH
   * Add User / Staff: [[DB_ACTION {"action":"add_user","where":"/admin/users","title":"Add Team Member","summary":"Add new system user","params":{"full_name":"Karthik M","email":"karthik@example.com","role":"operator"}}]]
   * Move Pipeline Stage: [[DB_ACTION {"action":"move_stage","where":"/sales/in-house","title":"Move Stage","summary":"Move pipeline stage","params":{"identifier":"1002","target_stage":"Quotation"}}]]
   * Universal Insert (for any arbitrary table): [[DB_ACTION {"action":"db_insert","table":"table_name","where":"/route","title":"Insert Record","summary":"Insert custom record","params":{"col1":"val1","col2":100}}]]
+  * Universal Edit (any table, any column): [[DB_ACTION {"action":"db_update","table":"cnc_sales_orders","where":"/sales/in-house","title":"Update Sales Order","summary":"Change delivery date","params":{"match":{"so_no":"SO-2026-5830"},"values":{"delivery_date":"2026-12-05"}}}]]
+  * Universal Delete (any table): [[DB_ACTION {"action":"db_delete","table":"cnc_scheduled_tasks","where":"/production/scheduling","title":"Delete Task","summary":"Remove task","params":{"match":{"id":"<the record id from COMPANY DATA>"}}}]]
+  Use the exact table and column names seen in COMPANY DATA (cnc_enquiries, cnc_quotations, cnc_sales_orders, cnc_inwards, cnc_deliveries, cnc_work_orders, cnc_job_cards, cnc_scheduled_tasks, cnc_operation_plans, cnc_machines, cnc_processes, cnc_suppliers, cnc_purchase_orders, cnc_customers, cnc_raw_materials, retail_store_orders ...). Never change company_users, companies, permissions or audit tables.
+- SAVING HAPPENS AT ONCE: adds and edits are saved immediately and the screen opens by itself, so write ONE short line like "Saving it now and opening Production Scheduling." (Tamil: "இப்போது சேமித்து அந்தப் பக்கத்தைத் திறக்கிறேன்."). Only a DELETE waits for the person to press Confirm on the card, so for a delete say "Please confirm the delete below." Never ask "shall I save?" for an add or edit.
 - If a critical required field is completely missing (e.g. user said "add enquiry" without naming company or product), ask for the missing detail in 1 short question and wait before emitting [[DB_ACTION ...]].
 - NEVER say the record is already saved before the user confirms or automation runs! Never read the [[DB_ACTION ...]] JSON aloud.
 
@@ -1158,7 +1162,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
           const firstBlock = parsedDone.dbActions[0];
           const firstKey = `${aid}-0`;
           pendingDbRef.current = { key: firstKey, block: firstBlock };
-          if (isAutoExecuteEnabled()) {
+          if (isAutoExecuteEnabled() && !isDestructiveAction(firstBlock.action)) {
             setTimeout(() => {
               void confirmDbAction(firstKey, firstBlock, false);
             }, 600);

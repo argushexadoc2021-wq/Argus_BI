@@ -6,7 +6,7 @@
 import { useState } from 'react';
 import { Download } from 'lucide-react';
 import { isTauri } from '@/lib/desktop/isTauri';
-import { DESKTOP_APP_VERSION, downloadDesktopApp } from '@/lib/desktopDownload';
+import { downloadDesktopApp, useLatestDesktopVersion } from '@/lib/desktopDownload';
 
 type Status = 'idle' | 'busy' | 'error';
 
@@ -41,6 +41,7 @@ function useInstallerDownload() {
 
 /** Compact topbar trigger — icon on smaller screens, full label on wide ones. */
 export function DesktopDownloadButton() {
+  const VER = (() => { const v = useLatestDesktopVersion(); return v ? `v${v}` : 'latest'; })();
   const { status, error, hint, start } = useInstallerDownload();
   if (isTauri()) return null;
 
@@ -50,8 +51,8 @@ export function DesktopDownloadButton() {
         type="button"
         onClick={() => void start()}
         disabled={status === 'busy'}
-        title={`Download the Windows desktop application (v${DESKTOP_APP_VERSION})`}
-        aria-label={`Download Desktop App version ${DESKTOP_APP_VERSION}`}
+        title={`Download the Windows desktop application (${VER})`}
+        aria-label={`Download Desktop App ${VER}`}
         className={`flex items-center gap-1.5 px-2 py-1.5 rounded-md border shadow-sm transition-colors cursor-pointer disabled:cursor-wait disabled:opacity-60 ${
           status === 'error'
             ? 'border-red-200 bg-red-50 hover:bg-red-100'
@@ -62,7 +63,7 @@ export function DesktopDownloadButton() {
         <span className={`hidden xl:inline text-xs font-bold whitespace-nowrap ${status === 'error' ? 'text-red-600' : 'text-slate-700'}`}>
           Download Desktop App
         </span>
-        <span className="hidden lg:inline text-[9px] font-extrabold text-slate-400 tabular-nums">v{DESKTOP_APP_VERSION}</span>
+        <span className="hidden lg:inline text-[9px] font-extrabold text-slate-400 tabular-nums">{VER}</span>
       </button>
       {hint && status !== 'error' && (
         <div role="status" className="absolute right-0 top-full mt-2 w-72 p-2.5 bg-sky-50 border border-sky-200 rounded-lg shadow-lg text-[11px] font-medium text-sky-800 z-50">
@@ -81,6 +82,7 @@ export function DesktopDownloadButton() {
 
 /** Profile-menu row — full label + version, works at every screen size. */
 export function DesktopDownloadMenuItem({ onDone }: { onDone?: () => void }) {
+  const VER = (() => { const v = useLatestDesktopVersion(); return v ? `v${v}` : 'latest'; })();
   const { status, error, hint, start } = useInstallerDownload();
   if (isTauri()) return null;
 
@@ -95,7 +97,7 @@ export function DesktopDownloadMenuItem({ onDone }: { onDone?: () => void }) {
       >
         <Download size={15} className="text-slate-400" />
         Download Desktop App
-        <span className="ml-auto text-[10px] font-bold text-slate-400 tabular-nums">v{DESKTOP_APP_VERSION}</span>
+        <span className="ml-auto text-[10px] font-bold text-slate-400 tabular-nums">{VER}</span>
       </button>
       {hint && status !== 'error' && <p role="status" className="px-3 pb-2 text-[11px] font-medium text-sky-800">{INSTALL_HELP}</p>}
       {status === 'error' && (

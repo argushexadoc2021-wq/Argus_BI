@@ -65,7 +65,27 @@ export const ACTION_BADGE: Record<string, { label: string; ta: string; tone: str
   db_delete: { label: 'Direct Database Delete', ta: 'டேட்டாபேஸ் நீக்கம்', tone: 'bg-red-100 text-red-700 border-red-200' },
 };
 
-export function defaultWhereForAction(action: string): { path: string; label: string } {
+const TABLE_PAGE: Record<string, { path: string; label: string }> = {
+  cnc_enquiries: { path: '/sales/in-house', label: 'Sales Pipeline' },
+  cnc_quotations: { path: '/sales/in-house', label: 'Sales Pipeline' },
+  cnc_sales_orders: { path: '/sales/in-house', label: 'Sales Pipeline' },
+  cnc_inwards: { path: '/sales/in-house', label: 'Sales Pipeline' },
+  cnc_deliveries: { path: '/sales/in-house', label: 'Sales Pipeline' },
+  cnc_customers: { path: '/sales/customers', label: 'Customers' },
+  cnc_work_orders: { path: '/production/planning', label: 'Production' },
+  cnc_job_cards: { path: '/production/scheduling', label: 'Production Scheduling' },
+  cnc_scheduled_tasks: { path: '/production/scheduling', label: 'Production Scheduling' },
+  cnc_operation_plans: { path: '/production/scheduling', label: 'Production Scheduling' },
+  cnc_processes: { path: '/production/process-master', label: 'Process Master' },
+  cnc_machines: { path: '/maintenance/machines', label: 'Machines' },
+  cnc_suppliers: { path: '/purchasing/suppliers', label: 'Suppliers' },
+  cnc_purchase_orders: { path: '/purchasing/orders', label: 'Purchase Orders' },
+  cnc_raw_materials: { path: '/inventory/stock', label: 'Inventory' },
+  retail_store_orders: { path: '/inventory/retail-orders', label: 'Retail Orders' },
+};
+
+export function defaultWhereForAction(action: string, table?: string): { path: string; label: string } {
+  if (table && TABLE_PAGE[table]) return TABLE_PAGE[table];
   switch (action) {
     case 'add_enquiry':
     case 'edit_enquiry':
@@ -132,10 +152,33 @@ export function defaultWhereForAction(action: string): { path: string; label: st
 }
 
 /** Executes a confirmed Adviser DB action directly against Supabase and refreshes the live UI. */
+/** Names the AI may use for the same action are mapped to the one that saves (with their fields renamed to match). */
+function normalizeAdviserAction(block: DbActionBlock): DbActionBlock {
+  const p = { ...(block.params || {}) };
+  switch (block.action) {
+    case 'schedule_task':
+    case 'assign_task':
+      return { ...block, action: 'add_task', params: { ...p, task_name: p.task_name ?? p.title ?? p.name, member_name: p.member_name ?? p.assigned_to ?? p.employee, task_date: p.task_date ?? p.due_date ?? p.date } };
+    case 'record_attendance':
+      return { ...block, action: 'punch_attendance', params: { ...p, punch_type: /out/i.test(String(p.punch_type ?? '')) ? 'Check-out' : 'Check-in' } };
+    case 'add_stock_adjustment':
+      return { ...block, action: 'adjust_stock' };
+    default:
+      return block;
+  }
+}
+
+/** Rows to change for db_update / db_delete: {"match":{"column":"value"}} (or {"id":"..."}). */
+function matchOf(p: Record<string, any>): Record<string, any> | null {
+  const m = p.match && typeof p.match === 'object' ? p.match : p.id ? { id: p.id } : null;
+  return m && Object.keys(m).length ? m : null;
+}
+
 export async function executeAdviserDbAction(
   block: DbActionBlock,
   ctx: ActionCtx,
 ): Promise<RunResult> {
+  block = normalizeAdviserAction(block);
   const p = block.params || {};
   let res: RunResult;
 
@@ -596,6 +639,49 @@ export async function executeAdviserDbAction(
         where: { path: '/inventory/stock', label: 'Inventory & Stock' },
       };
     }
+  } else if (block.action === 'add_job_card') {
+    // a new job card waits on the Job Board under "Unscheduled Jobs" until it is dragged onto a machine
+    const payload: Record<string, any> = {
+      id: crypto.randomUUID(),
+      job_no: `JC-${Date.now().toString().slice(-6)}`,
+      work_order: str(p.work_order || p.wo_no),
+      part_name: str(p.part_name || p.item_name || p.name || 'Job'),
+      operation: str(p.operation || p.process || 'Machining'),
+      machine: str(p.target_machine || p.machine) || null,
+      operator: str(p.target_operator || p.operator) || null,
+      qty_planned: num(p.quantity || p.qty) || 1,
+      qty_completed: 0,
+      qty_rejected: 0,
+      status: 'Pending',
+      created_at: new Date().toISOString(),
+    };
+    const { error } = await supabase.from('cnc_job_cards').insert([payload] as never);
+    res = error
+      ? { ok: false, message: `Could not save the job card: ${error.message}` }
+      : { ok: true, message: `Job card ${payload.job_no} for ${payload.part_name} (${payload.qty_planned} pcs) added to Unscheduled Jobs.`, where: { path: '/production/scheduling', label: 'Production Scheduling' } };
+  } else if (block.action === 'add_user') {
+    res = { ok: false, message: 'New team members are added in User Management (they sign in with Google), so this one is not saved by the Adviser.', where: { path: '/admin/users', label: 'User Management' } };
+  } else if (block.action === 'db_update') {
+    const table = str(block.table || p.table);
+    const match = matchOf(p);
+    const values = (p.values && typeof p.values === 'object') ? p.values : (p.updates && typeof p.updates === 'object') ? p.updates : null;
+    if (!table || !match || !values) return { ok: false, message: 'To change a record I need the table, which record ("match") and the new values.' };
+    const { data, error } = await supabase.from(table as never).update(values as never).match(match as never).select();
+    res = error
+      ? { ok: false, message: `Could not update ${table}: ${error.message}` }
+      : !(data as unknown[] | null)?.length
+        ? { ok: false, message: `No record in ${table} matched ${JSON.stringify(match)} (or you are not allowed to change it).` }
+        : { ok: true, message: `Updated ${(data as unknown[]).length} record(s) in ${table}.`, where: block.where || defaultWhereForAction(block.action) };
+  } else if (block.action === 'db_delete') {
+    const table = str(block.table || p.table);
+    const match = matchOf(p);
+    if (!table || !match) return { ok: false, message: 'To delete I need the table and which record ("match").' };
+    const { data, error } = await supabase.from(table as never).delete().match(match as never).select();
+    res = error
+      ? { ok: false, message: `Could not delete from ${table}: ${error.message}` }
+      : !(data as unknown[] | null)?.length
+        ? { ok: false, message: `No record in ${table} matched ${JSON.stringify(match)} (or you are not allowed to delete it).` }
+        : { ok: true, message: `Deleted ${(data as unknown[]).length} record(s) from ${table}.`, where: block.where || defaultWhereForAction(block.action) };
   } else if (block.action === 'db_insert') {
     const table = str(block.table || p.table);
     if (!table) return { ok: false, message: 'Table name is required for database insert.' };

@@ -30,12 +30,18 @@ export interface AutomationState {
 
 const AUTO_EXEC_KEY = 'argus.ai.auto_execute';
 
+/** ON unless the person switched it off (the ⚡ button in the Adviser's title bar). Deletes always ask first anyway. */
 export function isAutoExecuteEnabled(): boolean {
   try {
-    return localStorage.getItem(AUTO_EXEC_KEY) === 'true';
+    return localStorage.getItem(AUTO_EXEC_KEY) !== 'false';
   } catch {
-    return false;
+    return true;
   }
+}
+
+/** A delete never runs by itself: the person confirms it on the card first. */
+export function isDestructiveAction(action: string): boolean {
+  return /^delete_|^db_delete$/.test(String(action || ''));
 }
 
 export function setAutoExecuteEnabled(enabled: boolean): void {

@@ -19,7 +19,7 @@ import {
   type UpdateEventDetail,
 } from '@/lib/desktop/updater';
 import { CURRENT_APP_VERSION } from '@/config/versionHistory';
-import { downloadDesktopApp, DESKTOP_APP_VERSION } from '@/lib/desktopDownload';
+import { downloadDesktopApp, useLatestDesktopVersion } from '@/lib/desktopDownload';
 
 type CheckStatus =
   | { kind: 'idle' }
@@ -37,6 +37,7 @@ function formatBytes(n: number): string {
 }
 
 export function UpdatesSettingsPage() {
+  const VER = (() => { const v = useLatestDesktopVersion(); return v ? `v${v}` : 'latest'; })();
   const desktop = isTauri();
   const [appVersion, setAppVersion] = useState<string>(CURRENT_APP_VERSION);
   const [status, setStatus] = useState<CheckStatus>({ kind: 'uptodate' });
@@ -240,7 +241,7 @@ export function UpdatesSettingsPage() {
                   className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-400 text-white text-xs sm:text-sm font-bold shadow-lg shadow-orange-500/25 transition-all cursor-pointer disabled:opacity-60"
                 >
                   <Download size={16} />
-                  {isDownloadingInstaller ? 'Starting Download…' : `Download Desktop App (v${DESKTOP_APP_VERSION})`}
+                  {isDownloadingInstaller ? 'Starting Download…' : `Download Desktop App (${VER})`}
                 </button>
                 <button
                   type="button"

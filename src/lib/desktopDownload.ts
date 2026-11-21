@@ -1,73 +1,50 @@
-// Configuration for the web app's "Download Desktop App" button â€” the SINGLE
-// SOURCE OF TRUTH for the public installer URL and the version it advertises.
+// The web app's "Download Desktop App" button.
 //
-// Releasing a new desktop version (see docs/desktop/RELEASING.md):
-//   1. Replace public/downloads/business-intelligence-setup.exe with the new NSIS
-//      installer (src-tauri/target/release/bundle/nsis/*-setup.exe), keeping
-//      the stable filename. The file is copied verbatim into dist/ by Vite and
-//      served at https://with-cnc.vercel.app/downloads/cncforge-erp-setup.exe.
-//   2. Bump DESKTOP_APP_VERSION below to the new semver (keep it in sync with
-//      package.json / src-tauri/tauri.conf.json / src-tauri/Cargo.toml).
-//   3. Re-run `npm run build` and confirm dist/downloads/cncforge-erp-setup.exe
-//      has the new installer's size.
-//
-// Alternative hosting: once GitHub Releases are published, the URL may point at
-// the release asset instead (e.g.
-// https://github.com/jananimohan-04/with_cnc/releases/download/vX.Y.Z/...),
-// which removes the need to commit the binary. The .sig file is NOT needed
-// here â€” signatures are only consumed by the in-app auto-updater.
+// It always downloads the NEWEST "Argus Business Intelligence" installer: the server reads the same latest.json the
+// installed apps update from (GET /api/desktop/latest) and the download goes to that release's installer
+// (GitHub release asset, e.g. Argus.Business.Intelligence_1.1.153_x64-setup.exe). Nothing has to be changed here
+// for a new release, and old installers under old names ("CNCFORGE ERP", "Business Intelligence") are never handed out
+// (their old links are redirected to /api/desktop/setup in vercel.json).
 
-/** Version shown to users; keep in sync with the desktop release version. */
-export const DESKTOP_APP_VERSION = '1.0.7';
+import { useEffect, useState } from 'react';
 
-/** Public, same-origin URL of the Windows installer (served from public/). */
-export const DESKTOP_DOWNLOAD_URL = '/downloads/cncforge-erp-setup.exe';
+/** Shown until the newest version number has been read from the server. */
+export const DESKTOP_APP_VERSION = 'latest';
 
-/** Meaningful filename the browser suggests for the downloaded file. */
-export const DESKTOP_DOWNLOAD_FILENAME = `Business-Intelligence-Setup-${DESKTOP_APP_VERSION}.exe`;
+export interface LatestDesktop { version: string; url: string; notes?: string }
 
-/** Below this size (bytes) a served installer is considered truncated. */
-const MIN_EXPECTED_SIZE = 1_000_000;
+let cached: Promise<LatestDesktop | null> | null = null;
+export function latestDesktop(): Promise<LatestDesktop | null> {
+  cached ??= fetch('/api/desktop/latest', { cache: 'no-store' })
+    .then((r) => (r.ok && !/text\/html/i.test(r.headers.get('content-type') || '') ? r.json() : null))
+    .then((j) => (j && j.url ? (j as LatestDesktop) : null))
+    .catch(() => null);
+  const p = cached;
+  p.then((v) => { if (!v) cached = null; });   // a failed read is tried again next time
+  return p;
+}
 
-/**
- * Checks that DESKTOP_DOWNLOAD_URL actually serves the installer â€” guarding
- * against the SPA fallback returning index.html (or a 404 page) for a missing
- * file, which would otherwise download a useless HTML "installer".
- */
-export async function verifyDesktopDownloadUrl(): Promise<void> {
-  let res: Response;
-  try {
-    res = await fetch(DESKTOP_DOWNLOAD_URL, { method: 'HEAD', cache: 'no-store' });
-  } catch {
-    throw new Error('Could not reach the server. Check your internet connection and try again.');
-  }
-
-  if (!res.ok) {
-    throw new Error(`The desktop installer is not available yet (server returned ${res.status}). Please try again later.`);
-  }
-
-  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
-  if (contentType.includes('text/html')) {
-    throw new Error('The download link is not set up yet â€” the server returned the web page instead of the installer.');
-  }
-
-  const contentLength = Number(res.headers.get('content-length') ?? '0');
-  if (Number.isFinite(contentLength) && contentLength > 0 && contentLength < MIN_EXPECTED_SIZE) {
-    throw new Error('The installer on the server looks incomplete. Please try again later.');
-  }
+/** The newest version number ("1.1.153"), or '' while it is being read. */
+export function useLatestDesktopVersion(): string {
+  const [v, setV] = useState('');
+  useEffect(() => { let off = false; void latestDesktop().then((l) => { if (!off && l) setV(l.version); }); return () => { off = true; }; }, []);
+  return v;
 }
 
 /**
- * Verifies the URL, then starts the download with a meaningful filename.
- * Resolves when the download has been handed to the browser; throws an
- * Error with a user-facing message on any failure (caller shows it + retry).
+ * Starts the download of the newest installer. Throws an Error with a user-facing message when it cannot be found
+ * (the caller shows it with a retry).
  */
 export async function downloadDesktopApp(): Promise<void> {
-  await verifyDesktopDownloadUrl();
-
+  const l = await latestDesktop();
+  const href = l?.url || '/api/desktop/setup';
+  if (!l) {
+    // the server could not say which version is newest: try the redirect route once before giving up
+    const res = await fetch('/api/desktop/latest', { cache: 'no-store' }).catch(() => null);
+    if (!res || !res.ok) throw new Error('The latest version could not be found. Check your internet connection and try again.');
+  }
   const anchor = document.createElement('a');
-  anchor.href = DESKTOP_DOWNLOAD_URL;
-  anchor.download = DESKTOP_DOWNLOAD_FILENAME;
+  anchor.href = href;
   anchor.rel = 'noopener';
   document.body.appendChild(anchor);
   anchor.click();

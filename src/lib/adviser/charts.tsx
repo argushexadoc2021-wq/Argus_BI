@@ -92,7 +92,11 @@ export function parseBlocks(text: string): Blocks {
             title: String(j.title || act.replace(/_/g, ' ')),
             summary: j.summary ? String(j.summary) : undefined,
             table: j.table ? String(j.table) : undefined,
-            where: j.where && typeof j.where === 'object' ? j.where : undefined,
+            where: j.where && typeof j.where === 'object'
+              ? j.where
+              : typeof j.where === 'string' && j.where.trim()
+                ? { path: j.where.trim().startsWith('/') ? j.where.trim() : `/${j.where.trim()}`, label: String(j.title || 'the page') }
+                : undefined,
             params: (j.params && typeof j.params === 'object') ? j.params : {},
           });
         }
