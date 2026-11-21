@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AiAccess } from '@/lib/aiAccess';
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { BarChart3, Bot, Columns2, Crosshair, Download, Mail, CheckCircle2, GraduationCap, Lightbulb, Loader2, MessageCircle, Mic, Send, Sparkles, Undo2, Volume2, VolumeX, X, History, Plus, Trash2 } from 'lucide-react';
+import { BarChart3, Bot, Columns2, Crosshair, Download, Mail, CheckCircle2, GraduationCap, Lightbulb, Loader2, MessageCircle, Mic, Send, Sparkles, Undo2, Volume2, VolumeX, X, History, Plus, Trash2, Minus, Maximize2, Minimize2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { AdviserReportPanel } from '@/components/AdviserReport';
 import { serverChat, serverSpeech, ServerAiError } from '@/lib/adviser/serverAi';
@@ -85,6 +85,16 @@ function withEnglishTerms(q: string): string {
   const extra = TA_TERMS.filter(([re]) => re.test(q)).map(([, en]) => en);
   return extra.length ? `${q} ${extra.join(' ')}` : q;
 }
+
+// Window commands said or typed to the Adviser ("minimize", "maximize", "normal size", in English, Tanglish or Tamil).
+// Only a short command counts, so a question like "how to minimize cycle time" still goes to the Adviser.
+const WIN_TARGET = '(?:\\s+(?:the|this|my|your|window|adviser|advisor|ai|chat|video|screen|box|panel|it|size))*';
+const WIN_POLITE = '(?:\\s+(?:please|pannu|pannunga|pannungal|seyyavum|பண்ணு|பண்ணுங்க|பண்ணுங்கள்|செய்|செய்யவும்))?';
+const winCmd = (words: string) => new RegExp('^(?:please\\s+|can you\\s+)?(?:' + words + ')' + WIN_TARGET + WIN_POLITE + '[.!\\s]*$', 'iu');
+const WIN_MIN = winCmd('minimi[sz]e|minimum|make\\s+(?:it\\s+)?small(?:er)?|hide|go\\s+small|small\\s+(?:aakku|pannu)|chinnadha(?:kku)?|chinnatha(?:kku)?|மினிமைஸ்|சின்னதாக்கு|சின்னதா|சிறிதாக்கு|சிறியதாக்கு|மறை');
+const WIN_MAX = winCmd('maximi[sz]e|maximum|full\\s*screen|make\\s+(?:it\\s+)?(?:big|bigger|large)|go\\s+big|big\\s+(?:aakku|pannu)|perusa(?:kku)?|perisa(?:kku)?|மேக்ஸிமைஸ்|பெருசாக்கு|பெருசா|பெரிதாக்கு|பெரியதாக்கு|முழு\\s*திரை');
+const WIN_RESTORE = winCmd('restore|normal(?:\\s+size)?|reset\\s+(?:the\\s+)?size|open|show|come\\s+back|back|திற|திரும்ப|சாதாரண\\s*அளவு|பழைய\\s*அளவு');
+
 const STOP_WORDS = /^(stop|bye|goodbye|that'?s all|enough|exit|close|நிறுத்து|போதும்|நிறுத்தவும்|பை|nirutthu|nirutha|podhum|pothum|bye bye)\b/i;
 
 const GREETING: Record<Lang, string> = { ta: 'ஆம், சொல்லுங்கள்.', tanglish: 'Yes, sollunga.', en: 'Yes, tell me.' };
@@ -734,6 +744,17 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
   // The Adviser opens on its automatic report; "Ask" is the chat for questions.
   const [view, setView] = useState<'both' | 'report' | 'chat'>('both');
   const [liveGuide, setLiveGuide] = useState<TeachBlock | null>(null);
+  // Minimize: the window shrinks to a small box in the bottom-left corner. Maximize: it fills the screen.
+  const [mini, setMini] = useState(false);
+  const [maxed, setMaxed] = useState(false);
+  // While the Adviser points things out on the screen, it shrinks itself so it does not hide what it is explaining,
+  // and opens again when the showing ends (unless the person minimized it themselves).
+  const autoMini = useRef(false);
+  useEffect(() => {
+    if (liveGuide) { if (!mini) { autoMini.current = true; setMini(true); } }
+    else if (autoMini.current) { autoMini.current = false; setMini(false); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveGuide]);
   // The Adviser panel can be dragged bigger or smaller by its top corner.
   const advSize = useResizable('adviser-panel-size', { w: 432, h: 576 }, { w: 320, h: 360 });
   const SPLIT_KEY = 'adviser-split-w';
@@ -921,6 +942,23 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
     const q = question.trim();
     const wantsChart = /graph|chart|plot|diagram|pie|bar|trend|pdf|report|download|print|mail|e-mail|letter|whatsapp|whats app|msg|message|teach|how|where|find|locate|explain|show me|guide|steps|workflow|animat|add|create|insert|save|enter|edit|update|delete|move|record|வாட்ஸ்|மெசேஜ்|மெயில்|கடிதம்|வரைபட|அறிக்கை|ரிப்போர்ட்|கிராப்|எப்படி|எங்கே|எங்க|சொல்லி|காட்டு|போடணும்|போடு|சேர்|உருவாக்கு|மாற்று|நீக்கு/i.test(q);
     if (!q || busyRef.current) return;
+
+    // "Minimize" / "Maximize" / "Normal size": the Adviser does it at once instead of answering a question.
+    const winAct = WIN_MIN.test(q) ? 'min' : WIN_MAX.test(q) ? 'max' : WIN_RESTORE.test(q) ? 'restore' : null;
+    if (winAct) {
+      const ta = langRef.current === 'ta';
+      const reply = winAct === 'min'
+        ? (ta ? 'சிறிதாக்கப்பட்டது. திறக்க கீழே இடது மூலையில் உள்ள பெட்டியைத் தொடவும் அல்லது "maximize" என்று சொல்லவும்.' : 'Minimized. Click the small box in the bottom-left corner, or say "maximize" or "open", to bring me back.')
+        : winAct === 'max'
+          ? (ta ? 'முழு திரையில் திறக்கப்பட்டது. "normal size" என்று சொன்னால் பழைய அளவுக்கு வரும்.' : 'Maximized to full screen. Say "normal size" to go back.')
+          : (ta ? 'பழைய அளவுக்கு திரும்பியது.' : 'Back to the normal size.');
+      autoMini.current = false;
+      if (winAct === 'min') setMini(true);
+      else { setMini(false); setMaxed(winAct === 'max'); }
+      setMsgs((m) => [...m, { id: ++chatSeq, role: 'user', text: q }, { id: ++chatSeq, role: 'assistant', text: reply }]);
+      if (handsFreeRef.current && SR && activeRef.current) listenRef.current(); else setPhase('ready');
+      return;
+    }
 
     // Direct voice / text confirmation or cancellation for a pending DB insert/update card
     if (pendingDbRef.current) {
@@ -1401,10 +1439,10 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
   }, [allowed.teaching, allowed.coworker, allowed.adviser, modes.teaching, modes.coworker, endSession]);
   // (the Adviser used to dock beside the page; it is a floating window now, so the page is never pushed aside)
   useEffect(() => { document.documentElement.removeAttribute('data-adviser-split'); }, []);
-  const popW = Math.min(splitW, splitMax(), window.innerWidth);
-  const popHeight = Math.min(popH || window.innerHeight, window.innerHeight);
-  const popX = Math.min(Math.max(0, popPos.x), Math.max(0, window.innerWidth - Math.min(popW, 160)));
-  const popY = Math.min(Math.max(0, popPos.y), Math.max(0, window.innerHeight - 56));
+  const popW = maxed ? window.innerWidth : Math.min(splitW, splitMax(), window.innerWidth);
+  const popHeight = maxed ? window.innerHeight : Math.min(popH || window.innerHeight, window.innerHeight);
+  const popX = maxed ? 0 : Math.min(Math.max(0, popPos.x), Math.max(0, window.innerWidth - Math.min(popW, 160)));
+  const popY = maxed ? 0 : Math.min(Math.max(0, popPos.y), Math.max(0, window.innerHeight - 56));
   const savePop = () => { store.set(POS_KEY, JSON.stringify({ x: popX, y: popY })); store.set(H_KEY, String(popH)); store.set(SPLIT_KEY, String(splitW)); };
   const anyOn = active || modes.teaching || modes.coworker;
   // Sync menu open state and assistant indicators to the arrow dock tab
@@ -1494,10 +1532,38 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
         <div role="status" className="pointer-events-auto max-w-[20rem] rounded-xl border border-slate-200 bg-white/95 px-3 py-2 text-xs text-slate-500 shadow-lg backdrop-blur">{note}</div>
       )}
 
+      {/* Minimized Adviser: a small box in the corner. While it is pointing things out on the screen it says so. */}
+      {active && mini && createPortal(
+        <div role="dialog" aria-label="Adviser (minimized)" data-voice-ignore onMouseDown={(e) => e.stopPropagation()}
+          className="no-glass fixed bottom-4 left-4 z-[70] flex w-[290px] items-center gap-2 rounded-xl border-2 border-emerald-500 bg-white px-2.5 py-2 shadow-2xl">
+          <button type="button" onClick={() => { autoMini.current = false; setMini(false); }} title="Open the Adviser"
+            className="flex min-w-0 flex-1 items-center gap-2 text-left">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white"><Lightbulb size={16} /></span>
+            <span className="min-w-0">
+              <span className="block text-[13px] font-bold leading-tight text-slate-800">Adviser</span>
+              <span className="block truncate text-[11px] text-slate-500">
+                {liveGuide
+                  ? (lang === 'ta' ? `திரையில் காட்டுகிறது: ${liveGuide.title}` : `Showing on screen: ${liveGuide.title}`)
+                  : (lang === 'ta' ? 'திறக்க இங்கே தொடவும்' : 'Click to open')}
+              </span>
+            </span>
+          </button>
+          {liveGuide && (
+            <button type="button" onClick={() => setLiveGuide(null)} title="Stop showing"
+              className="shrink-0 rounded-md bg-orange-600 px-2 py-1 text-[11px] font-bold text-white hover:bg-orange-700">{lang === 'ta' ? 'நிறுத்து' : 'Stop'}</button>
+          )}
+          <button type="button" aria-label="Open the Adviser" title="Open" onClick={() => { autoMini.current = false; setMini(false); }}
+            className="shrink-0 rounded p-1.5 text-slate-500 hover:bg-slate-100 hover:text-emerald-700"><Maximize2 size={15} /></button>
+          <button type="button" aria-label="Close the Adviser" title="Close" onClick={() => endSession(false)}
+            className="shrink-0 rounded p-1.5 text-slate-500 hover:bg-red-50 hover:text-red-600"><X size={16} /></button>
+        </div>,
+        document.body,
+      )}
+
       {/* Adviser chat: a floating window (drag it anywhere; the page stays full width behind it) */}
       {active && createPortal(
         <div role="dialog" aria-label="Adviser" data-voice-ignore onMouseDown={(e) => e.stopPropagation()}
-          style={{ left: popX, top: popY, width: popW, height: popHeight }}
+          style={{ left: popX, top: popY, width: popW, height: popHeight, display: mini ? 'none' : undefined }}
           className="adviser-split no-glass fixed z-[70] flex flex-col overflow-hidden rounded-xl border-2 border-emerald-500 bg-white shadow-2xl">
           {/* right edge: drag to make it wider or narrower (double-click = default width) */}
           <div role="separator" aria-orientation="vertical" aria-label="Resize the Adviser" title="Drag to resize · double-click to reset"
@@ -1522,6 +1588,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
             className="flex cursor-move touch-none select-none items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 px-3 py-2.5 text-white"
             onPointerDown={(e) => {
               if ((e.target as HTMLElement).closest('button, select, input, a')) return;
+              if (maxed) return;
               popDrag.current = { kind: 'move', dx: e.clientX - popX, dy: e.clientY - popY };
               try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* not capturable */ }
             }}
@@ -1540,6 +1607,11 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
             </button>
             <button type="button" aria-label={speakOn ? 'Mute answers' : 'Read answers aloud'} title={speakOn ? 'Answers are read aloud (click to mute)' : 'Answers are silent (click to read aloud)'}
               onClick={() => setSpeakOn((v) => !v)} className="rounded p-1.5 hover:bg-white/15">{speakOn ? <Volume2 size={16} /> : <VolumeX size={16} />}</button>
+            <span className="mx-0.5 h-5 w-px bg-white/30" aria-hidden="true" />
+            <button type="button" aria-label="Minimize the Adviser" title="Minimize (a small box stays in the corner)" onClick={() => { autoMini.current = false; setMini(true); }}
+              className="rounded p-1.5 hover:bg-white/15"><Minus size={17} /></button>
+            <button type="button" aria-label={maxed ? 'Restore the Adviser size' : 'Maximize the Adviser'} title={maxed ? 'Restore the size' : 'Maximize (full screen)'} onClick={() => setMaxed((v) => !v)}
+              className="rounded p-1.5 hover:bg-white/15">{maxed ? <Minimize2 size={16} /> : <Maximize2 size={16} />}</button>
             <button type="button" aria-label="Close the Adviser" title="Close" onClick={() => endSession(false)} className="rounded p-1.5 hover:bg-white/15"><X size={17} /></button>
           </div>
           {mailOpen && <MailConnect onClose={() => setMailOpen(false)} />}

@@ -195,6 +195,15 @@ async function build(can: (m: string) => boolean): Promise<string> {
   }
   if (users && users.length) {
     out.push(`TEAM USERS (${users.length}): Roles: ${countBy(users, (u) => str(u.role))}. Active: ${users.filter((u) => str(u.status) !== 'Inactive').length}.`);
+    // Each person, so "who are they?" can be answered with names and details (name — e-mail — role — status — mobile — last login).
+    out.push(`TEAM USER LIST (name — e-mail — role — status — mobile — last login): ${users.slice(0, 150).map((u) => [
+      str(first(u, ['full_name', 'name'])) || '(no name)',
+      str(u.email) || '-',
+      str(u.role) || '-',
+      str(u.status) || '-',
+      str(first(u, ['mobile', 'phone'])) || '-',
+      day(u.last_login_at) || 'never',
+    ].join(' — ')).join('; ')}.`);
   }
   if (cust) {
     const reach = cust.filter((c) => /@/.test(str(c.email)) || /\d{6}/.test(str(c.phone).replace(/\D/g, '')));
