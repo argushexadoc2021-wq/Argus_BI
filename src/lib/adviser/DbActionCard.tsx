@@ -11,6 +11,7 @@ import {
   X,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { financeApi } from '@/lib/finance';
 import { runAction, type ActionCtx, type RunResult } from '@/lib/copilot/actions';
 import type { DbActionBlock, DbActionType } from '@/lib/adviser/charts';
 
@@ -457,14 +458,14 @@ export async function executeAdviserDbAction(
       };
     }
   } else if (block.action === 'add_delivery_challan' || block.action === 'add_dc') {
-    const customer = str(p.customer || p.company);
+    const customer = str(p.customer || p.company || p.customer_name);
     const part = str(p.part_name || p.product || 'Finished Goods');
     const qty = num(p.qty || p.quantity || 1);
     const dcNo = str(p.dc_no || `DC-${Math.floor(1000 + Math.random() * 9000)}`);
     const payload: Record<string, any> = {
       id: crypto.randomUUID(),
       delivery_no: dcNo,
-      customer,
+      customer_name: customer,
       part_name: part,
       quantity: qty,
       delivery_date: today(),
@@ -482,34 +483,61 @@ export async function executeAdviserDbAction(
       };
     }
   } else if (block.action === 'add_invoice') {
-    const customer = str(p.customer || p.company);
+    const customer = str(p.customer || p.company || p.customer_name);
     const part = str(p.part_name || p.product || 'Machined Components');
     const qty = num(p.qty || p.quantity || 1);
     const rate = num(p.rate || p.price || 100);
     const invNo = str(p.invoice_no || `INV-${Math.floor(1000 + Math.random() * 9000)}`);
     const gst = num(p.gst || 18);
-    const total = Math.round(qty * rate * (1 + gst / 100));
-    const payload: Record<string, any> = {
-      id: crypto.randomUUID(),
-      invoice_no: invNo,
-      customer,
-      part_name: part,
-      quantity: qty,
-      unit_price: rate,
-      total_amount: total,
-      status: 'Pending',
-      invoice_date: today(),
-    };
-    if (ctx.companyId) payload.company_id = ctx.companyId;
-    const { error } = await supabase.from('cnc_invoices').insert([payload]);
-    if (error) {
-      res = { ok: false, message: `Could not save invoice: ${error.message}` };
-    } else {
+    const basic = qty * rate;
+    const total = Math.round(basic * (1 + gst / 100));
+    try {
+      // 1. Try official ERP saveInvoice RPC (calculates taxes, items, and ledger)
+      const resInv = await financeApi.saveInvoice({
+        invoice_no: invNo,
+        invoice_type: 'Sales Invoice',
+        invoice_date: today(),
+        customer_name: customer,
+        part_name: part,
+        quantity: qty,
+      }, [{
+        description: part,
+        quantity: qty,
+        rate: rate,
+        gst_rate: gst,
+        discount_pct: 0
+      }]);
       res = {
         ok: true,
-        message: `Tax Invoice ${invNo} for ₹${total.toLocaleString('en-IN')} created for ${customer}.`,
+        message: `Tax Invoice ${resInv?.invoice_no || invNo} for ₹${total.toLocaleString('en-IN')} created for ${customer}.`,
         where: { path: '/finance/invoices', label: 'Invoices' },
       };
+    } catch (rpcErr) {
+      // Fallback: direct insert with exact PostgreSQL schema column names (customer_name, amount, basic_value)
+      const payload: Record<string, any> = {
+        id: crypto.randomUUID(),
+        invoice_no: invNo,
+        invoice_type: 'Sales Invoice',
+        customer_name: customer,
+        part_name: part,
+        quantity: qty,
+        basic_value: basic,
+        taxable_value: basic,
+        amount: total,
+        status: 'Pending',
+        invoice_date: today(),
+      };
+      if (ctx.companyId) payload.company_id = ctx.companyId;
+      const { error } = await supabase.from('cnc_invoices').insert([payload]);
+      if (error) {
+        res = { ok: false, message: `Could not save invoice: ${error.message}` };
+      } else {
+        res = {
+          ok: true,
+          message: `Tax Invoice ${invNo} for ₹${total.toLocaleString('en-IN')} created for ${customer}.`,
+          where: { path: '/finance/invoices', label: 'Invoices' },
+        };
+      }
     }
   } else if (block.action === 'add_purchase_order') {
     const supplier = str(p.supplier || p.vendor || p.name);
@@ -517,16 +545,21 @@ export async function executeAdviserDbAction(
     const qty = num(p.qty || p.quantity || 1);
     const rate = num(p.price || p.rate || 0);
     const poNo = str(p.po_no || `PO-${Math.floor(1000 + Math.random() * 9000)}`);
+    let supplierId: string | null = null;
+    try {
+      const { data: sRow } = await supabase.from('cnc_suppliers').select('id').ilike('name', supplier).limit(1).maybeSingle();
+      if (sRow?.id) supplierId = sRow.id;
+    } catch {}
+
     const payload: Record<string, any> = {
       id: crypto.randomUUID(),
-      po_no: poNo,
-      supplier,
-      item_name: item,
-      quantity: qty,
-      unit_price: rate,
-      total_amount: qty * rate,
-      status: 'Draft',
+      po_number: poNo,
+      supplier_id: supplierId,
       order_date: today(),
+      status: 'Draft',
+      subtotal: qty * rate,
+      grand_total: qty * rate,
+      notes: `${item} × ${qty}`,
     };
     if (ctx.companyId) payload.company_id = ctx.companyId;
     const { error } = await supabase.from('cnc_purchase_orders').insert([payload]);

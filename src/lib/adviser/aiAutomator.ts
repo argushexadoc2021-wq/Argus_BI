@@ -173,6 +173,30 @@ export function extractFieldsForDisplay(block: DbActionBlock): AutomationField[]
       add('qty', 'Planned Qty', p.qty || p.quantity);
       break;
 
+    case 'add_invoice':
+      add('company', 'Customer / Company', p.company || p.customer || p.customer_name);
+      add('product', 'Part / Product Name', p.part_name || p.product);
+      add('qty', 'Quantity', p.qty || p.quantity);
+      add('rate', 'Unit Rate', (p.rate || p.price) ? `₹${p.rate || p.price}` : '');
+      add('invoice_no', 'Invoice Number', p.invoice_no);
+      break;
+
+    case 'add_delivery_challan':
+    case 'add_dc':
+      add('company', 'Customer / Company', p.company || p.customer || p.customer_name);
+      add('product', 'Part Name', p.part_name || p.product);
+      add('qty', 'Dispatch Quantity', p.qty || p.quantity);
+      add('dc_no', 'DC Number', p.dc_no);
+      break;
+
+    case 'add_purchase_order':
+      add('supplier', 'Supplier / Vendor', p.supplier || p.vendor || p.name);
+      add('item', 'Item / Material', p.item || p.material || p.product);
+      add('qty', 'Order Quantity', p.qty || p.quantity);
+      add('price', 'Unit Price', (p.price || p.rate) ? `₹${p.price || p.rate}` : '');
+      add('po_no', 'PO Number', p.po_no);
+      break;
+
     case 'punch_attendance':
       add('employee', 'Employee Name', p.employee_name || p.name || p.employee);
       add('punch_type', 'Punch Type', p.punch_type || 'Check-in');
