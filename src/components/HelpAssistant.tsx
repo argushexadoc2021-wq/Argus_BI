@@ -7,6 +7,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { AdviserReportPanel } from '@/components/AdviserReport';
 import { serverChat, serverSpeech, ServerAiError } from '@/lib/adviser/serverAi';
 import { businessData } from '@/lib/adviser/dataContext';
+import { DiagramView, MindMapView, TableView, parseVisuals } from '@/lib/adviser/visuals';
 import { ChartView, parseBlocks, saveReportPdf, speakablePart, type DbActionBlock, type TeachBlock } from '@/lib/adviser/charts';
 import { EmailCard, MailConnect, useAdviserMail } from '@/lib/adviser/mail';
 import { WhatsAppCard } from '@/lib/adviser/whatsapp';
@@ -623,6 +624,13 @@ CORE CAPABILITIES — act as a full ChatGPT assistant that can do WHATEVER the u
 1. WHOLE-DATABASE & BUSINESS ANALYSIS: Analyze across ALL live company records provided below (Enquiries, Quotations, Sales Orders, Inwards/Purchases, Delivery Challans, Invoices & Unpaid Receivables, Bank & Petty Cash Cashflow, Work Orders, Job Cards, Process Master including In-House & Outsource Processes, Machines, Products & Drawings, Costing Sheets, Inventory/Low Stock, Suppliers, Purchase Orders, GRNs, Team Users, Customer Contacts, 6-month trends, and executive anomalies). Cross-compare tables, compute ratios/conversion rates/margins/cash gaps, spot bottlenecks, and recommend concrete actions using exact numbers and names. Never invent database figures.
 2. WHOLE-PROJECT EXPERTISE: You understand the entire Argus BI project architecture, every screen, route, button, and workflow listed in the ARGUS BI COMPLETE PROJECT MAP and NOTES below. Answer architecture, workflow, troubleshooting, and how-to questions accurately.
 3. FULL CHATGPT GENERAL INTELLIGENCE: Answer ANY request on ANY topic — writing proposals/letters/SOPs/emails/WhatsApp messages, CNC machining engineering (G-code/M-code, feeds & speeds, tooling, GD&T, costing, OEE), spreadsheets/math/finance, coding, brainstorming, translation, planning, or general knowledge. Never refuse a normal question.
+3b. CREATE ANY VISUAL (never say you cannot draw): when the person asks for a mind map, flowchart, process flow, diagram, org chart, timeline, cycle, tree, table, comparison table, graph or chart (in Tamil, Tanglish or English: "மைண்ட் மேப்", "ஃப்ளோ சார்ட்", "டேபிள்", "அட்டவணை", "வரைபடம்", "கிராப்"), write 1 to 3 short lines, then at the VERY END add the block(s), each on its own line, valid JSON:
+   * Mind map: [[MINDMAP {"title":"Quality plan","root":{"label":"Quality","children":[{"label":"Incoming","children":[{"label":"Material cert"},{"label":"Dimensions"}]},{"label":"In-process"}]}}]]  (3 to 8 branches, up to 4 levels, short labels)
+   * Flowchart / process: [[DIAGRAM {"title":"Order to dispatch","kind":"flow","direction":"TB","nodes":[{"id":"a","label":"Enquiry","shape":"start"},{"id":"b","label":"Stock OK?","shape":"decision"},{"id":"c","label":"Produce","shape":"step"},{"id":"d","label":"Dispatch","shape":"end"}],"edges":[{"from":"a","to":"b"},{"from":"b","to":"c","label":"No"},{"from":"b","to":"d","label":"Yes"},{"from":"c","to":"d"}]}]]  (shape: start, end, step, decision, data)
+   * Org chart: kind "org" with edges from the boss to each person. Timeline: kind "timeline" (nodes in order; edges may be left out). Cycle (PDCA etc.): kind "cycle".
+   * Table: [[TABLE {"title":"Tool life","columns":["Tool","Life (pcs)"],"rows":[["Insert CNMG","450"],["Drill 8mm","1200"]]}]]
+   * Graph: [[CHART ...]] (see GRAPHS below); type can be "bar", "line", "area", "stacked", "pie" or "donut".
+   Use the real figures and names from COMPANY DATA when the visual is about this business. Several blocks in one answer are fine. Never read the blocks aloud and never put them in the middle of the text. The screen draws them with Download buttons, and a mind map can be saved into the Mind Maps module.
 4. TAMIL / TANGLISH / VOICE UNDERSTANDING: Staff often speak in Tamil, Tanglish, or mixed Tamil-English. Speech-to-text may write English words in Tamil script (e.g. என்குயரி = enquiry, கொட்டேஷன் = quotation, இன்வாய்ஸ் = invoice, ஆர்டர் = order, சலான் = challan, ஸ்டாக் = stock, ஷெட்யூல் = schedule). Ignore a trailing "over" / "ஓவர்".
 ${styleRule} ${langRule}
 CURRENT PAGE: ${page}${title ? ` (${title})` : ''}${visibleControls.length ? `\nCURRENT SCREEN VISIBLE CONTROLS (exact clickable labels on screen right now): ${visibleControls.join(' | ')}` : ''}
@@ -633,7 +641,7 @@ WHOLE PROJECT MAP & LIVE DATABASE (read live from this company's Argus BI databa
 Use every section below to perform full cross-module analysis whenever the user asks about business performance, financials, pipeline conversion, customers, suppliers, processes, machines, inventory, costing, or operations. Always cite exact real figures, document numbers, and names. If a specific sub-detail is not in this snapshot, state what you can see and tell them which exact Argus BI screen shows the full line-level detail.
 GRAPHS AND PDF REPORTS: when the person asks for a graph, chart, diagram, trend or a PDF / printable / downloadable report, first write the short explanation (the findings in plain words), then at the VERY END add one block per chart, each on its own line, exactly in this form (valid JSON, plain numbers without commas or symbols):
 [[CHART {"title":"Billing per month","type":"bar","labels":["Jun 26","Jul 26"],"series":[{"name":"Billed","values":[120000,98000]}],"unit":"₹"}]]
-type is "bar" (compare), "line" (trend over time) or "pie" (share of a whole, one series only). Use only figures from COMPANY DATA (month by month, by customer, by status...). Give 1 to 4 useful charts. When they ask for a PDF or a report to download / print / share, also add on its own last line: [[PDF {"title":"<report title>"}]]. Never put these blocks in the middle of the text and never read them out.
+type is "bar" (compare), "line" (trend over time), "area" (trend with the area filled), "stacked" (parts adding up to a total per label), "pie" or "donut" (share of a whole, one series only). Use only figures from COMPANY DATA (month by month, by customer, by status...). Give 1 to 4 useful charts. When they ask for a PDF or a report to download / print / share, also add on its own last line: [[PDF {"title":"<report title>"}]]. Never put these blocks in the middle of the text and never read them out.
 E-MAILS: when the person asks you to write, draft or send an e-mail (payment reminder, quotation follow-up, delivery update, thank-you, anything), write one short line saying the draft is below for them to check, then at the VERY END add exactly one block per e-mail, on its own line (valid JSON; use \n for new lines in the body):
 [[EMAIL {"to":"customer@example.com","cc":"","subject":"...","body":"Dear ...,\n\n...\n\nRegards,\n<sender name>\n<company>"}]]
 Write a polite, clear, professional e-mail in the language they ask for (English by default), with the real figures, invoice / order numbers and dates from COMPANY DATA. Take the receiver's address from CUSTOMER CONTACTS; if it is not there, leave "to" empty and say they must type it. Sign it with the SENDER's name and company. Never say the e-mail was sent: the person checks it and presses Send.
@@ -940,7 +948,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
   // ------------------------------------------------ the answer: stream it, show it, and speak each sentence as it completes
   const ask = useCallback(async (question: string) => {
     const q = question.trim();
-    const wantsChart = /graph|chart|plot|diagram|pie|bar|trend|pdf|report|download|print|mail|e-mail|letter|whatsapp|whats app|msg|message|teach|how|where|find|locate|explain|show me|guide|steps|workflow|animat|add|create|insert|save|enter|edit|update|delete|move|record|வாட்ஸ்|மெசேஜ்|மெயில்|கடிதம்|வரைபட|அறிக்கை|ரிப்போர்ட்|கிராப்|எப்படி|எங்கே|எங்க|சொல்லி|காட்டு|போடணும்|போடு|சேர்|உருவாக்கு|மாற்று|நீக்கு/i.test(q);
+    const wantsChart = /mind ?map|flow|table|tree|timeline|org|cycle|draw|visual|மைண்ட்|ஃப்ளோ|டேபிள்|அட்டவணை|வரை|graph|chart|plot|diagram|pie|bar|trend|pdf|report|download|print|mail|e-mail|letter|whatsapp|whats app|msg|message|teach|how|where|find|locate|explain|show me|guide|steps|workflow|animat|add|create|insert|save|enter|edit|update|delete|move|record|வாட்ஸ்|மெசேஜ்|மெயில்|கடிதம்|வரைபட|அறிக்கை|ரிப்போர்ட்|கிராப்|எப்படி|எங்கே|எங்க|சொல்லி|காட்டு|போடணும்|போடு|சேர்|உருவாக்கு|மாற்று|நீக்கு/i.test(q);
     if (!q || busyRef.current) return;
 
     // "Minimize" / "Maximize" / "Normal size": the Adviser does it at once instead of answering a question.
@@ -1440,9 +1448,12 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
   // (the Adviser used to dock beside the page; it is a floating window now, so the page is never pushed aside)
   useEffect(() => { document.documentElement.removeAttribute('data-adviser-split'); }, []);
   const popW = maxed ? window.innerWidth : Math.min(splitW, splitMax(), window.innerWidth);
-  const popHeight = maxed ? window.innerHeight : Math.min(popH || window.innerHeight, window.innerHeight);
-  const popX = maxed ? 0 : Math.min(Math.max(0, popPos.x), Math.max(0, window.innerWidth - Math.min(popW, 160)));
-  const popY = maxed ? 0 : Math.min(Math.max(0, popPos.y), Math.max(0, window.innerHeight - 56));
+  // The whole window always stays on the screen: nothing is cut off at the top, bottom or sides.
+  // If it was moved down, it gets shorter so its bottom row (mic, type box, send) is still visible.
+  const wantH = Math.min(popH || window.innerHeight, window.innerHeight);
+  const popY = maxed ? 0 : Math.min(Math.max(0, popPos.y), Math.max(0, window.innerHeight - Math.min(wantH, 360)));
+  const popHeight = maxed ? window.innerHeight : Math.min(wantH, window.innerHeight - popY);
+  const popX = maxed ? 0 : Math.min(Math.max(0, popPos.x), Math.max(0, window.innerWidth - popW));
   const savePop = () => { store.set(POS_KEY, JSON.stringify({ x: popX, y: popY })); store.set(H_KEY, String(popH)); store.set(SPLIT_KEY, String(splitW)); };
   const anyOn = active || modes.teaching || modes.coworker;
   // Sync menu open state and assistant indicators to the arrow dock tab
@@ -1535,10 +1546,10 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
       {/* Minimized Adviser: a small box in the corner. While it is pointing things out on the screen it says so. */}
       {active && mini && createPortal(
         <div role="dialog" aria-label="Adviser (minimized)" data-voice-ignore onMouseDown={(e) => e.stopPropagation()}
-          className="no-glass fixed bottom-4 left-4 z-[70] flex w-[290px] items-center gap-2 rounded-xl border-2 border-emerald-500 bg-white px-2.5 py-2 shadow-2xl">
+          className="no-glass fixed bottom-4 left-4 z-[70] flex w-[290px] items-center gap-2 rounded-xl border border-slate-200 bg-white px-2.5 py-2 shadow-[0_18px_45px_-12px_rgba(99,102,241,0.45)] ring-1 ring-indigo-100">
           <button type="button" onClick={() => { autoMini.current = false; setMini(false); }} title="Open the Adviser"
             className="flex min-w-0 flex-1 items-center gap-2 text-left">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white"><Lightbulb size={16} /></span>
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 via-fuchsia-500 to-orange-400 text-white shadow-md"><Lightbulb size={16} /></span>
             <span className="min-w-0">
               <span className="block text-[13px] font-bold leading-tight text-slate-800">Adviser</span>
               <span className="block truncate text-[11px] text-slate-500">
@@ -1553,7 +1564,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
               className="shrink-0 rounded-md bg-orange-600 px-2 py-1 text-[11px] font-bold text-white hover:bg-orange-700">{lang === 'ta' ? 'நிறுத்து' : 'Stop'}</button>
           )}
           <button type="button" aria-label="Open the Adviser" title="Open" onClick={() => { autoMini.current = false; setMini(false); }}
-            className="shrink-0 rounded p-1.5 text-slate-500 hover:bg-slate-100 hover:text-emerald-700"><Maximize2 size={15} /></button>
+            className="shrink-0 rounded p-1.5 text-slate-500 hover:bg-slate-100 hover:text-indigo-700"><Maximize2 size={15} /></button>
           <button type="button" aria-label="Close the Adviser" title="Close" onClick={() => endSession(false)}
             className="shrink-0 rounded p-1.5 text-slate-500 hover:bg-red-50 hover:text-red-600"><X size={16} /></button>
         </div>,
@@ -1564,17 +1575,17 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
       {active && createPortal(
         <div role="dialog" aria-label="Adviser" data-voice-ignore onMouseDown={(e) => e.stopPropagation()}
           style={{ left: popX, top: popY, width: popW, height: popHeight, display: mini ? 'none' : undefined }}
-          className="adviser-split no-glass fixed z-[70] flex flex-col overflow-hidden rounded-xl border-2 border-emerald-500 bg-white shadow-2xl">
+          className="adviser-split no-glass fixed z-[70] flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_28px_70px_-18px_rgba(99,102,241,0.45)] ring-1 ring-indigo-100">
           {/* right edge: drag to make it wider or narrower (double-click = default width) */}
           <div role="separator" aria-orientation="vertical" aria-label="Resize the Adviser" title="Drag to resize · double-click to reset"
-            className="absolute inset-y-0 right-0 z-10 w-2 cursor-col-resize touch-none hover:bg-emerald-400/40"
+            className="absolute inset-y-0 right-0 z-10 w-2 cursor-col-resize touch-none hover:bg-indigo-400/30"
             onPointerDown={(e) => { splitDrag.current = true; try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* not capturable */ } }}
             onPointerMove={(e) => { if (!splitDrag.current) return; setSplitW(Math.min(splitMax(), Math.max(320, Math.round(e.clientX - popX)))); }}
             onPointerUp={() => { if (!splitDrag.current) return; splitDrag.current = false; savePop(); }}
             onDoubleClick={() => { const d = Math.round(Math.min(560, Math.max(380, window.innerWidth * 0.34))); setSplitW(d); store.set(SPLIT_KEY, String(d)); }} />
           {/* bottom-right corner: drag to change width and height together (double-click = full height) */}
           <div aria-label="Resize the Adviser" title="Drag to resize · double-click for full height"
-            className="absolute bottom-0 right-0 z-20 h-4 w-4 cursor-nwse-resize touch-none rounded-tl bg-emerald-500/30 hover:bg-emerald-500/60"
+            className="absolute bottom-0 right-0 z-20 h-4 w-4 cursor-nwse-resize touch-none rounded-tl bg-gradient-to-br from-indigo-300/50 to-fuchsia-300/60 hover:from-indigo-400 hover:to-fuchsia-400"
             onPointerDown={(e) => { popDrag.current = { kind: 'corner', dx: 0, dy: 0 }; try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* not capturable */ } }}
             onPointerMove={(e) => {
               if (popDrag.current?.kind !== 'corner') return;
@@ -1585,7 +1596,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
             onDoubleClick={() => { setPopH(0); setPopPos((p) => ({ ...p, y: 0 })); store.set(H_KEY, '0'); }} />
           {/* title bar: drag to move the window anywhere (double-click = back to the left side) */}
           <div title="Drag to move · double-click to put it back on the left"
-            className="flex cursor-move touch-none select-none items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 px-3 py-2.5 text-white"
+            className="flex cursor-move touch-none select-none relative items-center gap-2 border-b border-slate-100 bg-white px-3 py-2.5 text-slate-800 before:absolute before:inset-x-0 before:top-0 before:h-[3px] before:bg-gradient-to-r before:from-indigo-500 before:via-fuchsia-500 before:to-orange-400"
             onPointerDown={(e) => {
               if ((e.target as HTMLElement).closest('button, select, input, a')) return;
               if (maxed) return;
@@ -1595,24 +1606,24 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
             onPointerMove={(e) => { if (popDrag.current?.kind !== 'move') return; setPopPos({ x: Math.round(e.clientX - popDrag.current.dx), y: Math.round(e.clientY - popDrag.current.dy) }); }}
             onPointerUp={() => { if (!popDrag.current) return; popDrag.current = null; savePop(); }}
             onDoubleClick={(e) => { if ((e.target as HTMLElement).closest('button, select, input, a')) return; setPopPos({ x: 0, y: 0 }); setPopH(0); store.set(POS_KEY, JSON.stringify({ x: 0, y: 0 })); store.set(H_KEY, '0'); }}>
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/20"><Lightbulb size={17} /></span>
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 via-fuchsia-500 to-orange-400 text-white shadow-lg shadow-fuchsia-500/25"><Lightbulb size={18} /></span>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-bold leading-tight">Adviser</p>
-              <p className="truncate text-[10px] text-emerald-50">Ask anything · Live Business Analysis, Actions &amp; Guidance</p>
+              <p className="bg-gradient-to-r from-indigo-600 via-violet-600 to-fuchsia-600 bg-clip-text text-[15px] font-extrabold leading-tight text-transparent">Adviser</p>
+              <p className="truncate text-[10px] font-medium text-slate-500">Ask anything · Live Business Analysis, Actions &amp; Guidance</p>
             </div>
             <button type="button" aria-label="E-mail" title={mail.state?.connected ? `E-mail connected: ${mail.state.mail?.smtp_user ?? ''}` : 'Connect your e-mail so the Adviser can send e-mails for you'}
-              onClick={() => setMailOpen((v) => !v)} className={`relative rounded p-1.5 hover:bg-white/15 ${mailOpen ? 'bg-white/20' : ''}`}>
+              onClick={() => setMailOpen((v) => !v)} className={`relative rounded p-1.5 text-slate-500 hover:bg-indigo-50 hover:text-indigo-600 ${mailOpen ? 'bg-indigo-50 text-indigo-600' : ''}`}>
               <Mail size={16} />
-              <span className={`absolute right-0.5 top-0.5 h-2 w-2 rounded-full border border-emerald-700 ${mail.state?.connected ? 'bg-lime-300' : 'bg-amber-300'}`} />
+              <span className={`absolute right-0.5 top-0.5 h-2 w-2 rounded-full border-2 border-white ${mail.state?.connected ? 'bg-lime-300' : 'bg-amber-300'}`} />
             </button>
             <button type="button" aria-label={speakOn ? 'Mute answers' : 'Read answers aloud'} title={speakOn ? 'Answers are read aloud (click to mute)' : 'Answers are silent (click to read aloud)'}
-              onClick={() => setSpeakOn((v) => !v)} className="rounded p-1.5 hover:bg-white/15">{speakOn ? <Volume2 size={16} /> : <VolumeX size={16} />}</button>
-            <span className="mx-0.5 h-5 w-px bg-white/30" aria-hidden="true" />
+              onClick={() => setSpeakOn((v) => !v)} className="rounded p-1.5 text-slate-500 hover:bg-indigo-50 hover:text-indigo-600">{speakOn ? <Volume2 size={16} /> : <VolumeX size={16} />}</button>
+            <span className="mx-0.5 h-5 w-px bg-slate-200" aria-hidden="true" />
             <button type="button" aria-label="Minimize the Adviser" title="Minimize (a small box stays in the corner)" onClick={() => { autoMini.current = false; setMini(true); }}
-              className="rounded p-1.5 hover:bg-white/15"><Minus size={17} /></button>
+              className="rounded p-1.5 text-slate-500 hover:bg-indigo-50 hover:text-indigo-600"><Minus size={17} /></button>
             <button type="button" aria-label={maxed ? 'Restore the Adviser size' : 'Maximize the Adviser'} title={maxed ? 'Restore the size' : 'Maximize (full screen)'} onClick={() => setMaxed((v) => !v)}
-              className="rounded p-1.5 hover:bg-white/15">{maxed ? <Minimize2 size={16} /> : <Maximize2 size={16} />}</button>
-            <button type="button" aria-label="Close the Adviser" title="Close" onClick={() => endSession(false)} className="rounded p-1.5 hover:bg-white/15"><X size={17} /></button>
+              className="rounded p-1.5 text-slate-500 hover:bg-indigo-50 hover:text-indigo-600">{maxed ? <Minimize2 size={16} /> : <Maximize2 size={16} />}</button>
+            <button type="button" aria-label="Close the Adviser" title="Close" onClick={() => endSession(false)} className="rounded p-1.5 text-slate-500 hover:bg-indigo-50 hover:text-indigo-600"><X size={17} /></button>
           </div>
           {mailOpen && <MailConnect onClose={() => setMailOpen(false)} />}
 
@@ -1620,7 +1631,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
             <span className="text-[10px] font-semibold uppercase text-slate-400">Language</span>
             {LANGS.map((l) => (
               <button key={l.code} type="button" onClick={() => setLang(l.code)}
-                className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${lang === l.code ? 'bg-emerald-600 text-white' : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-100'}`}>{l.label}</button>
+                className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${lang === l.code ? 'bg-gradient-to-r from-indigo-600 via-violet-600 to-fuchsia-600 text-white shadow-sm shadow-indigo-500/30' : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-100'}`}>{l.label}</button>
             ))}
             <button type="button" role="switch" aria-checked={natural} onClick={() => setNatural((v) => !v)}
               title={natural ? 'A natural, human-sounding voice is used (click for the plain browser voice)' : 'The plain browser voice is used (click for the natural voice)'}
@@ -1653,7 +1664,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
                   // two halves need room: widen the chat panel when it is narrow
                   if (t.id === 'both' && splitW < 720) { const w = Math.min(splitMax(), 760); setSplitW(w); store.set(SPLIT_KEY, String(w)); }
                 }}
-                className={`flex flex-1 items-center justify-center gap-1.5 border-b-2 px-2 py-2 whitespace-nowrap ${view === t.id ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}><t.icon size={13} />{t.label}</button>
+                className={`flex flex-1 items-center justify-center gap-1.5 border-b-2 px-2 py-2 whitespace-nowrap ${view === t.id ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}><t.icon size={13} />{t.label}</button>
             ))}
           </div>
           <div className={view === 'both' ? 'flex min-h-0 flex-1' : 'contents'}>
@@ -1661,7 +1672,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
             <div className={view === 'both' ? 'flex min-h-0 w-1/2 min-w-0 flex-col border-r border-slate-200 bg-slate-50/40' : 'contents'}>
               {view === 'both' && (
                 <div className="flex items-center justify-between border-b border-slate-100 bg-white px-3 py-1.5">
-                  <span className="flex items-center gap-1.5 text-[12px] font-bold text-emerald-700"><BarChart3 size={13} />Report &amp; ideas</span>
+                  <span className="flex items-center gap-1.5 text-[12px] font-bold text-indigo-700"><BarChart3 size={13} />Report &amp; ideas</span>
                   <span className="text-[10px] text-slate-400">Business summary</span>
                 </div>
               )}
@@ -1674,18 +1685,18 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
           <div className={view === 'both' ? 'flex min-h-0 min-w-0 flex-1 flex-col' : 'contents'}>
           {view === 'both' && (
             <div className="flex items-center justify-between border-b border-slate-100 bg-white px-3 py-1.5">
-              <span className="flex items-center gap-1.5 text-[12px] font-bold text-emerald-700"><MessageCircle size={13} />Ask · Chat &amp; Voice</span>
+              <span className="flex items-center gap-1.5 text-[12px] font-bold text-indigo-700"><MessageCircle size={13} />Ask · Chat &amp; Voice</span>
               <span className="text-[10px] text-slate-400">Ask anything</span>
             </div>
           )}
           <>
           <div className="flex items-center gap-1.5 border-b border-slate-100 bg-white px-2.5 py-1.5">
             <button type="button" onClick={() => setShowHistory((v) => !v)}
-              className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-bold ${showHistory ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-emerald-400 hover:text-emerald-700'}`}>
+              className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-bold ${showHistory ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-indigo-400 hover:text-indigo-700'}`}>
               <History size={12} />History
             </button>
             <button type="button" onClick={newChat} disabled={phase === 'thinking'}
-              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-600 hover:border-emerald-400 hover:text-emerald-700 disabled:opacity-50">
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-600 hover:border-indigo-400 hover:text-indigo-700 disabled:opacity-50">
               <Plus size={12} />New chat
             </button>
             <span className="min-w-0 flex-1 truncate text-right text-[11px] text-slate-400" title={chatTitle}>{chatTitle || 'New chat'}</span>
@@ -1697,7 +1708,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
               <div key={g.day} className="mb-2">
                 <p className="mb-1 px-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">{g.day}</p>
                 {g.chats.map((c) => (
-                  <div key={c.id} className={`group mb-1 flex items-center gap-1 rounded-lg border px-2 py-1.5 ${c.id === chatIdRef.current ? 'border-emerald-300 bg-emerald-50' : 'border-slate-100 bg-white hover:border-emerald-200 hover:bg-emerald-50/40'}`}>
+                  <div key={c.id} className={`group mb-1 flex items-center gap-1 rounded-lg border px-2 py-1.5 ${c.id === chatIdRef.current ? 'border-indigo-300 bg-indigo-50' : 'border-slate-100 bg-white hover:border-indigo-200 hover:bg-indigo-50/40'}`}>
                     <button type="button" onClick={() => openChat(c)} className="min-w-0 flex-1 text-left">
                       <span className="block truncate text-xs font-semibold text-slate-800">{c.title}</span>
                       <span className="block text-[10px] text-slate-400">{new Date(c.updatedAt).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })} · {c.msgs.filter((m) => m.role === 'user').length} questions</span>
@@ -1714,21 +1725,27 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
           <div className="flex-1 space-y-2 overflow-y-auto px-3 py-3" aria-live="polite">
             {msgs.map((m) => (
               <div key={m.id} className={m.role === 'user' ? 'flex justify-end' : 'flex'}>
-                <div className={`max-w-[88%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-[13px] leading-relaxed ${m.role === 'user' ? 'bg-emerald-600 text-white' : m.error ? 'border border-red-200 bg-red-50 text-red-800' : 'border border-slate-100 bg-slate-100 text-slate-800'}`}>
+                <div className={`max-w-[88%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-[13px] leading-relaxed ${m.role === 'user' ? 'bg-gradient-to-r from-indigo-600 via-violet-600 to-fuchsia-600 text-white shadow-md shadow-indigo-500/20' : m.error ? 'border border-red-200 bg-red-50 text-red-800' : 'border border-slate-100 bg-slate-100 text-slate-800'}`}>
                   {m.role === 'assistant' && !m.error ? (() => {
                     const b = parseBlocks(m.text);
-                    if (!b.visible && !b.charts.length && !b.teaches.length && !b.dbActions.length) return m.pending ? <span className="inline-flex items-center gap-1 text-slate-400"><Loader2 size={13} className="animate-spin" />Thinking…</span> : '';
+                    const vis = parseVisuals(m.text);
+                    const anyVis = vis.mindmaps.length + vis.diagrams.length + vis.tables.length > 0;
+                    if (!b.visible && !b.charts.length && !b.teaches.length && !b.dbActions.length && !anyVis) return m.pending ? <span className="inline-flex items-center gap-1 text-slate-400"><Loader2 size={13} className="animate-spin" />Thinking…</span> : '';
                     return (
                       <>
                         {b.visible}
                         {m.pending && /\[\[\s*(CHART|PDF)/.test(m.text) && <span className="mt-1 flex items-center gap-1 text-[11px] text-slate-400"><Loader2 size={12} className="animate-spin" />Drawing the graphs…</span>}
                         {b.charts.map((c, i) => <ChartView key={i} chart={c} />)}
+                        {m.pending && /\[\[\s*(MINDMAP|DIAGRAM|TABLE)/.test(m.text) && <span className="mt-1 flex items-center gap-1 text-[11px] text-slate-400"><Loader2 size={12} className="animate-spin" />{lang === 'ta' ? 'வரைகிறது…' : 'Drawing it…'}</span>}
+                        {vis.mindmaps.map((mm, i) => <MindMapView key={`mm${i}`} spec={mm} companyId={company?.id ?? null} onOpen={(p) => { navigate(p); setMini(true); }} />)}
+                        {vis.diagrams.map((d, i) => <DiagramView key={`dg${i}`} spec={d} />)}
+                        {vis.tables.map((t, i) => <TableView key={`tb${i}`} spec={t} />)}
                         {m.pending && /\[\[\s*EMAIL/.test(m.text) && <span className="mt-1 flex items-center gap-1 text-[11px] text-slate-400"><Loader2 size={12} className="animate-spin" />Writing the e-mail…</span>}
                         {!m.pending && b.emails.map((e, i) => <EmailCard key={i} draft={e} onConnect={() => setMailOpen(true)} />)}
                         {m.pending && /\[\[\s*WHATSAPP/.test(m.text) && <span className="mt-1 flex items-center gap-1 text-[11px] text-slate-400"><Loader2 size={12} className="animate-spin" />Writing the WhatsApp message…</span>}
                         {!m.pending && b.whatsapps.map((w, i) => <WhatsAppCard key={`wa${i}`} draft={w} />)}
                         {m.pending && /\[\[\s*DB_ACTION/.test(m.text) && (
-                          <span className="mt-1.5 flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700">
+                          <span className="mt-1.5 flex items-center gap-1.5 text-[11px] font-semibold text-indigo-700">
                             <Loader2 size={12} className="animate-spin" />
                             {lang === 'ta' ? 'விவரங்களைத் தயாரிக்கிறது…' : 'Preparing the details…'}
                           </span>
@@ -1776,7 +1793,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
                         })}
                         {!m.pending && (b.charts.length > 0 || b.pdf) && (
                           <button type="button" onClick={() => void saveReportPdf(b.pdf?.title || b.charts[0]?.title || 'Adviser report', b.visible, b.charts, company?.company_name ?? '')}
-                            className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700">
+                            className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-700">
                             <Download size={13} />Download PDF{b.pdf ? '' : ' report'}
                           </button>
                         )}
@@ -1792,18 +1809,18 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
                 <div className="flex flex-wrap gap-1.5">
                   {STARTERS.map((s) => (
                     <button key={s.en} type="button" onClick={() => { stopListening(); stopSpeaking(); void ask(lang === 'ta' ? s.ta : s.en); }}
-                      className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-left text-[11px] font-medium text-emerald-800 hover:bg-emerald-100">{lang === 'ta' ? s.ta : s.en}</button>
+                      className="rounded-full border border-indigo-100 bg-gradient-to-r from-indigo-50 to-fuchsia-50 px-2.5 py-1 text-left text-[11px] font-medium text-indigo-800 hover:from-indigo-100 hover:to-fuchsia-100">{lang === 'ta' ? s.ta : s.en}</button>
                   ))}
                 </div>
                 {suggestions.length > 0 && (
                   <div className="mt-2.5">
-                    <button type="button" onClick={() => setTips((v) => !v)} className="flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:text-emerald-800">
+                    <button type="button" onClick={() => setTips((v) => !v)} className="flex items-center gap-1 text-[11px] font-semibold text-indigo-700 hover:text-indigo-800">
                       <Lightbulb size={12} />{tips ? 'Hide tips for this page' : 'Tips for this page'}
                     </button>
                     {tips && (
-                      <ul className="mt-1.5 space-y-1 rounded-lg border border-emerald-100 bg-emerald-50 p-2">
+                      <ul className="mt-1.5 space-y-1 rounded-lg border border-indigo-100 bg-indigo-50 p-2">
                         {suggestions.map((s, i) => (
-                          <li key={i} className="flex items-start gap-1.5 text-[11px] text-emerald-900"><span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" /><span>{lang === 'ta' ? s.ta : s.en}</span></li>
+                          <li key={i} className="flex items-start gap-1.5 text-[11px] text-indigo-900"><span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-400" /><span>{lang === 'ta' ? s.ta : s.en}</span></li>
                         ))}
                       </ul>
                     )}
@@ -1841,7 +1858,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
                   </button>
                   <button type="button" onClick={sendVoiceDraft} disabled={(!voiceDraft && !voiceInterim) || phase === 'thinking'}
                     title={lang === 'ta' ? 'இப்போது அனுப்பு (அல்லது "over" / "ஓவர்" சொல்லுங்கள்)' : 'Send now (or say "over")'}
-                    className="inline-flex h-6 items-center gap-1 rounded-md bg-emerald-600 px-2 text-[10px] font-bold text-white hover:bg-emerald-700 disabled:opacity-35">
+                    className="inline-flex h-6 items-center gap-1 rounded-md bg-indigo-600 px-2 text-[10px] font-bold text-white hover:bg-indigo-700 disabled:opacity-35">
                     <Send size={10} />{lang === 'ta' ? 'அனுப்பு' : 'Send'}
                   </button>
                 </div>
@@ -1865,7 +1882,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
               <div className="mt-1 flex items-center justify-between gap-2">
                 <p className="truncate text-[9.5px] text-slate-500">
                   {voiceHint
-                    ? <span className="font-bold text-emerald-700">✓ {voiceHint}</span>
+                    ? <span className="font-bold text-indigo-700">✓ {voiceHint}</span>
                     : (lang === 'ta'
                         ? 'குரல் கட்டளை: "ஓவர்" அனுப்ப · "அழி" நீக்க · "கடைசி அழி" பின்செல்ல · "replace X with Y" திருத்த'
                         : 'Voice edit: say "over" to send · "delete" to clear · "undo" last · "replace X with Y"')}
@@ -1897,9 +1914,9 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
               title={overMode ? 'OVER mode ON: message sends ONLY when you say "over" / "ஓவர்" (click to turn off)' : 'OVER mode OFF: sends automatically when you pause (click to turn ON)'}
               className={`h-9 shrink-0 rounded-full px-2.5 text-[10px] font-extrabold uppercase ${overMode ? 'bg-violet-600 text-white shadow-sm' : 'border border-slate-200 text-slate-500 hover:bg-slate-100'}`}>{overMode ? 'OVER ✓' : 'OVER'}</button>
             <input value={input} onChange={(e) => setInput(e.target.value)} placeholder={lang === 'ta' ? 'உங்கள் கேள்வியை எழுதுங்கள்…' : 'Type your question…'} aria-label="Your question"
-              className="h-9 min-w-0 flex-1 rounded-full border border-slate-200 bg-slate-50 px-3 text-sm text-slate-800 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none" />
+              className="h-9 min-w-0 flex-1 rounded-full border border-slate-200 bg-slate-50 px-3 text-sm text-slate-800 placeholder:text-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:outline-none" />
             <button type="submit" disabled={(!input.trim() && !voiceDraft.trim()) || phase === 'thinking'} aria-label="Send" title="Send"
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40"><Send size={15} /></button>
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-r from-indigo-600 via-violet-600 to-fuchsia-600 text-white shadow-md shadow-fuchsia-500/30 hover:brightness-110 disabled:opacity-40"><Send size={15} /></button>
           </form>
           </>
           </div>

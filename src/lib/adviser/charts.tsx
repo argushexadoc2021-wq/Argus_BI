@@ -7,7 +7,7 @@ import { jsPDF } from 'jspdf';
 
 export interface ChartSpec {
   title: string;
-  type: 'bar' | 'line' | 'pie';
+  type: 'bar' | 'line' | 'pie' | 'donut' | 'area' | 'stacked';
   labels: string[];
   series: { name: string; values: number[] }[];
   unit?: string;
@@ -95,7 +95,7 @@ export function parseBlocks(text: string): Blocks {
         values: (Array.isArray(s?.values) ? s.values : []).slice(0, labels.length).map((v) => Number(v) || 0),
       })).filter((s: { values: number[] }) => s.values.length);
       if (!labels.length || !series.length) continue;
-      const type = j.type === 'line' || j.type === 'pie' ? j.type : 'bar';
+      const type: ChartSpec['type'] = ['line', 'pie', 'donut', 'area', 'stacked'].includes(j.type) ? j.type : 'bar';
       charts.push({ title: String(j.title || 'Chart'), type, labels, series, unit: j.unit ? String(j.unit) : undefined });
     } catch { /* a broken block is skipped */ }
   }
@@ -117,7 +117,7 @@ export function chartSvg(c: ChartSpec, W = 560, H = 300): string {
   const font = `font-family="Segoe UI, Noto Sans Tamil, Arial, sans-serif"`;
   const out: string[] = [`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><rect width="${W}" height="${H}" fill="#ffffff"/>`,
     `<text x="${W / 2}" y="20" text-anchor="middle" font-size="14" font-weight="700" fill="#0f172a" ${font}>${esc(c.title)}</text>`];
-  if (c.type === 'pie') {
+  if (c.type === 'pie' || c.type === 'donut') {
     const vals = c.series[0].values.map((v) => Math.max(0, v));
     const total = vals.reduce((a, v) => a + v, 0) || 1;
     const cx = 150, cy = H / 2 + 12, r = Math.min(110, H / 2 - 30);
@@ -131,6 +131,11 @@ export function chartSvg(c: ChartSpec, W = 560, H = 300): string {
         : `<path d="M${cx},${cy} L${p(a0)} A${r},${r} 0 ${large} 1 ${p(a1)} Z" fill="${COLORS[i % COLORS.length]}" stroke="#fff" stroke-width="2"/>`);
       a0 = a1;
     });
+    if (c.type === 'donut') {
+      out.push(`<circle cx="${cx}" cy="${cy}" r="${r * 0.56}" fill="#ffffff"/>`,
+        `<text x="${cx}" y="${cy - 2}" text-anchor="middle" font-size="15" font-weight="700" fill="#0f172a" ${font}>${esc(short(total, c.unit))}</text>`,
+        `<text x="${cx}" y="${cy + 14}" text-anchor="middle" font-size="10" fill="#64748b" ${font}>Total</text>`);
+    }
     c.labels.forEach((l, i) => {
       const y = 50 + i * 20;
       if (y > H - 10) return;
@@ -140,7 +145,9 @@ export function chartSvg(c: ChartSpec, W = 560, H = 300): string {
   } else {
     const L = 58, R = 12, T = 34, B = 54;
     const pw = W - L - R, ph = H - T - B;
-    const all = c.series.flatMap((s) => s.values);
+    const all = c.type === 'stacked'
+      ? c.labels.map((_, i) => c.series.reduce((a, s) => a + Math.max(0, s.values[i] ?? 0), 0))
+      : c.series.flatMap((s) => s.values);
     const max = Math.max(1, ...all), min = Math.min(0, ...all);
     const y = (v: number) => T + ph - ((v - min) / (max - min || 1)) * ph;
     for (let g = 0; g <= 4; g++) {
@@ -150,7 +157,19 @@ export function chartSvg(c: ChartSpec, W = 560, H = 300): string {
     }
     const n = c.labels.length, slot = pw / n;
     c.labels.forEach((l, i) => out.push(`<text x="${L + slot * i + slot / 2}" y="${T + ph + 16}" text-anchor="middle" font-size="10" fill="#334155" ${font}>${esc(l.length > 12 ? `${l.slice(0, 11)}…` : l)}</text>`));
-    if (c.type === 'bar') {
+    if (c.type === 'stacked') {
+      const bw = Math.max(6, slot * 0.6);
+      c.labels.forEach((_, i) => {
+        let base = 0;
+        c.series.forEach((s, si) => {
+          const v = Math.max(0, s.values[i] ?? 0);
+          const x = L + slot * i + (slot - bw) / 2;
+          out.push(`<rect x="${x}" y="${y(base + v)}" width="${bw}" height="${Math.max(0, y(base) - y(base + v))}" fill="${COLORS[si % COLORS.length]}"/>`);
+          base += v;
+        });
+        if (n <= 12) out.push(`<text x="${L + slot * i + slot / 2}" y="${y(base) - 4}" text-anchor="middle" font-size="9" fill="#0f172a" ${font}>${esc(short(base, c.unit))}</text>`);
+      });
+    } else if (c.type === 'bar') {
       const k = c.series.length, bw = Math.max(4, (slot * 0.7) / k);
       c.series.forEach((s, si) => s.values.forEach((v, i) => {
         const x = L + slot * i + (slot - bw * k) / 2 + bw * si;
@@ -160,6 +179,9 @@ export function chartSvg(c: ChartSpec, W = 560, H = 300): string {
     } else {
       c.series.forEach((s, si) => {
         const pts = s.values.map((v, i) => `${L + slot * i + slot / 2},${y(v)}`).join(' ');
+        if (c.type === 'area' && s.values.length) {
+          out.push(`<polygon points="${L + slot / 2},${y(Math.max(0, min))} ${pts} ${L + slot * (s.values.length - 1) + slot / 2},${y(Math.max(0, min))}" fill="${COLORS[si % COLORS.length]}" opacity="0.18"/>`);
+        }
         out.push(`<polyline points="${pts}" fill="none" stroke="${COLORS[si % COLORS.length]}" stroke-width="2.5"/>`);
         s.values.forEach((v, i) => out.push(`<circle cx="${L + slot * i + slot / 2}" cy="${y(v)}" r="3.5" fill="${COLORS[si % COLORS.length]}"/>`));
       });

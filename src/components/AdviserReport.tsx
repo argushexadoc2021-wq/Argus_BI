@@ -275,7 +275,7 @@ export function AdviserReportPanel({ lang, speakOn, can, onOpenPage, say, stopSp
                 { label: 'Orders late', value: String(s.lateOrders), bad: s.lateOrders > 0, sub: 'past delivery date' },
                 { label: 'Delivered, not billed', value: String(s.unbilledDcs), bad: s.unbilledDcs > 0, sub: 'delivery challans' },
               ].map((k) => (
-                <div key={k.label} className={`rounded-lg border px-2.5 py-1.5 ${k.bad ? 'border-amber-200 bg-amber-50' : 'border-emerald-200 bg-emerald-50'}`}>
+                <div key={k.label} className={`rounded-lg border px-2.5 py-1.5 ${k.bad ? 'border-slate-200 border-l-4 border-l-orange-400 bg-white shadow-sm' : 'border-slate-200 border-l-4 border-l-indigo-400 bg-white shadow-sm'}`}>
                   <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-700">{k.label}</p>
                   <p className="text-base font-extrabold leading-tight text-slate-950">{k.value}</p>
                   <p className="text-[10px] text-slate-700">{k.sub}</p>
@@ -287,22 +287,22 @@ export function AdviserReportPanel({ lang, speakOn, can, onOpenPage, say, stopSp
             </p>
 
             {daily && daily.ideas.length > 0 && (
-              <div className="rounded-lg border border-emerald-300 bg-gradient-to-br from-emerald-100 to-teal-100 p-2.5 shadow-sm" data-testid="daily-ideas">
+              <div className="rounded-xl border border-indigo-100 bg-gradient-to-br from-white via-indigo-50/60 to-fuchsia-50/70 p-2.5 shadow-sm ring-1 ring-white" data-testid="daily-ideas">
                 <div className="mb-1.5 flex items-center gap-1.5">
-                  <Lightbulb size={14} className="text-emerald-600" />
-                  <span className="text-[11px] font-extrabold uppercase tracking-wide text-emerald-800">{lang === 'ta' ? 'இன்றைய மேம்பாட்டு யோசனைகள்' : "Today's improvements"}</span>
-                  <span className="text-[10px] text-emerald-700">{new Date().toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' })}</span>
+                  <Lightbulb size={14} className="text-fuchsia-500" />
+                  <span className="bg-gradient-to-r from-indigo-600 to-fuchsia-600 bg-clip-text text-[11px] font-extrabold uppercase tracking-wide text-transparent">{lang === 'ta' ? 'இன்றைய மேம்பாட்டு யோசனைகள்' : "Today's improvements"}</span>
+                  <span className="text-[10px] text-slate-500">{new Date().toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' })}</span>
                   <span className={`ml-auto rounded-full px-1.5 py-px text-[9px] font-bold uppercase ${daily.ai ? 'bg-violet-100 text-violet-700' : 'bg-emerald-100 text-emerald-700'}`}>{dailyBusy ? 'AI writing…' : daily.ai ? 'AI' : 'Daily tips'}</span>
                 </div>
                 <ol className="space-y-1.5">
                   {daily.ideas.map((x, n) => (
                     <li key={`${n}-${x.title}`} className="flex gap-2 text-[12px] leading-snug text-slate-900">
-                      <span className="mt-px flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-[10px] font-bold text-white">{n + 1}</span>
+                      <span className="mt-px flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 via-fuchsia-500 to-orange-400 text-[10px] font-bold text-white">{n + 1}</span>
                       <span><b className="text-slate-900">{x.title}.</b> {x.how}</span>
                     </li>
                   ))}
                 </ol>
-                <p className="mt-1.5 text-[10px] text-emerald-700">{lang === 'ta' ? 'ஒவ்வொரு நாளும் மாறும்.' : 'A new set every day.'}</p>
+                <p className="mt-1.5 text-[10px] text-slate-500">{lang === 'ta' ? 'ஒவ்வொரு நாளும் மாறும்.' : 'A new set every day.'}</p>
               </div>
             )}
 
@@ -322,13 +322,13 @@ export function AdviserReportPanel({ lang, speakOn, can, onOpenPage, say, stopSp
                   {isOpen && (
                     <div className="space-y-1.5 border-t border-slate-100 px-2.5 py-2 text-[12px] leading-relaxed text-slate-700">
                       <p>{i.detail}</p>
-                      <p className="rounded bg-emerald-50 px-2 py-1 text-emerald-900"><b>What to do: </b>{i.action}</p>
+                      <p className="rounded bg-indigo-50 px-2 py-1 text-indigo-900"><b>What to do: </b>{i.action}</p>
                       {i.items.length > 0 && (
                         <ul className="space-y-0.5">
                           {i.items.map((t, n) => <li key={n} className="flex gap-1.5 text-[11px] text-slate-600"><span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-slate-300" /><span>{t}</span></li>)}
                         </ul>
                       )}
-                      {i.page && <button type="button" onClick={() => onOpenPage(i.page!)} className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 hover:text-emerald-800">Open the screen<ArrowRight size={12} /></button>}
+                      {i.page && <button type="button" onClick={() => onOpenPage(i.page!)} className="inline-flex items-center gap-1 text-[11px] font-bold text-indigo-700 hover:text-indigo-800">Open the screen<ArrowRight size={12} /></button>}
                     </div>
                   )}
                 </div>
