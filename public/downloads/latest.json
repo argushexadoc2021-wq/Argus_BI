@@ -1,15 +1,15 @@
 {
-  "version": "1.1.148",
-  "notes": "Argus Business Intelligence v1.1.148: the latest improvements and fixes.\nInstalled copies offer this update by themselves (Settings > Updates > Check for Updates).",
-  "pub_date": "2026-11-21T07:56:52.988Z",
+  "version": "1.1.149",
+  "notes": "Argus Business Intelligence v1.1.149: the latest improvements and fixes.\nInstalled copies offer this update by themselves (Settings > Updates > Check for Updates).",
+  "pub_date": "2026-11-21T08:20:27.090Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUdDRhNmVKRVY2M3l4YW4wanFDYkQ0bEM4SUtmcHNrVHQ2a3NwQW1hTDZkcEZtZE1Na0lFMHlMYUxXLzhWMkp5MzBobWpuSDNBUTdNVlBSSS9Qei9CVGZMNlEwbGEwZEFFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MjQ3ODA5CWZpbGU6QXJndXMgQnVzaW5lc3MgSW50ZWxsaWdlbmNlXzEuMS4xNDhfeDY0LXNldHVwLmV4ZQl2ZXJzaW9uOjEuMS4xNDgKbFhDdUpiV1ZBa05zYXBoVTZTdERpRzh2cG1vVlVGSmVnWUlObTBCeU5oZ1p3djEyZiswdnF3eFFGYTFTVU9RTzduQVhWVWhuZDZrN3R5Wmp1NGw1Qmc9PQo=",
-      "url": "https://github.com/jananimohan-04/with_cnc/releases/download/v1.1.148/Argus.Business.Intelligence_1.1.148_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUdDRhNmVKRVY2M3dQNGptUVE4NTI2Y0VRQ2hYOS96OW96aFBEZnh4b1pVL01DelhpSEFtY1ZKdXQ2TTVyeUp2cTBWaTQ0ZVJXMDdKRHZlVjhiZmVNSGVNWDZKRUVDblFRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MjQ5MjIyCWZpbGU6QXJndXMgQnVzaW5lc3MgSW50ZWxsaWdlbmNlXzEuMS4xNDlfeDY0LXNldHVwLmV4ZQl2ZXJzaW9uOjEuMS4xNDkKbXY1YWNvTE1QenBreHZBa0ZNQ2lQUC9XOU8rd25RVS9zbHZxQ1BDaDVhc0toa3N3dnNKd3B4L3k2dXNZWFlwMkFJUS9FakdLMjFkZTlEWnNmS1U5QVE9PQo=",
+      "url": "https://github.com/jananimohan-04/with_cnc/releases/download/v1.1.149/Argus.Business.Intelligence_1.1.149_x64-setup.exe"
     },
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUdDRhNmVKRVY2M3l4YW4wanFDYkQ0bEM4SUtmcHNrVHQ2a3NwQW1hTDZkcEZtZE1Na0lFMHlMYUxXLzhWMkp5MzBobWpuSDNBUTdNVlBSSS9Qei9CVGZMNlEwbGEwZEFFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MjQ3ODA5CWZpbGU6QXJndXMgQnVzaW5lc3MgSW50ZWxsaWdlbmNlXzEuMS4xNDhfeDY0LXNldHVwLmV4ZQl2ZXJzaW9uOjEuMS4xNDgKbFhDdUpiV1ZBa05zYXBoVTZTdERpRzh2cG1vVlVGSmVnWUlObTBCeU5oZ1p3djEyZiswdnF3eFFGYTFTVU9RTzduQVhWVWhuZDZrN3R5Wmp1NGw1Qmc9PQo=",
-      "url": "https://github.com/jananimohan-04/with_cnc/releases/download/v1.1.148/Argus.Business.Intelligence_1.1.148_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUdDRhNmVKRVY2M3dQNGptUVE4NTI2Y0VRQ2hYOS96OW96aFBEZnh4b1pVL01DelhpSEFtY1ZKdXQ2TTVyeUp2cTBWaTQ0ZVJXMDdKRHZlVjhiZmVNSGVNWDZKRUVDblFRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MjQ5MjIyCWZpbGU6QXJndXMgQnVzaW5lc3MgSW50ZWxsaWdlbmNlXzEuMS4xNDlfeDY0LXNldHVwLmV4ZQl2ZXJzaW9uOjEuMS4xNDkKbXY1YWNvTE1QenBreHZBa0ZNQ2lQUC9XOU8rd25RVS9zbHZxQ1BDaDVhc0toa3N3dnNKd3B4L3k2dXNZWFlwMkFJUS9FakdLMjFkZTlEWnNmS1U5QVE9PQo=",
+      "url": "https://github.com/jananimohan-04/with_cnc/releases/download/v1.1.149/Argus.Business.Intelligence_1.1.149_x64-setup.exe"
     }
   }
 }
