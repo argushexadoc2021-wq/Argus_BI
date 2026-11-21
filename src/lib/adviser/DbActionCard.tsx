@@ -7,6 +7,7 @@ import {
   ExternalLink,
   Loader2,
   Pencil,
+  Sparkles,
   X,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
@@ -26,19 +27,108 @@ const num = (v: unknown) => {
 };
 const today = () => new Date().toISOString().split('T')[0];
 
-const ACTION_BADGE: Record<DbActionType, { label: string; ta: string; tone: string }> = {
+export const ACTION_BADGE: Record<string, { label: string; ta: string; tone: string }> = {
   add_enquiry: { label: 'New Enquiry', ta: 'புதிய என்குயரி', tone: 'bg-sky-100 text-sky-800 border-sky-200' },
   edit_enquiry: { label: 'Edit Enquiry', ta: 'என்குயரி திருத்தம்', tone: 'bg-amber-100 text-amber-800 border-amber-200' },
   delete_enquiry: { label: 'Delete Enquiry', ta: 'என்குயரி நீக்கம்', tone: 'bg-red-100 text-red-700 border-red-200' },
   add_company: { label: 'New Company', ta: 'புதிய கம்பெனி', tone: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
+  edit_company: { label: 'Edit Company', ta: 'கம்பெனி திருத்தம்', tone: 'bg-amber-100 text-amber-800 border-amber-200' },
+  delete_company: { label: 'Delete Company', ta: 'கம்பெனி நீக்கம்', tone: 'bg-red-100 text-red-700 border-red-200' },
   add_quotation: { label: 'New Quotation', ta: 'புதிய கொட்டேஷன்', tone: 'bg-violet-100 text-violet-800 border-violet-200' },
+  edit_quotation: { label: 'Edit Quotation', ta: 'கொட்டேஷன் திருத்தம்', tone: 'bg-amber-100 text-amber-800 border-amber-200' },
   add_sales_order: { label: 'New Sales Order', ta: 'புதிய Sales Order', tone: 'bg-teal-100 text-teal-800 border-teal-200' },
   edit_sales_order: { label: 'Edit Sales Order', ta: 'Sales Order திருத்தம்', tone: 'bg-amber-100 text-amber-800 border-amber-200' },
   delete_sales_order: { label: 'Delete Sales Order', ta: 'Sales Order நீக்கம்', tone: 'bg-red-100 text-red-700 border-red-200' },
   move_stage: { label: 'Move Pipeline Stage', ta: 'நிலை மாற்றம்', tone: 'bg-indigo-100 text-indigo-800 border-indigo-200' },
+  add_task: { label: 'New Employee Task', ta: 'புதிய ஊழியர் பணி', tone: 'bg-indigo-100 text-indigo-800 border-indigo-200' },
+  add_scheduled_job: { label: 'Schedule Job', ta: 'பணி திட்டமிடல்', tone: 'bg-purple-100 text-purple-800 border-purple-200' },
+  add_work_order: { label: 'New Work Order', ta: 'புதிய Work Order', tone: 'bg-blue-100 text-blue-800 border-blue-200' },
+  add_machine: { label: 'New Machine', ta: 'புதிய மெஷின்', tone: 'bg-blue-100 text-blue-800 border-blue-200' },
   add_process: { label: 'New Process', ta: 'புதிய Process', tone: 'bg-orange-100 text-orange-800 border-orange-200' },
   add_supplier: { label: 'New Supplier', ta: 'புதிய Supplier', tone: 'bg-cyan-100 text-cyan-800 border-cyan-200' },
+  add_purchase_order: { label: 'New Purchase Order', ta: 'புதிய PO', tone: 'bg-teal-100 text-teal-800 border-teal-200' },
+  add_inward: { label: 'New Inward', ta: 'புதிய Inward', tone: 'bg-amber-100 text-amber-800 border-amber-200' },
+  add_delivery_challan: { label: 'New Delivery Challan', ta: 'புதிய DC', tone: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
+  add_dc: { label: 'New Delivery Challan', ta: 'புதிய DC', tone: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
+  add_invoice: { label: 'New Invoice', ta: 'புதிய இன்வாய்ஸ்', tone: 'bg-violet-100 text-violet-800 border-violet-200' },
+  add_inventory_item: { label: 'New Stock Item', ta: 'புதிய ஸ்டாக் பொருள்', tone: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
+  adjust_stock: { label: 'Stock Adjustment', ta: 'ஸ்டாக் சரிசெய்தல்', tone: 'bg-amber-100 text-amber-800 border-amber-200' },
+  add_bank_entry: { label: 'Bank Entry', ta: 'வங்கி வரவு/செலவு', tone: 'bg-sky-100 text-sky-800 border-sky-200' },
+  add_petty_cash: { label: 'Petty Cash', ta: 'சில்லறை செலவு', tone: 'bg-rose-100 text-rose-800 border-rose-200' },
+  add_payment_received: { label: 'Payment Received', ta: 'கட்டணம் வரவு', tone: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
+  punch_attendance: { label: 'Attendance Punch', ta: 'வருகை பதிவு', tone: 'bg-indigo-100 text-indigo-800 border-indigo-200' },
+  apply_leave: { label: 'Apply Leave', ta: 'விடுப்பு விண்ணப்பம்', tone: 'bg-amber-100 text-amber-800 border-amber-200' },
+  add_employee: { label: 'New Team Member', ta: 'புதிய ஊழியர்', tone: 'bg-blue-100 text-blue-800 border-blue-200' },
+  db_insert: { label: 'Direct Database Insert', ta: 'டேட்டாபேஸ் பதிவு', tone: 'bg-purple-100 text-purple-800 border-purple-200' },
+  db_update: { label: 'Direct Database Update', ta: 'டேட்டாபேஸ் திருத்தம்', tone: 'bg-amber-100 text-amber-800 border-amber-200' },
+  db_delete: { label: 'Direct Database Delete', ta: 'டேட்டாபேஸ் நீக்கம்', tone: 'bg-red-100 text-red-700 border-red-200' },
 };
+
+export function defaultWhereForAction(action: string): { path: string; label: string } {
+  switch (action) {
+    case 'add_enquiry':
+    case 'edit_enquiry':
+    case 'delete_enquiry':
+    case 'add_company':
+    case 'edit_company':
+    case 'delete_company':
+    case 'add_quotation':
+    case 'edit_quotation':
+    case 'add_sales_order':
+    case 'edit_sales_order':
+    case 'delete_sales_order':
+    case 'move_stage':
+    case 'add_inward':
+    case 'add_delivery_challan':
+    case 'add_dc':
+      return { path: '/sales/pipeline', label: 'Sales Pipeline' };
+
+    case 'add_task':
+    case 'add_job_card':
+    case 'add_scheduled_job':
+      return { path: '/production/scheduling', label: 'Production Scheduling' };
+
+    case 'add_work_order':
+    case 'edit_work_order':
+      return { path: '/production/work-orders', label: 'Work Orders' };
+
+    case 'add_machine':
+      return { path: '/production/machines', label: 'Shop Floor & Machines' };
+
+    case 'add_process':
+      return { path: '/production/process-master', label: 'Process Master' };
+
+    case 'add_supplier':
+    case 'add_purchase_order':
+      return { path: '/purchasing/orders', label: 'Purchase Orders & Suppliers' };
+
+    case 'add_inventory_item':
+    case 'adjust_stock':
+      return { path: '/inventory/stock', label: 'Inventory & Stock' };
+
+    case 'add_invoice':
+    case 'add_payment_received':
+      return { path: '/finance/invoices', label: 'Invoices & Receivables' };
+
+    case 'add_bank_entry':
+      return { path: '/finance/bank-entry', label: 'Bank Entry' };
+
+    case 'add_petty_cash':
+      return { path: '/finance/petty-cash', label: 'Petty Cash' };
+
+    case 'punch_attendance':
+      return { path: '/attendance/dashboard', label: 'AI Attendance Dashboard' };
+
+    case 'apply_leave':
+      return { path: '/attendance/leaves', label: 'Leave Applications' };
+
+    case 'add_employee':
+      return { path: '/admin/users', label: 'User & Team Management' };
+
+    default:
+      return { path: '/dashboard', label: 'Command Center' };
+  }
+}
 
 /** Executes a confirmed Adviser DB action directly against Supabase and refreshes the live UI. */
 export async function executeAdviserDbAction(
@@ -58,7 +148,7 @@ export async function executeAdviserDbAction(
     block.action === 'delete_sales_order' ||
     block.action === 'move_stage'
   ) {
-    res = await runAction(block.action, p, ctx);
+    res = await runAction(block.action as any, p, ctx);
   } else if (block.action === 'add_quotation') {
     const companyName = str(p.company || p.customer || p.name);
     if (!companyName) return { ok: false, message: 'Company name is required for a quotation.' };
@@ -121,7 +211,7 @@ export async function executeAdviserDbAction(
       res = {
         ok: true,
         message: `Quotation ${qNo} created for ${companyName} (${items[0].partName} × ${totalQty}).`,
-        where: { path: '/sales/in-house', label: 'Sales Pipeline' },
+        where: { path: '/sales/pipeline', label: 'Sales Pipeline' },
       };
     }
   } else if (block.action === 'add_process') {
@@ -182,6 +272,314 @@ export async function executeAdviserDbAction(
         where: { path: '/purchasing/orders', label: 'Suppliers' },
       };
     }
+  } else if (block.action === 'add_task') {
+    const taskName = str(p.task_name || p.name || 'Shop Task');
+    const memberName = str(p.member_name || p.who || p.employee || '');
+    const taskDate = str(p.task_date || p.date || today());
+    const startTime = str(p.start_time || '09:00').slice(0, 5);
+    const endTime = str(p.end_time || '10:00').slice(0, 5);
+    const payload: Record<string, any> = {
+      id: crypto.randomUUID(),
+      task_name: taskName,
+      member_name: memberName,
+      task_date: taskDate,
+      start_time: startTime,
+      end_time: endTime,
+      mode: 'planned',
+      status: 'Planned',
+      machine: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    if (ctx.companyId) payload.company_id = ctx.companyId;
+    const { error } = await supabase.from('cnc_scheduled_tasks').insert([payload]);
+    if (error) {
+      res = { ok: false, message: `Could not save task: ${error.message}` };
+    } else {
+      res = {
+        ok: true,
+        message: `Task "${taskName}" assigned to ${memberName || 'team'} for ${taskDate} (${startTime}–${endTime}).`,
+        where: { path: '/production/scheduling', label: 'Production Scheduling' },
+      };
+    }
+  } else if (block.action === 'add_machine') {
+    const code = str(p.code || p.machine_code || `CNC-${Math.floor(10 + Math.random() * 90)}`);
+    const name = str(p.name || p.machine_name || code);
+    const type = str(p.type || p.machine_type || 'VMC');
+    const payload: Record<string, any> = {
+      id: crypto.randomUUID(),
+      code,
+      name,
+      type,
+      status: str(p.status || 'Idle'),
+      hourly_rate: num(p.hourly_rate ?? p.rate ?? 500),
+      location: str(p.location || 'Shop Floor A'),
+      utilization: 0,
+    };
+    if (ctx.companyId) payload.company_id = ctx.companyId;
+    const { error } = await supabase.from('cnc_machines').insert([payload]);
+    if (error) {
+      res = { ok: false, message: `Could not save machine: ${error.message}` };
+    } else {
+      res = {
+        ok: true,
+        message: `Machine ${code} — ${name} (${type}) added to Shop Floor.`,
+        where: { path: '/production/machines', label: 'Shop Floor & Machines' },
+      };
+    }
+  } else if (block.action === 'add_work_order') {
+    const woNo = str(p.wo_no || `WO-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`);
+    const customer = str(p.customer || p.company || 'Direct Customer');
+    const partName = str(p.part_name || p.product || 'Machined Part');
+    const qty = num(p.qty || p.quantity || 1);
+    const payload: Record<string, any> = {
+      id: crypto.randomUUID(),
+      wo_no: woNo,
+      customer,
+      part_name: partName,
+      qty_ordered: qty,
+      qty_completed: 0,
+      status: 'New',
+      priority: str(p.priority || 'Normal'),
+      order_date: today(),
+      due_date: str(p.due_date || p.delivery_date || today()),
+    };
+    if (ctx.companyId) payload.company_id = ctx.companyId;
+    const { error } = await supabase.from('cnc_work_orders').insert([payload]);
+    if (error) {
+      res = { ok: false, message: `Could not save work order: ${error.message}` };
+    } else {
+      res = {
+        ok: true,
+        message: `Work Order ${woNo} created for ${customer} (${partName} × ${qty}).`,
+        where: { path: '/production/work-orders', label: 'Work Orders' },
+      };
+    }
+  } else if (block.action === 'punch_attendance') {
+    const empName = str(p.employee_name || p.name || p.employee || 'Staff Member');
+    const punchType = str(p.punch_type || 'Check-in');
+    const payload: Record<string, any> = {
+      id: crypto.randomUUID(),
+      user_name: empName,
+      punch_type: punchType,
+      punch_time: new Date().toISOString(),
+      verification_type: 'AI_AGENT',
+      location: str(p.location || 'CNC Works Factory Site'),
+    };
+    if (ctx.companyId) payload.company_id = ctx.companyId;
+    const { error } = await supabase.from('attendance_logs').insert([payload]);
+    if (error) {
+      res = { ok: false, message: `Could not log attendance: ${error.message}` };
+    } else {
+      res = {
+        ok: true,
+        message: `Attendance ${punchType} punched for ${empName} via AI Agent.`,
+        where: { path: '/attendance/dashboard', label: 'AI Attendance Dashboard' },
+      };
+    }
+  } else if (block.action === 'add_bank_entry') {
+    const party = str(p.party_name || p.party || p.customer || p.supplier || 'General');
+    const amt = num(p.amount || p.value || 0);
+    const type = str(p.type || (amt >= 0 ? 'Receipt' : 'Payment'));
+    const payload: Record<string, any> = {
+      id: crypto.randomUUID(),
+      party_name: party,
+      amount: amt,
+      type,
+      transaction_date: str(p.date || today()),
+      description: str(p.description || p.remarks || `AI Entry for ${party}`),
+      status: 'Categorized',
+    };
+    if (ctx.companyId) payload.company_id = ctx.companyId;
+    const { error } = await supabase.from('cnc_bank_transactions').insert([payload]);
+    if (error) {
+      res = { ok: false, message: `Could not save bank entry: ${error.message}` };
+    } else {
+      res = {
+        ok: true,
+        message: `Bank entry ${type} of ₹${amt.toLocaleString('en-IN')} for ${party} recorded.`,
+        where: { path: '/finance/bank-entry', label: 'Bank Entry' },
+      };
+    }
+  } else if (block.action === 'add_petty_cash') {
+    const item = str(p.item || p.description || p.remarks || 'Shop expense');
+    const amt = num(p.amount || p.price || 0);
+    const payload: Record<string, any> = {
+      id: crypto.randomUUID(),
+      inward_no: `PC-${Date.now().toString().slice(-6)}`,
+      party_name: str(p.paid_to || p.vendor || 'Petty Cash Voucher'),
+      part_name: item,
+      quantity: 1,
+      price: amt,
+      petty_amount: amt,
+      total_amount: amt,
+      petty_cash: true,
+      paid_by: str(p.paid_by || 'Cash in Hand'),
+      inward_date: today(),
+      status: 'Processed',
+    };
+    if (ctx.companyId) payload.company_id = ctx.companyId;
+    const { error } = await supabase.from('cnc_inwards').insert([payload]);
+    if (error) {
+      res = { ok: false, message: `Could not save petty cash: ${error.message}` };
+    } else {
+      res = {
+        ok: true,
+        message: `Petty cash voucher of ₹${amt.toLocaleString('en-IN')} for "${item}" logged.`,
+        where: { path: '/finance/petty-cash', label: 'Petty Cash' },
+      };
+    }
+  } else if (block.action === 'add_inward') {
+    const party = str(p.party || p.supplier || p.customer || p.company);
+    const part = str(p.part_name || p.product || 'Raw Material');
+    const qty = num(p.qty || p.quantity || 1);
+    const inwNo = str(p.inward_no || `INW-${Math.floor(1000 + Math.random() * 9000)}`);
+    const payload: Record<string, any> = {
+      id: crypto.randomUUID(),
+      inward_no: inwNo,
+      party_name: party,
+      part_name: part,
+      quantity: qty,
+      price: num(p.price || 0),
+      party_dc_no: str(p.party_dc_no || p.dc_no || ''),
+      inward_date: today(),
+      status: 'Pending',
+    };
+    if (ctx.companyId) payload.company_id = ctx.companyId;
+    const { error } = await supabase.from('cnc_inwards').insert([payload]);
+    if (error) {
+      res = { ok: false, message: `Could not save inward: ${error.message}` };
+    } else {
+      res = {
+        ok: true,
+        message: `Inward ${inwNo} recorded for ${party} (${part} × ${qty}).`,
+        where: { path: '/sales/pipeline', label: 'Sales Pipeline (Inwards)' },
+      };
+    }
+  } else if (block.action === 'add_delivery_challan' || block.action === 'add_dc') {
+    const customer = str(p.customer || p.company);
+    const part = str(p.part_name || p.product || 'Finished Goods');
+    const qty = num(p.qty || p.quantity || 1);
+    const dcNo = str(p.dc_no || `DC-${Math.floor(1000 + Math.random() * 9000)}`);
+    const payload: Record<string, any> = {
+      id: crypto.randomUUID(),
+      delivery_no: dcNo,
+      customer,
+      part_name: part,
+      quantity: qty,
+      delivery_date: today(),
+      status: 'Dispatched',
+    };
+    if (ctx.companyId) payload.company_id = ctx.companyId;
+    const { error } = await supabase.from('cnc_deliveries').insert([payload]);
+    if (error) {
+      res = { ok: false, message: `Could not save DC: ${error.message}` };
+    } else {
+      res = {
+        ok: true,
+        message: `Delivery Challan ${dcNo} created for ${customer} (${part} × ${qty}).`,
+        where: { path: '/sales/pipeline', label: 'Delivery Challans' },
+      };
+    }
+  } else if (block.action === 'add_invoice') {
+    const customer = str(p.customer || p.company);
+    const part = str(p.part_name || p.product || 'Machined Components');
+    const qty = num(p.qty || p.quantity || 1);
+    const rate = num(p.rate || p.price || 100);
+    const invNo = str(p.invoice_no || `INV-${Math.floor(1000 + Math.random() * 9000)}`);
+    const gst = num(p.gst || 18);
+    const total = Math.round(qty * rate * (1 + gst / 100));
+    const payload: Record<string, any> = {
+      id: crypto.randomUUID(),
+      invoice_no: invNo,
+      customer,
+      part_name: part,
+      quantity: qty,
+      unit_price: rate,
+      total_amount: total,
+      status: 'Pending',
+      invoice_date: today(),
+    };
+    if (ctx.companyId) payload.company_id = ctx.companyId;
+    const { error } = await supabase.from('cnc_invoices').insert([payload]);
+    if (error) {
+      res = { ok: false, message: `Could not save invoice: ${error.message}` };
+    } else {
+      res = {
+        ok: true,
+        message: `Tax Invoice ${invNo} for ₹${total.toLocaleString('en-IN')} created for ${customer}.`,
+        where: { path: '/finance/invoices', label: 'Invoices' },
+      };
+    }
+  } else if (block.action === 'add_purchase_order') {
+    const supplier = str(p.supplier || p.vendor || p.name);
+    const item = str(p.item || p.material || p.product || 'Raw Material');
+    const qty = num(p.qty || p.quantity || 1);
+    const rate = num(p.price || p.rate || 0);
+    const poNo = str(p.po_no || `PO-${Math.floor(1000 + Math.random() * 9000)}`);
+    const payload: Record<string, any> = {
+      id: crypto.randomUUID(),
+      po_no: poNo,
+      supplier,
+      item_name: item,
+      quantity: qty,
+      unit_price: rate,
+      total_amount: qty * rate,
+      status: 'Draft',
+      order_date: today(),
+    };
+    if (ctx.companyId) payload.company_id = ctx.companyId;
+    const { error } = await supabase.from('cnc_purchase_orders').insert([payload]);
+    if (error) {
+      res = { ok: false, message: `Could not save purchase order: ${error.message}` };
+    } else {
+      res = {
+        ok: true,
+        message: `Purchase Order ${poNo} created for ${supplier} (${item} × ${qty}).`,
+        where: { path: '/purchasing/orders', label: 'Purchase Orders' },
+      };
+    }
+  } else if (block.action === 'add_inventory_item') {
+    const name = str(p.name || p.part_name || p.item);
+    const qty = num(p.qty || p.stock || p.quantity || 0);
+    const payload: Record<string, any> = {
+      id: crypto.randomUUID(),
+      item_code: str(p.code || `ITEM-${Math.floor(100 + Math.random() * 900)}`),
+      item_name: name,
+      category: str(p.category || 'Raw Material'),
+      quantity: qty,
+      unit: str(p.unit || 'Nos'),
+      unit_price: num(p.price || p.rate || 0),
+      min_stock: num(p.min_stock || 10),
+    };
+    if (ctx.companyId) payload.company_id = ctx.companyId;
+    const { error } = await supabase.from('cnc_inventory').insert([payload]);
+    if (error) {
+      res = { ok: false, message: `Could not save inventory item: ${error.message}` };
+    } else {
+      res = {
+        ok: true,
+        message: `Stock item "${name}" (${qty} ${payload.unit}) saved to Inventory.`,
+        where: { path: '/inventory/stock', label: 'Inventory & Stock' },
+      };
+    }
+  } else if (block.action === 'db_insert') {
+    const table = str(block.table || p.table);
+    if (!table) return { ok: false, message: 'Table name is required for database insert.' };
+    const row = (p.data && typeof p.data === 'object') ? { ...p.data } : { ...p };
+    delete row.table;
+    if (!row.id) row.id = crypto.randomUUID();
+    if (ctx.companyId && !row.company_id) row.company_id = ctx.companyId;
+    const { error } = await supabase.from(table as never).insert([row] as never);
+    if (error) {
+      res = { ok: false, message: `Database insert failed into ${table}: ${error.message}` };
+    } else {
+      res = {
+        ok: true,
+        message: `Record successfully inserted into ${table}.`,
+        where: block.where || { path: '/dashboard', label: 'Dashboard' },
+      };
+    }
   } else {
     res = { ok: false, message: `Unsupported action: ${block.action}` };
   }
@@ -231,20 +629,31 @@ export function DbActionCard({
       return { ...prev, products: list };
     });
 
-  const isDestructive = block.action.startsWith('delete_');
-  const isPending = state.status === 'pending' || state.status === 'error';
+  const isPending = state.status === 'pending';
+  const isDestructive =
+    block.action === 'delete_enquiry' ||
+    block.action === 'delete_sales_order' ||
+    block.action === 'delete_company';
 
-  const summaryRows = (): { label: string; value: string }[] => {
-    const p = draftParams;
-    const rows: { label: string; value: string }[] = [];
-    if (p.company) rows.push({ label: ta ? 'கம்பெனி' : 'Company', value: str(p.company) });
-    if (p.name && !p.company) rows.push({ label: ta ? 'பெயர்' : 'Name', value: str(p.name) });
-    if (p.process_name) rows.push({ label: ta ? 'Process பெயர்' : 'Process Name', value: str(p.process_name) });
-    if (p.process_category) rows.push({ label: ta ? 'வகை' : 'Category', value: str(p.process_category) });
-    if (p.cost_per_hour != null && p.cost_per_hour !== '') rows.push({ label: ta ? 'மணி நேர விலை' : 'Cost / Hour', value: `₹${num(p.cost_per_hour)}` });
-    if (p.identifier) rows.push({ label: ta ? 'பதிவு எண் / பெயர்' : 'Record', value: str(p.identifier) });
-    if (p.target_stage) rows.push({ label: ta ? 'புதிய நிலை' : 'Move To', value: str(p.target_stage) });
-    if (Array.isArray(p.products) && p.products.length > 0) {
+  const summaryRows = () => {
+    const p = isPending ? draftParams : block.params || {};
+    const rows: Array<{ label: string; value: string }> = [];
+
+    if (p.company || p.customer) rows.push({ label: ta ? 'கம்பெனி' : 'Company', value: str(p.company || p.customer) });
+    if (p.name) rows.push({ label: ta ? 'பெயர்' : 'Name', value: str(p.name) });
+    if (p.task_name) rows.push({ label: 'Task', value: str(p.task_name) });
+    if (p.member_name || p.who || p.employee) rows.push({ label: ta ? 'ஊழியர்' : 'Employee', value: str(p.member_name || p.who || p.employee) });
+    if (p.task_date) rows.push({ label: ta ? 'தேதி' : 'Date', value: str(p.task_date) });
+    if (p.code || p.machine_code) rows.push({ label: 'Code', value: str(p.code || p.machine_code) });
+    if (p.process_name) rows.push({ label: 'Process', value: str(p.process_name) });
+    if (p.item || p.item_name || p.part_name || p.product) rows.push({ label: ta ? 'பொருள்' : 'Item', value: str(p.item || p.item_name || p.part_name || p.product) });
+    if (p.qty || p.quantity) rows.push({ label: ta ? 'அளவு' : 'Qty', value: String(p.qty || p.quantity) });
+    if (p.amount || p.price || p.rate || p.hourly_rate || p.cost_per_hour) {
+      const v = p.amount || p.price || p.rate || p.hourly_rate || p.cost_per_hour;
+      rows.push({ label: ta ? 'தொகை / விலை' : 'Amount / Rate', value: `₹${Number(v).toLocaleString('en-IN')}` });
+    }
+
+    if (Array.isArray(p.products)) {
       p.products.forEach((prod: any, i: number) => {
         const parts = [
           str(prod?.name || prod?.partName || '-'),
@@ -257,131 +666,52 @@ export function DbActionCard({
         });
       });
     }
-    if (p.updates && typeof p.updates === 'object') {
-      Object.entries(p.updates).forEach(([k, v]) => {
-        if (v !== '' && v != null) rows.push({ label: k.replace(/_/g, ' '), value: String(v) });
-      });
-    }
     if (p.phone) rows.push({ label: ta ? 'போன்' : 'Phone', value: str(p.phone) });
-    if (p.email) rows.push({ label: 'Email', value: str(p.email) });
-    if (p.gst) rows.push({ label: 'GSTIN', value: str(p.gst) });
-    if (p.address || p.city) rows.push({ label: ta ? 'முகவரி' : 'Address', value: str(p.address || p.city) });
     if (p.po_no) rows.push({ label: 'PO No', value: str(p.po_no) });
-    if (p.delivery_date) rows.push({ label: ta ? 'டெலிவரி தேதி' : 'Delivery Date', value: str(p.delivery_date) });
+    if (p.delivery_date) rows.push({ label: ta ? 'டெலிவரி' : 'Delivery', value: str(p.delivery_date) });
     if (p.remarks) rows.push({ label: ta ? 'குறிப்பு' : 'Remarks', value: str(p.remarks) });
     return rows;
   };
 
+  const targetWhere = block.where || defaultWhereForAction(block.action);
+
   return (
-    <div className="mt-1.5 overflow-hidden rounded-lg border border-emerald-300 bg-white shadow-sm">
+    <div className="mt-1.5 overflow-hidden rounded-xl border border-indigo-200/80 bg-white shadow-sm transition-all hover:shadow-md">
       {/* Header */}
-      <div className="flex items-center justify-between gap-2 border-b border-slate-100 bg-gradient-to-r from-emerald-50 to-teal-50 px-2.5 py-1">
+      <div className="flex items-center justify-between gap-2 border-b border-indigo-100 bg-gradient-to-r from-indigo-50/80 to-slate-50 px-3 py-1.5">
         <div className="flex min-w-0 items-center gap-1.5">
-          <Database size={12} className="shrink-0 text-emerald-600" />
+          <Database size={13} className="shrink-0 text-indigo-600" />
           <span className="truncate text-[11px] font-extrabold text-slate-800">
-            {ta ? 'சரிபார்த்து உறுதிசெய்' : 'Check & confirm'}
+            {ta ? 'சரிபார்த்து உறுதிசெய் (Auto-Action)' : 'AI Database Automation'}
           </span>
         </div>
-        <span className={`shrink-0 rounded-full border px-1.5 py-0 text-[9.5px] font-bold ${badge.tone}`}>
+        <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold ${badge.tone}`}>
           {ta ? badge.ta : badge.label}
         </span>
       </div>
 
       {/* Body */}
-      <div className="px-2.5 py-1.5">
+      <div className="px-3 py-2">
         {editing && isPending ? (
           <div className="space-y-2 text-[11.5px]">
-            {(draftParams.company !== undefined ||
-              block.action === 'add_enquiry' ||
-              block.action === 'add_quotation' ||
-              block.action === 'add_sales_order') && (
-              <div>
-                <label className="block text-[10px] font-bold uppercase text-slate-500">
-                  {ta ? 'கம்பெனி பெயர்' : 'Company Name'}
-                </label>
-                <input
-                  value={str(draftParams.company)}
-                  onChange={(e) => setField('company', e.target.value)}
-                  className="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1 text-[12px] text-slate-800 focus:border-emerald-500 focus:outline-none"
-                />
-              </div>
-            )}
-
-            {(block.action === 'add_company' || block.action === 'add_supplier') && (
-              <div>
-                <label className="block text-[10px] font-bold uppercase text-slate-500">
-                  {ta ? 'பெயர்' : 'Name'}
-                </label>
-                <input
-                  value={str(draftParams.name)}
-                  onChange={(e) => setField('name', e.target.value)}
-                  className="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1 text-[12px] text-slate-800 focus:border-emerald-500 focus:outline-none"
-                />
-              </div>
-            )}
-
-            {block.action === 'add_process' && (
-              <div className="grid grid-cols-2 gap-1.5">
-                <div>
-                  <label className="block text-[10px] font-bold uppercase text-slate-500">Process Name</label>
+            {Object.keys(draftParams).slice(0, 8).map((k) => {
+              if (k === 'products') return null;
+              return (
+                <div key={k}>
+                  <label className="block text-[10px] font-bold uppercase text-slate-500">
+                    {k.replace(/_/g, ' ')}
+                  </label>
                   <input
-                    value={str(draftParams.process_name || draftParams.name)}
-                    onChange={(e) => setField('process_name', e.target.value)}
-                    className="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1 text-[12px]"
+                    value={str(draftParams[k])}
+                    onChange={(e) => setField(k, e.target.value)}
+                    className="mt-0.5 w-full rounded-md border border-slate-300 px-2 py-1 text-[11.5px] text-slate-800 focus:border-indigo-500 focus:outline-none"
                   />
                 </div>
-                <div>
-                  <label className="block text-[10px] font-bold uppercase text-slate-500">Cost / Hr (₹)</label>
-                  <input
-                    type="number"
-                    value={draftParams.cost_per_hour ?? 0}
-                    onChange={(e) => setField('cost_per_hour', Number(e.target.value))}
-                    className="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1 text-[12px]"
-                  />
-                </div>
-              </div>
-            )}
-
-            {Array.isArray(draftParams.products) &&
-              draftParams.products.map((prod: any, idx: number) => (
-                <div key={idx} className="grid grid-cols-3 gap-1.5">
-                  <div className="col-span-2">
-                    <label className="block text-[10px] font-bold uppercase text-slate-500">
-                      {ta ? 'பொருள் பெயர்' : 'Product Name'}
-                    </label>
-                    <input
-                      value={str(prod?.name)}
-                      onChange={(e) => setProductField(idx, 'name', e.target.value)}
-                      className="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1 text-[12px]"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold uppercase text-slate-500">
-                      {ta ? 'அளவு (Qty)' : 'Qty'}
-                    </label>
-                    <input
-                      type="number"
-                      value={prod?.qty ?? 1}
-                      onChange={(e) => setProductField(idx, 'qty', Number(e.target.value))}
-                      className="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1 text-[12px]"
-                    />
-                  </div>
-                </div>
-              ))}
-
-            <div>
-              <label className="block text-[10px] font-bold uppercase text-slate-500">
-                {ta ? 'குறிப்பு' : 'Remarks'}
-              </label>
-              <input
-                value={str(draftParams.remarks)}
-                onChange={(e) => setField('remarks', e.target.value)}
-                className="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1 text-[12px]"
-              />
-            </div>
+              );
+            })}
           </div>
         ) : (
-          <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11.5px] leading-snug">
+          <div className="flex flex-wrap gap-x-3 gap-y-1 py-0.5 text-[11px] leading-tight">
             {summaryRows().map((r, i) => (
               <span key={i} className="min-w-0">
                 <span className="font-semibold text-slate-500">{r.label}: </span>
@@ -391,28 +721,26 @@ export function DbActionCard({
           </div>
         )}
 
-        {/* Status messages */}
+        {/* Saved confirmation with direct navigation link */}
         {state.status === 'saved' && (
-          <div className="mt-2.5 flex items-start gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-[11.5px] font-semibold text-emerald-800">
-            <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-emerald-600" />
-            <div className="min-w-0 flex-1">
-              <p>{state.message || (ta ? 'வெற்றிகரமாகச் சேமிக்கப்பட்டது!' : 'Saved successfully!')}</p>
-              {state.where && (
-                <button
-                  type="button"
-                  onClick={() => onOpenRoute(state.where!.path)}
-                  className="mt-1 inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 underline hover:text-emerald-900"
-                >
-                  <ExternalLink size={11} />
-                  {ta ? `${state.where.label}-ல் பார்` : `Open ${state.where.label}`}
-                </button>
-              )}
+          <div className="mt-2 flex items-center justify-between gap-2 rounded-lg bg-emerald-50 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-800 border border-emerald-200">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <CheckCircle2 size={13} className="text-emerald-600 shrink-0" />
+              <span className="truncate">{state.message || (ta ? 'சேமிக்கப்பட்டது!' : 'Saved successfully!')}</span>
             </div>
+            <button
+              type="button"
+              onClick={() => onOpenRoute(targetWhere.path)}
+              className="inline-flex shrink-0 items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-emerald-700 underline hover:text-emerald-900"
+            >
+              <span>{targetWhere.label}</span>
+              <ExternalLink size={10} />
+            </button>
           </div>
         )}
 
         {state.status === 'cancelled' && (
-          <p className="mt-2 rounded-lg bg-slate-100 px-2.5 py-1.5 text-[11px] font-semibold text-slate-500">
+          <p className="mt-2 rounded-lg bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-500">
             {ta ? 'ரத்து செய்யப்பட்டது — எதுவும் சேமிக்கப்படவில்லை.' : 'Cancelled — nothing was saved.'}
           </p>
         )}
@@ -426,29 +754,29 @@ export function DbActionCard({
 
         {/* Confirm / Edit / Cancel controls */}
         {isPending && (
-          <div className="mt-1.5 border-t border-slate-100 pt-1.5">
-            <div className="flex flex-wrap items-center gap-1" title={ta ? 'சரியா? "சரி / Yes" என்று சொல்லலாம் அல்லது கிளிக் செய்யலாம்' : 'Is this correct? Say "Yes / Confirm" or click'}>
+          <div className="mt-2 border-t border-slate-100 pt-2">
+            <div className="flex flex-wrap items-center gap-1.5">
               <button
                 type="button"
                 onClick={() => {
                   setEditing(false);
                   onConfirm({ ...block, params: draftParams });
                 }}
-                className={`inline-flex items-center justify-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-bold text-white shadow-sm ${
+                className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-extrabold text-white shadow-sm transition-all hover:scale-[1.02] ${
                   isDestructive
                     ? 'bg-red-600 hover:bg-red-700'
-                    : 'bg-emerald-600 hover:bg-emerald-700'
+                    : 'bg-gradient-to-r from-indigo-600 to-brand-600 hover:from-indigo-700 hover:to-brand-700'
                 }`}
               >
-                <Check size={13} />
+                <Sparkles size={12} className="text-amber-300" />
                 {isDestructive
                   ? (ta ? 'உறுதி, நீக்கு' : 'Confirm Delete')
-                  : (ta ? 'சரி, உறுதிசெய்' : 'Confirm')}
+                  : (ta ? 'தானாக டைப் செய்து சேமி (Auto-Run)' : 'Auto-Type & Save')}
               </button>
               <button
                 type="button"
                 onClick={() => setEditing((v) => !v)}
-                className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-600 hover:bg-slate-50"
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-600 hover:bg-slate-50"
               >
                 <Pencil size={11} />
                 {editing ? (ta ? 'முடி' : 'Done') : (ta ? 'திருத்து' : 'Edit')}
@@ -456,7 +784,7 @@ export function DbActionCard({
               <button
                 type="button"
                 onClick={onCancel}
-                className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-500 hover:bg-red-50 hover:text-red-600"
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-500 hover:bg-red-50 hover:text-red-600"
               >
                 <X size={12} />
                 {ta ? 'ரத்து' : 'Cancel'}
@@ -467,9 +795,9 @@ export function DbActionCard({
         )}
 
         {state.status === 'saving' && (
-          <div className="mt-2.5 flex items-center gap-1.5 text-[11.5px] font-semibold text-emerald-700">
-            <Loader2 size={13} className="animate-spin" />
-            {ta ? 'சேமிக்கிறது…' : 'Saving…'}
+          <div className="mt-2 flex items-center gap-1.5 text-[11.5px] font-semibold text-indigo-700">
+            <Loader2 size={13} className="animate-spin text-indigo-600" />
+            {ta ? 'தானாக செயல்படுத்துகிறது…' : 'AI Automating…'}
           </div>
         )}
       </div>

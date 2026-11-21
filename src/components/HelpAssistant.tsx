@@ -14,7 +14,8 @@ import { ChartView, parseBlocks, saveReportPdf, speakablePart, type DbActionBloc
 import { EmailCard, MailConnect, useAdviserMail } from '@/lib/adviser/mail';
 import { WhatsAppCard } from '@/lib/adviser/whatsapp';
 import { LiveScreenGuide, collectVisibleScreenTargets } from '@/lib/adviser/LiveScreenGuide';
-import { DbActionCard, executeAdviserDbAction, type DbActionUiState } from '@/lib/adviser/DbActionCard';
+import { DbActionCard, executeAdviserDbAction, defaultWhereForAction, type DbActionUiState } from '@/lib/adviser/DbActionCard';
+import { runAiAutomation, isAutoExecuteEnabled, setAutoExecuteEnabled } from '@/lib/adviser/aiAutomator';
 import { deleteChat, groupByDay, loadChats, saveChat, type SavedChat } from '@/lib/adviser/chatHistory';
 import { boostAudio } from '@/lib/voiceBoost';
 import { supabase } from '@/lib/supabase';
@@ -654,27 +655,45 @@ type is "bar" (compare), "line" (trend over time), "area" (trend with the area f
 E-MAILS: when the person asks you to write, draft or send an e-mail (payment reminder, quotation follow-up, delivery update, thank-you, anything), write one short line saying the draft is below for them to check, then at the VERY END add exactly one block per e-mail, on its own line (valid JSON; use \n for new lines in the body):
 [[EMAIL {"to":"customer@example.com","cc":"","subject":"...","body":"Dear ...,\n\n...\n\nRegards,\n<sender name>\n<company>"}]]
 Write a polite, clear, professional e-mail in the language they ask for (English by default), with the real figures, invoice / order numbers and dates from COMPANY DATA. Take the receiver's address from CUSTOMER CONTACTS; if it is not there, leave "to" empty and say they must type it. Sign it with the SENDER's name and company. Never say the e-mail was sent: the person checks it and presses Send.
-DIRECT DATABASE INSERT / EDIT / DELETE / STAGE MOVE (WITH USER CONFIRMATION — TOP PRIORITY!):
-Whenever the user asks you TO ACTUALLY DO / ADD / CREATE / INSERT / ENTER / PUT / RECORD / EDIT / UPDATE / DELETE / MOVE a record in Argus BI (in Tamil, Tanglish, or English — for example: "ஒரு என்குயரி ஒன்னு போடணும் கம்பெனி நேம் சிஸ்டம் ப்ராடக்ட் நேம் ஃபிகர் குவாண்டிட்டி ரெண்டு", "add enquiry for System, product Figure, qty 2", "add company XYZ", "create quotation ...", "create sales order ...", "add process Powder Coating outsource rate 250", "add supplier Metro Steel", "move 1002 to quotation", "edit enquiry 1002 qty to 10", "delete enquiry 1002"):
-- NEVER give manual step-by-step instructions and NEVER emit [[TEACH ...]]! You CAN execute this directly in the database after the user confirms!
-- Extract every field accurately: convert spoken Tamil/English numbers (ஒன்னு=1, ரெண்டு=2, மூணு=3, நாலு=4, அஞ்சு=5, ஆறு=6, ஏழு=7, எட்டு=8, ஒன்பது=9, பத்து=10, இருபது=20, ஐம்பது=50, நூறு=100) into numeric values; transliterate Tamil-script English names cleanly into readable English (e.g. சிஸ்டம் -> System, ஃபிகர் -> Figure, ஷாஃப்ட் -> Shaft), and match an existing company name from COMPANY DATA if it closely matches.
-- Ask for confirmation ONLY ONCE, and only through the card: write ONE short line in the user's selected language such as "Please check the details below and confirm." (Tamil: "கீழே உள்ள விவரங்களைச் சரிபார்த்து உறுதிசெய்யுங்கள்."). Do NOT list the fields in the text and do NOT ask "is this correct?" in the text: the card shows every detail with a Confirm button.
-- In that SAME reply you MUST add ONE [[DB_ACTION ...]] block at the VERY END on its own line (valid JSON). Never reply with only a question and no block. If a needed field is missing (for example the product name), still add the block with what you have and say in the one line which field to fill in with Edit.
-- Never mention "DB" or "database" to the user: say "save" / "சேமி".
-- The block, by action:
-  * Add Enquiry: [[DB_ACTION {"action":"add_enquiry","title":"Add Enquiry","summary":"Insert new enquiry","params":{"company":"System","products":[{"name":"Figure","qty":2}],"remarks":""}}]]
-  * Edit Enquiry: [[DB_ACTION {"action":"edit_enquiry","title":"Edit Enquiry","summary":"Update enquiry","params":{"identifier":"1002","updates":{"quantity":10,"part_name":"","customer":""}}}]]
-  * Delete Enquiry: [[DB_ACTION {"action":"delete_enquiry","title":"Delete Enquiry","summary":"Delete enquiry","params":{"identifier":"1002"}}}]]
-  * Add Company/Client: [[DB_ACTION {"action":"add_company","title":"Add Company","summary":"Add new client company","params":{"name":"System","phone":"","email":"","address":"","gst":"","contact_person":""}}]]
-  * Add Quotation: [[DB_ACTION {"action":"add_quotation","title":"Add Quotation","summary":"Create draft quotation","params":{"company":"System","products":[{"name":"Figure","qty":2,"price":500,"gst":18}],"remarks":""}}]]
-  * Add Sales Order: [[DB_ACTION {"action":"add_sales_order","title":"Create Sales Order","summary":"Insert new sales order","params":{"company":"System","products":[{"name":"Figure","qty":2,"price":500,"gst":18}],"po_no":"","delivery_date":""}}]]
-  * Edit Sales Order: [[DB_ACTION {"action":"edit_sales_order","title":"Edit Sales Order","summary":"Update sales order","params":{"identifier":"SO-2026-1001","updates":{"quantity":10,"unit_price":500,"po_no":"","delivery_date":""}}}]]
-  * Delete Sales Order: [[DB_ACTION {"action":"delete_sales_order","title":"Delete Sales Order","summary":"Delete sales order","params":{"identifier":"SO-2026-1001"}}}]]
-  * Move Pipeline Stage: [[DB_ACTION {"action":"move_stage","title":"Move Stage","summary":"Move record stage","params":{"identifier":"1002","target_stage":"Quotation","price":0}}]]
-  * Add Process (Process Master): [[DB_ACTION {"action":"add_process","title":"Add Process","summary":"Add process to Process Master","params":{"process_name":"Powder Coating","process_category":"Outsource Process","cost_per_hour":250,"machine_type":"","description":""}}]]
-  * Add Supplier: [[DB_ACTION {"action":"add_supplier","title":"Add Supplier","summary":"Add supplier","params":{"name":"Metro Steel","category":"Raw Material","phone":"","email":"","city":"","gst":""}}]]
+DIRECT AUTONOMOUS DATABASE CONTROL & RPA AUTOMATION (TOP PRIORITY — THE ENTIRE DB IS UNDER AI CONTROL!):
+Whenever the user asks you to ADD / CREATE / INSERT / ENTER / PUT / RECORD / SCHEDULE / LOG / EDIT / UPDATE / DELETE / MOVE ANY record in Argus BI (in Tamil, Tanglish, or English):
+- The entire database is under your control! You have direct robotic execution across EVERY module: Enquiries, Companies, Quotations, Sales Orders, Scheduled Tasks (employee assigned), Job Cards, Work Orders, Machines, In-House & Outsource Processes, Inwards/GRN, Delivery Challans, Invoices, Purchase Orders, Suppliers, Inventory Items, Stock Adjustments, Bank Entries, Petty Cash, Attendance Punches, Leaves, Team Users, or ANY custom table via universal db_insert.
+- You MUST generate the appropriate [[DB_ACTION ...]] block on its own line at the VERY END.
+- When you emit [[DB_ACTION ...]], the built-in Robotic Process Automation (RPA) engine will automatically navigate to the target module screen, open the typing overlay, simulate typing each field character-by-character into the form, and commit the record to Supabase!
+- NEVER say "I cannot access the database" or give manual click-by-click instructions when asked to add/insert data.
+- Extract every field accurately:
+  * Numbers: parse spoken Tamil/English numbers (ஒன்னு=1, ரெண்டு=2, பத்து=10, etc.) into numbers.
+  * Transliterate Tamil names cleanly to English (சிஸ்டம் -> System, ஃபிகர் -> Figure, ஷாஃப்ட் -> Shaft, லேத் -> Lathe).
+  * Match existing companies or parts from COMPANY DATA if named.
+- Write ONE concise sentence in the user's language (Tamil: "கீழே உள்ள விவரங்களைச் சரிபார்த்து உறுதிசெய்யுங்கள்." / English: "Automating record entry — details below:").
+- The action types & parameters (always include "where" with the destination route):
+  * Add Enquiry: [[DB_ACTION {"action":"add_enquiry","where":"/sales/in-house","title":"Add Enquiry","summary":"Insert new enquiry","params":{"company":"System","products":[{"name":"Figure","qty":2}],"remarks":""}}]]
+  * Edit Enquiry: [[DB_ACTION {"action":"edit_enquiry","where":"/sales/in-house","title":"Edit Enquiry","summary":"Update enquiry","params":{"identifier":"1002","updates":{"quantity":10,"part_name":"","customer":""}}}]]
+  * Delete Enquiry: [[DB_ACTION {"action":"delete_enquiry","where":"/sales/in-house","title":"Delete Enquiry","summary":"Delete enquiry","params":{"identifier":"1002"}}}]]
+  * Add Company/Client: [[DB_ACTION {"action":"add_company","where":"/admin/companies","title":"Add Company","summary":"Add new client company","params":{"name":"System Tech","phone":"9876543210","email":"info@system.com","address":"Chennai","gst":""}}]]
+  * Add Quotation: [[DB_ACTION {"action":"add_quotation","where":"/sales/in-house","title":"Add Quotation","summary":"Create quotation","params":{"company":"System","products":[{"name":"Figure","qty":2,"price":500,"gst":18}],"remarks":""}}]]
+  * Add Sales Order: [[DB_ACTION {"action":"add_sales_order","where":"/sales/in-house","title":"Create Sales Order","summary":"Insert sales order","params":{"company":"System","products":[{"name":"Figure","qty":2,"price":500,"gst":18}],"po_no":"PO-99","delivery_date":"2026-04-15"}}]]
+  * Schedule Task: [[DB_ACTION {"action":"schedule_task","where":"/production/scheduling","title":"Schedule Task","summary":"Assign task to team member","params":{"title":"Inspect VMC Machine","assigned_to":"John","due_date":"2026-04-01","priority":"high","notes":""}}]]
+  * Add Work Order: [[DB_ACTION {"action":"add_work_order","where":"/production/scheduling","title":"Create Work Order","summary":"Insert work order","params":{"item_name":"Shaft 25mm","quantity":100,"due_date":"2026-04-10"}}]]
+  * Add Job Card: [[DB_ACTION {"action":"add_job_card","where":"/production/job-cards","title":"Create Job Card","summary":"Create production job card","params":{"part_name":"Shaft 25mm","quantity":100,"target_machine":"VMC-1","target_operator":"Ramesh"}}]]
+  * Add Machine: [[DB_ACTION {"action":"add_machine","where":"/settings/machines","title":"Add Machine","summary":"Register machine","params":{"name":"VMC-03","code":"VMC-03","type":"CNC Milling","capacity":"12000 RPM"}}]]
+  * Add Process: [[DB_ACTION {"action":"add_process","where":"/production/process-master","title":"Add Process","summary":"Add process to Process Master","params":{"process_name":"Powder Coating","process_category":"Outsource Process","cost_per_hour":250,"machine_type":""}}]]
+  * Record Inward / GRN: [[DB_ACTION {"action":"add_inward","where":"/inventory/inward","title":"Record Inward","summary":"Log incoming raw materials","params":{"supplier_name":"Metro Steel","material":"EN8 Steel Bar","quantity":500,"unit":"Kg","dc_no":"DC-104"}}]]
+  * Add Delivery Challan: [[DB_ACTION {"action":"add_delivery_challan","where":"/sales/in-house","title":"Generate DC","summary":"Create delivery challan","params":{"customer_name":"Alpha Tech","items":[{"name":"Shaft 25mm","quantity":50}]}}]]
+  * Add Invoice: [[DB_ACTION {"action":"add_invoice","where":"/finance/invoices","title":"Create Invoice","summary":"Generate sales invoice","params":{"customer_name":"Alpha Tech","amount":45000,"due_date":"2026-04-20"}}]]
+  * Add Purchase Order: [[DB_ACTION {"action":"add_purchase_order","where":"/inventory/purchases","title":"Create Purchase Order","summary":"Raise PO to supplier","params":{"supplier_name":"Metro Steel","material":"EN8 Steel Bar","quantity":500,"unit_price":72}}]]
+  * Add Supplier: [[DB_ACTION {"action":"add_supplier","where":"/inventory/suppliers","title":"Add Supplier","summary":"Add supplier directory entry","params":{"name":"Metro Steel","category":"Raw Material","phone":"9876543210","email":"sales@metrosteel.com","city":"Coimbatore"}}]]
+  * Add Inventory Item: [[DB_ACTION {"action":"add_inventory_item","where":"/inventory/stock","title":"Add Stock Item","summary":"Add item to inventory","params":{"name":"Carbide Insert CNMG 120408","quantity":100,"min_quantity":20,"unit":"Pcs"}}]]
+  * Stock Adjustment: [[DB_ACTION {"action":"add_stock_adjustment","where":"/inventory/adjustments","title":"Stock Adjustment","summary":"Adjust stock balance","params":{"item_name":"Carbide Insert","quantity_change":-5,"reason":"Damaged during setup"}}]]
+  * Record Bank Entry: [[DB_ACTION {"action":"add_bank_entry","where":"/finance/bank-entry","title":"Record Bank Entry","summary":"Log bank transaction","params":{"entry_type":"credit","amount":50000,"description":"Client Payment Alpha Tech","reference_no":"NEFT-991"}}]]
+  * Record Petty Cash: [[DB_ACTION {"action":"add_petty_cash","where":"/finance/petty-cash","title":"Record Petty Cash","summary":"Log cash expense","params":{"expense_type":"Consumables","amount":1200,"description":"Shopfloor coolant purchase"}}]]
+  * Record Attendance Punch: [[DB_ACTION {"action":"record_attendance","where":"/hr/ai-attendance","title":"Attendance Punch","summary":"Record punch in/out","params":{"employee_name":"Ramesh","punch_type":"in"}}]]
+  * Apply Leave: [[DB_ACTION {"action":"apply_leave","where":"/hr/leave-management","title":"Apply Leave","summary":"Record leave application","params":{"employee_name":"Ramesh","leave_type":"casual","from_date":"2026-04-02","to_date":"2026-04-03","reason":"Personal work"}}]]
+  * Add User / Staff: [[DB_ACTION {"action":"add_user","where":"/admin/users","title":"Add Team Member","summary":"Add new system user","params":{"full_name":"Karthik M","email":"karthik@example.com","role":"operator"}}]]
+  * Move Pipeline Stage: [[DB_ACTION {"action":"move_stage","where":"/sales/in-house","title":"Move Stage","summary":"Move pipeline stage","params":{"identifier":"1002","target_stage":"Quotation"}}]]
+  * Universal Insert (for any arbitrary table): [[DB_ACTION {"action":"db_insert","table":"table_name","where":"/route","title":"Insert Record","summary":"Insert custom record","params":{"col1":"val1","col2":100}}]]
 - If a critical required field is completely missing (e.g. user said "add enquiry" without naming company or product), ask for the missing detail in 1 short question and wait before emitting [[DB_ACTION ...]].
-- NEVER say the record is already saved before the user confirms! Never read the [[DB_ACTION ...]] JSON aloud.
+- NEVER say the record is already saved before the user confirms or automation runs! Never read the [[DB_ACTION ...]] JSON aloud.
 
 LIVE ON-SCREEN SPOTLIGHT & POINTER GUIDE: ONLY when the person asks "how to...", "where is...", "show me...", "teach me...", "explain...", "steps for...", "எப்படி...", "எங்கே...", "காட்டு..." (NOT when asking you to add/create/insert/edit/delete data!) about ANY screen, button, tile, section, or workflow inside Argus BI, first write a brief clear answer, then at the VERY END add ONE [[TEACH ...]] block on its own line (valid JSON, 2 to 5 steps). The app will AUTOMATICALLY navigate to the route and shine a live glowing spotlight + bouncing arrow DIRECTLY onto each exact real UI element on the right-side screen while explaining it!
 Format:
@@ -763,6 +782,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
   const [liveGuide, setLiveGuide] = useState<TeachBlock | null>(null);
   // Minimize: the window shrinks to a small box in the bottom-left corner. Maximize: it fills the screen.
   const [mini, setMini] = useState(false);
+  const [autoExec, setAutoExec] = useState<boolean>(() => isAutoExecuteEnabled());
   const [maxed, setMaxed] = useState(false);
   // While the Adviser points things out on the screen, it shrinks itself so it does not hide what it is explaining,
   // and opens again when the showing ends (unless the person minimized it themselves).
@@ -910,16 +930,26 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
 
   const confirmDbAction = useCallback(async (key: string, block: DbActionBlock, appendReply = false) => {
     setDbActionStates((prev) => ({ ...prev, [key]: { status: 'saving' } }));
-    const res = await executeAdviserDbAction(block, {
-      companyId: companyRef.current || null,
-      canDo: (m, a) => canDoRef.current(m, a),
-    });
+    setMini(true);
+    const targetWhere = block.where || defaultWhereForAction(block.action, block.table);
+    const res = await runAiAutomation(
+      block,
+      targetWhere,
+      () => executeAdviserDbAction(block, {
+        companyId: companyRef.current || null,
+        canDo: (m, a) => canDoRef.current(m, a),
+      }),
+      (path) => {
+        const clean = path.startsWith('/') ? path : '/' + path;
+        navigate(clean);
+      }
+    );
     if (pendingDbRef.current?.key === key) pendingDbRef.current = null;
     if (res.ok) {
-      setDbActionStates((prev) => ({ ...prev, [key]: { status: 'saved', message: res.message, where: res.where } }));
+      setDbActionStates((prev) => ({ ...prev, [key]: { status: 'saved', message: res.message, where: res.where || targetWhere } }));
       const okMsg = langRef.current === 'ta'
-        ? `✓ சேமிக்கப்பட்டது! ${res.message}`
-        : `✓ Saved to database! ${res.message}`;
+        ? `✓ தானாக தட்டச்சு செய்யப்பட்டு சேமிக்கப்பட்டது! ${res.message}`
+        : `✓ Automated and saved to database! ${res.message}`;
       if (appendReply) {
         setMsgs((ms) => [...ms, { id: ++chatSeq, role: 'assistant', text: okMsg }]);
         history.current.push({ role: 'assistant', text: okMsg });
@@ -940,7 +970,7 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
       }
       setPhase('ready');
     }
-  }, [SR]);
+  }, [SR, navigate]);
 
   const cancelDbAction = useCallback((key: string, appendReply = false) => {
     if (pendingDbRef.current?.key === key) pendingDbRef.current = null;
@@ -1101,7 +1131,14 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
         history.current = history.current.slice(-16);
         const parsedDone = parseBlocks(full);
         if (parsedDone.dbActions.length > 0) {
-          pendingDbRef.current = { key: `${aid}-0`, block: parsedDone.dbActions[0] };
+          const firstBlock = parsedDone.dbActions[0];
+          const firstKey = `${aid}-0`;
+          pendingDbRef.current = { key: firstKey, block: firstBlock };
+          if (isAutoExecuteEnabled()) {
+            setTimeout(() => {
+              void confirmDbAction(firstKey, firstBlock, false);
+            }, 600);
+          }
         } else if (parsedDone.teaches.length > 0 && activeRef.current) {
           setLiveGuide(parsedDone.teaches[0]);
         }
@@ -1689,6 +1726,13 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
               onClick={() => setMailOpen((v) => !v)} className={`relative rounded p-1.5 text-slate-500 hover:bg-indigo-50 hover:text-indigo-600 ${mailOpen ? 'bg-indigo-50 text-indigo-600' : ''}`}>
               <Mail size={16} />
               <span className={`absolute right-0.5 top-0.5 h-2 w-2 rounded-full border-2 border-white ${mail.state?.connected ? 'bg-lime-300' : 'bg-amber-300'}`} />
+            </button>
+            <button type="button" aria-label={autoExec ? 'Robotic Auto-Type & Save: Enabled' : 'Robotic Auto-Type & Save: Manual Confirm'}
+              title={autoExec ? '⚡ Robotic Auto-Type & Save is ON (AI automatically navigates, types and saves). Click to switch to manual confirmation.' : 'Robotic Auto-Type & Save is in manual confirm mode. Click to enable instant hands-free automation.'}
+              onClick={() => { const next = !autoExec; setAutoExec(next); setAutoExecuteEnabled(next); }}
+              className={`relative rounded p-1.5 transition-colors ${autoExec ? 'bg-amber-100 text-amber-700 shadow-sm' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700'}`}>
+              <Sparkles size={16} className={autoExec ? 'text-amber-600 animate-pulse' : ''} />
+              {autoExec && <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-white" />}
             </button>
             <button type="button" aria-label={speakOn ? 'Mute answers' : 'Read answers aloud'} title={speakOn ? 'Answers are read aloud (click to mute)' : 'Answers are silent (click to read aloud)'}
               onClick={() => setSpeakOn((v) => !v)} className="rounded p-1.5 text-slate-500 hover:bg-indigo-50 hover:text-indigo-600">{speakOn ? <Volume2 size={16} /> : <VolumeX size={16} />}</button>

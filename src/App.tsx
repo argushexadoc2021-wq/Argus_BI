@@ -12,6 +12,7 @@ import { Time24Normalizer } from './components/Time24Normalizer';
 import { DatalistOpenAll } from './components/DatalistOpenAll';
 import { EscBack } from './components/EscBack';
 import { HelpAssistant } from './components/HelpAssistant';
+import { AiAutomationOverlay } from './components/adviser/AiAutomationOverlay';
 import { Sidebar } from './components/layout/Sidebar';
 import { Topbar } from './components/layout/Topbar';
 import { TopNav } from './components/layout/TopNav';
@@ -415,6 +416,7 @@ function MainLayout() {
       {ai.guide && <GuideCoach />}
       {ai.teaching && <TeachingTour />}
       {ai.coworker && <Copilot />}
+      <AiAutomationOverlay />
       <SavedProductsDatalist />
       <Time24Normalizer />
       <DatalistOpenAll />

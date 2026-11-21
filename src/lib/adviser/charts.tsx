@@ -21,17 +21,45 @@ export type DbActionType =
   | 'edit_enquiry'
   | 'delete_enquiry'
   | 'add_company'
+  | 'edit_company'
+  | 'delete_company'
   | 'add_quotation'
+  | 'edit_quotation'
   | 'add_sales_order'
   | 'edit_sales_order'
   | 'delete_sales_order'
   | 'move_stage'
+  | 'add_work_order'
+  | 'add_job_card'
+  | 'add_scheduled_job'
+  | 'add_task'
+  | 'add_machine'
   | 'add_process'
-  | 'add_supplier';
+  | 'add_inward'
+  | 'add_delivery_challan'
+  | 'add_dc'
+  | 'add_supplier'
+  | 'add_purchase_order'
+  | 'add_inventory_item'
+  | 'adjust_stock'
+  | 'add_invoice'
+  | 'add_bank_entry'
+  | 'add_petty_cash'
+  | 'add_payment_received'
+  | 'punch_attendance'
+  | 'apply_leave'
+  | 'add_employee'
+  | 'db_insert'
+  | 'db_update'
+  | 'db_delete'
+  | (string & {});
+
 export interface DbActionBlock {
   action: DbActionType;
   title: string;
   summary?: string;
+  table?: string;
+  where?: { path: string; label: string };
   params: Record<string, any>;
 }
 export interface Blocks { visible: string; charts: ChartSpec[]; pdf: { title: string } | null; emails: EmailBlock[]; whatsapps: WaBlock[]; teaches: TeachBlock[]; dbActions: DbActionBlock[] }
@@ -63,6 +91,8 @@ export function parseBlocks(text: string): Blocks {
             action: act,
             title: String(j.title || act.replace(/_/g, ' ')),
             summary: j.summary ? String(j.summary) : undefined,
+            table: j.table ? String(j.table) : undefined,
+            where: j.where && typeof j.where === 'object' ? j.where : undefined,
             params: (j.params && typeof j.params === 'object') ? j.params : {},
           });
         }
