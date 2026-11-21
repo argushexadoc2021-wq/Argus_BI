@@ -47,7 +47,12 @@ const GUIDE_WORDS = /\b(guide me|walk me through|walkthrough|show me how|step by
 /** The word that ends a turn when "over" mode is on (English, Tamil script and common speech-to-text spellings — excludes Tamil word "ஓர்"). */
 const OVER_RE = /(?:^|[\s,.!?])(over|ஓவர்|ஓவர|ஓவரு|ovar|ओवर)\s*[.!?]*\s*$/i;
 /** Voice-editing commands while recording in "over" mode (matched only when spoken as a standalone phrase so normal questions are never deleted). */
-const VOICE_CLEAR_RE = /^(delete|clear|cancel|erase|reset|start over|clear all|delete all|delete that|delete this|clear that|delete recording|delete pannu|clear pannu|அழி|நீக்கு|கேன்சல்|அழித்துவிடு|முழுவதும் அழி|அழிச்சிடு)\s*[.!?]*$/i;
+// Erase everything said so far and start again: "delete", "azhi", "no", "thappa sollitten", "first la irundhu", "start again"...
+// (one or more of these words, optionally with "Raaju" / "sir" / "over")
+const VOICE_CLEAR_WORD = '(?:delete|clear|cancel|erase|reset|start over|start again|restart|again|clear all|delete all|delete that|delete this|clear that|delete recording|delete pannu|clear pannu|no|nope|no no|wrong|it is wrong|i said wrong|said wrong|mistake|thappa|thappu|thappa sollitten|thappa solliten|thappa sonnen|thappa pochu|first la irundhu|first la irunthu|first la irunthu sollren|first irundhu|muthalla irundhu|mudhalla irundhu|thirumba|azhi|aali|azhichidu|illa|vendam|venam|அழி|ஆழி|அழிச்சிடு|அழித்துவிடு|முழுவதும் அழி|நீக்கு|கேன்சல்|நோ|இல்லை|இல்ல|வேண்டாம்|வேணாம்|தப்பு|தப்பா|தப்பா சொல்லிட்டேன்|தப்பா சொல்லிட்டேன்|தப்பா சொன்னேன்|தப்பா போச்சு|பர்ஸ்ட்ல இருந்து|ஃபர்ஸ்ட்ல இருந்து|பர்ஸ்ட் ல இருந்து|முதல்ல இருந்து|முதலில் இருந்து|மொதல்ல இருந்து|திரும்ப|மறுபடியும்)';
+// ...also when the sentence ENDS with "thappa sollitten" / "first la irundhu" / "azhi" (said after the wrong words)
+const VOICE_CLEAR_END_RE = /(?:^|\s)(?:thappa sollitten|thappa solliten|thappa sonnen|thappa pochu|first la irundhu|first la irunthu|muthalla irundhu|start over|start again|azhi|aali|அழி|ஆழி|அழிச்சிடு|தப்பா சொல்லிட்டேன்|தப்பா சொன்னேன்|தப்பா போச்சு|பர்ஸ்ட்ல இருந்து|ஃபர்ஸ்ட்ல இருந்து|முதல்ல இருந்து|முதலில் இருந்து|மொதல்ல இருந்து)(?:\s+(?:sir|raaju|raju|ராஜு|சார்|over|ஓவர்|சொல்றேன்))*\s*[.!?]*$/iu;
+const VOICE_CLEAR_RE = new RegExp(`^(?:(?:raaju|raju|ராஜு)\\s+)?${VOICE_CLEAR_WORD}(?:[\\s,]+${VOICE_CLEAR_WORD})*(?:\\s+(?:sir|sar|madam|raaju|raju|ராஜு|சார்|over|ஓவர்|please|பண்ணு|சொல்றேன்|சொல்லுறேன்))*\\s*[.!?]*$`, 'iu');
 const VOICE_UNDO_RE = /^(undo|undo last|delete last|remove last|clear last|backspace|last delete|go back|கடைசி அழி|கடைசி நீக்கு|கடைசியை அழி|பின்செல்)\s*[.!?]*$/i;
 const VOICE_REPLACE_RE = /^(?:replace|change)\s+(.+?)\s+(?:with|to|as)\s+(.+?)\s*[.!?]*$/i;
 const VOICE_REPLACE_TA_RE = /^(.+?)\s+(?:மாற்றி|பதிலாக|என்பதை)\s+(.+?)\s*[.!?]*$/i;
@@ -665,7 +670,7 @@ Whenever the user asks you to ADD / CREATE / INSERT / ENTER / PUT / RECORD / SCH
   * Numbers: parse spoken Tamil/English numbers (ஒன்னு=1, ரெண்டு=2, பத்து=10, etc.) into numbers.
   * Transliterate Tamil names cleanly to English (சிஸ்டம் -> System, ஃபிகர் -> Figure, ஷாஃப்ட் -> Shaft, லேத் -> Lathe).
   * Match existing companies or parts from COMPANY DATA if named.
-- Write ONE concise sentence in the user's language (Tamil: "இப்போது சேமிக்கிறேன்." / English: "Saving it now."), except for a delete (see SAVING HAPPENS AT ONCE below).
+- Write ONE short line in the user's language asking to check and confirm (Tamil: "விவரங்கள் சரியா? சேமிக்கவா? \"சரி\" அல்லது \"இல்லை\" சொல்லுங்கள்." / English: "Is this correct? Shall I save it? Say yes or no.").
 - The action types & parameters (always include "where" with the destination route):
   * Add Enquiry: [[DB_ACTION {"action":"add_enquiry","where":"/sales/in-house","title":"Add Enquiry","summary":"Insert new enquiry","params":{"company":"System","products":[{"name":"Figure","qty":2}],"remarks":""}}]]
   * Edit Enquiry: [[DB_ACTION {"action":"edit_enquiry","where":"/sales/in-house","title":"Edit Enquiry","summary":"Update enquiry","params":{"identifier":"1002","updates":{"quantity":10,"part_name":"","customer":""}}}]]
@@ -695,7 +700,7 @@ Whenever the user asks you to ADD / CREATE / INSERT / ENTER / PUT / RECORD / SCH
   * Universal Edit (any table, any column): [[DB_ACTION {"action":"db_update","table":"cnc_sales_orders","where":"/sales/in-house","title":"Update Sales Order","summary":"Change delivery date","params":{"match":{"so_no":"SO-2026-5830"},"values":{"delivery_date":"2026-12-05"}}}]]
   * Universal Delete (any table): [[DB_ACTION {"action":"db_delete","table":"cnc_scheduled_tasks","where":"/production/scheduling","title":"Delete Task","summary":"Remove task","params":{"match":{"id":"<the record id from COMPANY DATA>"}}}]]
   Use the exact table and column names seen in COMPANY DATA (cnc_enquiries, cnc_quotations, cnc_sales_orders, cnc_inwards, cnc_deliveries, cnc_work_orders, cnc_job_cards, cnc_scheduled_tasks, cnc_operation_plans, cnc_machines, cnc_processes, cnc_suppliers, cnc_purchase_orders, cnc_customers, cnc_raw_materials, retail_store_orders ...). Never change company_users, companies, permissions or audit tables.
-- SAVING HAPPENS AT ONCE: adds and edits are saved immediately and the screen opens by itself, so write ONE short line like "Saving it now and opening Production Scheduling." (Tamil: "இப்போது சேமித்து அந்தப் பக்கத்தைத் திறக்கிறேன்."). Only a DELETE waits for the person to press Confirm on the card, so for a delete say "Please confirm the delete below." Never ask "shall I save?" for an add or edit.
+- ALWAYS ASK FIRST: nothing is typed or saved until the person says "yes" / "சரி" or presses the button on the card. When they say "no", "thappa sollitten", "first la irundhu" or "azhi", everything is cancelled and they start again. Never say the record is saved before they agree.
 - If a critical required field is completely missing (e.g. user said "add enquiry" without naming company or product), ask for the missing detail in 1 short question and wait before emitting [[DB_ACTION ...]].
 - NEVER say the record is already saved before the user confirms or automation runs! Never read the [[DB_ACTION ...]] JSON aloud.
 
@@ -1053,12 +1058,20 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
         await confirmDbAction(pending.key, pending.block, true);
         return;
       }
-      if (CANCEL_DB_RE.test(q)) {
+      if (CANCEL_DB_RE.test(q) || VOICE_CLEAR_RE.test(q) || VOICE_CLEAR_END_RE.test(q)) {
         setMsgs((m) => [...m, { id: ++chatSeq, role: 'user', text: q }]);
         history.current.push({ role: 'user', text: q });
         cancelDbAction(pending.key, true);
         return;
       }
+    }
+    // "No" / "thappa sollitten" / "first la irundhu" / "azhi" on its own: nothing is asked or saved; start again
+    if (VOICE_CLEAR_RE.test(q)) {
+      clearVoiceDraft(false);
+      const msg = langRef.current === 'ta' ? 'சரி, அழித்துவிட்டேன். முதலில் இருந்து சொல்லுங்கள்.' : 'Okay, erased. Say it again from the start.';
+      setMsgs((m) => [...m, { id: ++chatSeq, role: 'user', text: q }, { id: ++chatSeq, role: 'assistant', text: msg }]);
+      if (handsFreeRef.current && SR && activeRef.current) listenRef.current(); else setPhase('ready');
+      return;
     }
     busyRef.current = true;
     setLiveGuide(null);
@@ -1215,8 +1228,10 @@ export function HelpAssistant({ allowed = { teaching: true, guide: true, coworke
 
       if (overRef.current) {
         // 1) Voice command: Delete / Clear freshly recorded draft & keep listening
-        if (VOICE_CLEAR_RE.test(chunk)) {
+        if (VOICE_CLEAR_RE.test(chunk) || VOICE_CLEAR_END_RE.test(chunk)) {
+          // everything said so far is erased; a details card waiting for "yes" is cancelled too
           clearVoiceDraft(true);
+          if (pendingDbRef.current) cancelDbAction(pendingDbRef.current.key, false);
           return;
         }
         // 2) Voice command: Undo / delete only the last spoken phrase

@@ -28,14 +28,18 @@ export interface AutomationState {
   message?: string;
 }
 
-const AUTO_EXEC_KEY = 'argus.ai.auto_execute';
+// ".v2": the earlier setting (which could be left switched on) no longer counts, so everyone is asked first again
+const AUTO_EXEC_KEY = 'argus.ai.auto_execute.v2';
 
-/** ON unless the person switched it off (the ⚡ button in the Adviser's title bar). Deletes always ask first anyway. */
+/**
+ * OFF by default: the Adviser shows the details and ASKS ("yes / சரி" or the button) before it types and saves.
+ * Only someone who switches on the ⚡ button in the Adviser's title bar gets saving without asking; deletes always ask.
+ */
 export function isAutoExecuteEnabled(): boolean {
   try {
-    return localStorage.getItem(AUTO_EXEC_KEY) !== 'false';
+    return localStorage.getItem(AUTO_EXEC_KEY) === 'true';
   } catch {
-    return true;
+    return false;
   }
 }
 
