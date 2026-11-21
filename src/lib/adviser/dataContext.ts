@@ -3,6 +3,7 @@
 
 import { supabase } from '@/lib/supabase';
 import { buildReport, reportToFacts } from './insights';
+import { appMap, suiteFacts } from './moduleData';
 
 type Row = Record<string, any>;
 
@@ -21,6 +22,10 @@ const PROJECT_ARCHITECTURE = `ARGUS BI COMPLETE PROJECT MAP (every module, scree
 5. Finance & Accounts (/finance/invoices, /finance/bank-entry, /finance/petty-cash, /accounts/ledger, /accounts/trial-balance, /accounts/profit-loss, /accounts/balance-sheet, /accounts/opening-balances, /costing/job-costing, /costing/material): Commercial & Tax Invoices (digital signature required), Bank Entry, Petty Cash, Full Accounting Books, Product & Material Costing.
 6. Reports & Overview (/dashboard, /reports/production, /mind-map, /bi-chat): Executive Report (CNC Factory Command Center), Production/Sales/Inventory/Quality/Cost Reports, Interactive 3D & 2D Project Mind Map, BI Chat.
 7. Administration & Suites (/admin/users, /admin/access, /admin/companies, /admin/settings, /admin/audit-logs, /admin/email-integration, /admin/jd-build, /attendance/dashboard, /store/home, /support/technical, /support/onsite): Multi-company isolation, Role & Module Access Control, Connected Mail IDs per team member, JD Build, AI Face Recognition Attendance Suite (kiosk, face enrollment, leaves, payroll, geofence), Retail Online Store (3D Storefront, Digital Store, Retail Orders), Support Center.
+   - AI ATTENDANCE (/attendance/dashboard): staff punch in/out at a kiosk by face (with a liveness check); Face Enrollment registers each employee's face; the Dashboard shows today's roster (present, late, half day, absent, in the building now); Reports, Manual Entry / override, Leave apply & approve, Monthly Payslip & Payment Entry (payroll from hours x rate), Live Map & Geofence (punch only inside the factory area), Settings (shift times, late grace, half/full day hours, face match strictness).
+   - RETAIL STORE (/store/home): the company's online shop on the same products: 3D storefront & catalogue, categories, Digital Store (quotations & orders for customers, Razorpay payment links, payments received), invoices raised from quotations and e-mailed to the customer with the PDF and the payment link, retail roles and price tiers. Sales partners get their OWN BI company: Regional partners come under the main company, Channel partners under a Regional (or the main company), Referral partners under a Channel / Regional; one GST No. = one partner (no duplicates); a partner sees only its own and its team's orders, never the main company's data. Partner orders also show in BI under Sales > Partner Orders and Retail Orders.
+   - PRODUCTION SCHEDULING (/production/scheduling): Planned Timeline (plan operations by machine & operator, and tasks for people), Actual Timeline (what really ran), Comparison (planned vs actual), Job Board (drag unscheduled jobs onto machines & operators), Actual / Planned list views. The Dashboard's Team Performance shows who finished on time, late or missed.
+   - MIND MAPS (/mind-map): visual mind maps; the Adviser can draw one in the chat and save it here.
 8. AI Suite (Adviser + Embedded Co-worker): Adviser acts as full ChatGPT analyst with live DB access, charts, PDF reports, Email/WhatsApp drafting, and embedded Co-worker for oral/text data entry across all pipeline stages.`;
 
 async function load(table: string, order = 'created_at', lim = 2000): Promise<Row[] | null> {
@@ -67,6 +72,8 @@ async function build(can: (m: string) => boolean): Promise<string> {
   const wantInv = can('invoices') || can('menu-invoices');
   const wantBank = can('bank-entry') || can('petty-cash') || can('ledger');
   const wantProd = can('production') || can('scheduling') || can('machine-log');
+  // the whole app (menus + page guides) and the other suites (Retail Store, AI Attendance, tasks...) load alongside
+  const extraP = Promise.all([appMap().catch(() => ''), suiteFacts(can).catch(() => [] as string[])]);
 
   const [
     enq, quo, so, inw, dc, inv,
@@ -95,8 +102,11 @@ async function build(can: (m: string) => boolean): Promise<string> {
     buildReport(can).catch(() => null),
   ]);
 
+  const [liveMap, suites] = await extraP;
   const out: string[] = [
     PROJECT_ARCHITECTURE,
+    '',
+    liveMap,
     '',
     `LIVE DATABASE SNAPSHOT — Today is ${new Date().toISOString().slice(0, 10)}. This month = ${curName}, last month = ${prevName}.`,
   ];
@@ -205,6 +215,7 @@ async function build(can: (m: string) => boolean): Promise<string> {
       day(u.last_login_at) || 'never',
     ].join(' — ')).join('; ')}.`);
   }
+  out.push(...suites);
   if (cust) {
     const reach = cust.filter((c) => /@/.test(str(c.email)) || /\d{6}/.test(str(c.phone).replace(/\D/g, '')));
     out.push(`CUSTOMERS (${cust.length} total, ${reach.length} with email/phone): ${reach.slice(0, 200).map((c) => `${str(c.name)} — ${str(first(c, ['contact', 'contact_person'])) || '-'} — ${str(c.email) || '-'} — ${str(c.phone) || '-'}`).join('; ')}`);
@@ -226,7 +237,8 @@ async function build(can: (m: string) => boolean): Promise<string> {
   ].filter(Boolean);
   if (trend.length) out.push(`MONTH BY MONTH (last 6 months, oldest first):\n${trend.join('\n')}`);
   if (report) out.push(`PROBLEMS AND HIGHLIGHTS FOUND:\n${reportToFacts(report)}`);
-  return out.join('\n').slice(0, 55000);
+  // the AI server takes up to 90,000 characters in all; the instructions use about 14,000 of them
+  return out.join('\n').slice(0, 74000);
 }
 
 let cache: { at: number; key: string; text: Promise<string> } | null = null;
